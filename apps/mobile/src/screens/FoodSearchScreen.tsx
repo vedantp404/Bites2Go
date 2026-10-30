@@ -1,3 +1,17 @@
+import { useLibrary } from '../state/LibraryProvider';
+import {
+  LibraryStatus,
+  FavouriteButton,
+  FoodChoice,
+} from '../components/LibraryControls';
+import {
+  emptyLibrary,
+  libraryFoods,
+  browseFoods,
+  portionGrams,
+  foodOrigin,
+  type LibraryFilter,
+} from '../domain/library';
 import { FoodImage } from '../components/FoodImage';
 import { useCallback, useReducer, useRef, useState } from 'react';
 import { randomUUID } from 'expo-crypto';
@@ -24,19 +38,21 @@ import {
   meals,
   createDraft,
   foodDraftReducer,
-  formatNutrient,
-  parseGrams,
   scaleNutrients,
-  searchFoods,
 } from '../domain/food';
 import type { FoodNutrients } from '../domain/food';
 
 export default function FoodSearchScreen() {
   const styles = useFoodStyles();
   const { ui, t } = useUI();
-  const { meal, date: routeDate } = useLocalSearchParams<{
+  const {
+    meal,
+    date: routeDate,
+    foodId: routeFoodId,
+  } = useLocalSearchParams<{
     meal?: string | string[];
     date?: string | string[];
+    foodId?: string | string[];
   }>();
   const [date] = useState(() =>
     routeDate === undefined
@@ -46,18 +62,33 @@ export default function FoodSearchScreen() {
         : null,
   );
   const diary = useDiary();
+  const library = useLibrary();
+  const [filter, setFilter] = useState<LibraryFilter>('All');
+  const [quantityMode, setQuantityMode] = useState<'grams' | 'servings'>(
+    'grams',
+  );
+  const available = libraryFoods(library.data ?? emptyLibrary(), foods);
   const [busy, setBusy] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const saving = useRef(false);
   const pending = useRef<DiaryEntry | null>(null);
   const [saveError, setSaveError] = useState('');
-  const [draft, dispatch] = useReducer(foodDraftReducer, meal, createDraft);
+  const [draft, dispatch] = useReducer(foodDraftReducer, meal, (value) => {
+    const initial = createDraft(value);
+    return typeof routeFoodId === 'string'
+      ? foodDraftReducer(initial, { type: 'select', id: routeFoodId })
+      : initial;
+  });
   const [category, setCategory] = useState<string | null>(null);
-  const categories = [...new Set(foods.map((food) => food.category))];
-  const selected = foods.find((food) => food.id === draft.foodId);
-  const matches = searchFoods(foods, draft.query).filter(
-    (food) => category === null || food.category === category,
-  );
+  const categories = [...new Set(available.map((food) => food.category))];
+  const selected = available.find((food) => food.id === draft.foodId);
+  const matches = browseFoods(
+    library.data ?? emptyLibrary(),
+    foods,
+    diary.entries ?? [],
+    filter,
+    draft.query,
+  ).filter((food) => category === null || food.category === category);
   const back = useCallback(() => {
     if (saving.current) return;
     Keyboard.dismiss();
@@ -77,12 +108,10 @@ export default function FoodSearchScreen() {
       return () => subscription.remove();
     }, [back]),
   );
-  const grams = parseGrams(draft.grams);
+  const grams = portionGrams(draft.grams, quantityMode, selected);
   let calculated: FoodNutrients | null = null;
   let error =
-    grams === null
-      ? 'Enter a number greater than zero in grams, such as 100 or 125.5.'
-      : '';
+    grams === null ? 'Enter a positive quantity in the selected unit.' : '';
   if (selected && grams !== null) {
     try {
       calculated = scaleNutrients(selected.nutrients, grams);
@@ -93,6 +122,7 @@ export default function FoodSearchScreen() {
   }
   const select = (id: string) => {
     Keyboard.dismiss();
+    if (draft.foodId !== id) setQuantityMode('grams');
     dispatch({ type: 'select', id });
   };
   async function save() {
@@ -170,9 +200,11 @@ export default function FoodSearchScreen() {
           contentContainerStyle={[ui.content, { gap: t.spacing.md }]}
         >
           <Text style={ui.body}>
-            ILLUSTRATIVE FOOD VALUES, not nutritional guidance. Entries are
-            saved only on this device after confirmation.
+            Food values are illustrative or user-entered estimates, not
+            nutritional guidance. Entries are saved only on this device after
+            confirmation.
           </Text>
+          <LibraryStatus />
           {draft.detail ? (
             selected ? (
               <>
@@ -182,14 +214,20 @@ export default function FoodSearchScreen() {
                     {selected.name}
                   </Text>
                   <Text style={ui.label}>
-                    {selected.category} / {selected.preparation}
+                    {foodOrigin(selected)} / {selected.category} /{' '}
+                    {selected.preparation}
                   </Text>
                   <Text style={ui.body}>
                     Reference values per {selected.referenceGrams} g edible
-                    portion (sample)
+                    portion (estimate)
                   </Text>
                   <Nutrition values={selected.nutrients} />
                   <Text style={ui.body}>{selected.source}</Text>
+                  <FavouriteButton
+                    key={selected.id}
+                    food={selected}
+                    disabled={busy || attempted}
+                  />
                 </Card>
                 <Card>
                   <Text accessibilityRole="header" style={ui.heading}>
@@ -221,11 +259,53 @@ export default function FoodSearchScreen() {
                       </Pressable>
                     ))}
                   </View>
-                  <Text style={ui.body}>Amount in grams</Text>
+                  {selected.servingGrams ? (
+                    <>
+                      <Text style={ui.body}>
+                        One defined serving = {selected.servingGrams.toFixed(2)}{' '}
+                        g.
+                      </Text>
+                      <View style={ui.row}>
+                        {(['grams', 'servings'] as const).map((mode) => (
+                          <Pressable
+                            key={mode}
+                            accessibilityRole="radio"
+                            accessibilityState={{
+                              checked: quantityMode === mode,
+                              disabled: busy || attempted,
+                            }}
+                            disabled={busy || attempted}
+                            onPress={() => {
+                              if (quantityMode === mode) return;
+                              setQuantityMode(mode);
+                              dispatch({
+                                type: 'grams',
+                                value: mode === 'grams' ? '100' : '1',
+                              });
+                            }}
+                            style={[
+                              styles.back,
+                              {
+                                backgroundColor:
+                                  quantityMode === mode
+                                    ? t.colors.selected
+                                    : t.colors.surface,
+                              },
+                            ]}
+                          >
+                            <Text style={ui.label}>
+                              {mode === 'grams' ? 'Grams' : 'Servings'}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </>
+                  ) : null}
+                  <Text style={ui.body}>Amount in {quantityMode}</Text>
                   <TextInput
                     selectionColor={t.colors.primary}
                     editable={!busy && !attempted}
-                    accessibilityLabel="Portion in grams"
+                    accessibilityLabel={`Portion in ${quantityMode}`}
                     accessibilityHint="Enter a positive decimal amount"
                     keyboardType="decimal-pad"
                     value={draft.grams}
@@ -244,7 +324,11 @@ export default function FoodSearchScreen() {
                   {calculated ? (
                     <>
                       <Text style={ui.label}>
-                        Calculated for {draft.grams.trim()} g (sample)
+                        Calculated for {grams} g
+                        {quantityMode === 'servings'
+                          ? ` / ${draft.grams} servings`
+                          : ''}{' '}
+                        (estimate)
                       </Text>
                       <Nutrition values={calculated} />
                     </>
@@ -297,6 +381,62 @@ export default function FoodSearchScreen() {
             )
           ) : (
             <>
+              <Action
+                variant="secondary"
+                label="My foods / create food or recipe"
+                onPress={() =>
+                  router.push({
+                    pathname: '/my-foods',
+                    params: {
+                      ...(date ? { date } : {}),
+                      ...(draft.meal ? { meal: draft.meal } : {}),
+                    },
+                  })
+                }
+              />
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: t.spacing.sm }}
+              >
+                {(
+                  ['All', 'Favourites', 'Recent', 'Custom', 'Recipes'] as const
+                ).map((value) => (
+                  <Pressable
+                    key={value}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: filter === value }}
+                    onPress={() => {
+                      setFilter(value);
+                      setCategory(null);
+                    }}
+                    style={{
+                      minHeight: 48,
+                      paddingHorizontal: 16,
+                      justifyContent: 'center',
+                      borderRadius: 24,
+                      backgroundColor:
+                        filter === value ? t.colors.primary : t.colors.elevated,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        ...t.typography.label,
+                        color:
+                          filter === value ? t.colors.onPrimary : t.colors.text,
+                      }}
+                    >
+                      {value}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+              {filter === 'Recent' && diary.entries === null ? (
+                <Text style={ui.body}>
+                  Recent foods are unavailable until the diary loads. Return to
+                  Diary to retry loading.
+                </Text>
+              ) : null}
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -359,8 +499,8 @@ export default function FoodSearchScreen() {
               {selected ? (
                 <Card>
                   <Text style={ui.body}>
-                    Current preview: {selected.name}, {draft.grams} g. Retained
-                    while this flow is open.
+                    Current preview: {selected.name}, {draft.grams}{' '}
+                    {quantityMode}. Retained while this flow is open.
                   </Text>
                   <Action
                     label="Review current selection"
@@ -370,50 +510,28 @@ export default function FoodSearchScreen() {
               ) : null}
               <Text accessibilityLiveRegion="polite" style={ui.label}>
                 {draft.query.trim()
-                  ? `${matches.length} matching sample foods`
-                  : `${matches.length} sample foods${category ? ` / ${category}` : ''}`}
+                  ? `${matches.length} matching foods`
+                  : `${matches.length} foods${category ? ` / ${category}` : ''}`}
               </Text>
               {matches.length === 0 ? (
                 <Card>
                   <Text style={ui.heading}>No foods found</Text>
                   <Text style={ui.body}>
-                    Try All foods, a shorter name or another alias. This
-                    development catalog contains only 12 foods.
+                    Try All foods, a shorter name or another alias. Add
+                    favourites from food details; recents appear after confirmed
+                    diary saves. Create custom foods and recipes in My foods.
                   </Text>
                 </Card>
               ) : (
                 matches.map((food) => (
-                  <Pressable
+                  <FoodChoice
                     key={food.id}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${food.name}, ${food.preparation}, illustrative sample. View details`}
+                    food={food}
                     onPress={() => select(food.id)}
-                    style={({ pressed }) => [
-                      ui.card,
-                      { opacity: pressed ? 0.8 : 1 },
-                    ]}
-                  >
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        gap: t.spacing.md,
-                        alignItems: 'center',
-                      }}
-                    >
-                      <FoodImage foodId={food.id} />
-                      <Text style={[ui.heading, { flex: 1 }]}>{food.name}</Text>
-                    </View>
-                    <Text style={ui.label}>
-                      {food.preparation} /{' '}
-                      {formatNutrient(food.nutrients.calories, 'kcal')} per 100
-                      g
-                    </Text>
-                    <Text style={ui.body}>
-                      Illustrative sample - view details
-                    </Text>
-                  </Pressable>
+                  />
                 ))
               )}
+
               <Text style={ui.body}>
                 Leaving food search clears this temporary selection. Search
                 works offline. Only confirmed entries are saved.

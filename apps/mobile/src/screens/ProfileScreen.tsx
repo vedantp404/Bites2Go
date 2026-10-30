@@ -30,6 +30,11 @@ export default function ProfileScreen() {
           label="Nutrition goals, height and weight target"
           onPress={() => router.push('/goals')}
         />
+        <Action
+          variant="secondary"
+          label="My foods and recipes"
+          onPress={() => router.push('/my-foods')}
+        />
         <BmiCard />
         <Card>
           <Text accessibilityRole="header" style={ui.heading}>

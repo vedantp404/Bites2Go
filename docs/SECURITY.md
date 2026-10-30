@@ -1,5 +1,9 @@
 # Security and privacy plan
 
+## Stage 8 local-library boundaries
+
+Custom names, brands and recipe ingredients may contain private dietary information. They remain in the existing local SQLite store; no logging, analytics, uploads, external image URLs or cloud services were added. Local storage is not app-level encrypted and uninstall/clearing app data can lose records; do not imply remote backup. Existing parameterized Expo KV writes handle serialized documents. Validation rejects malformed values/unsupported versions before writes and preserves raw invalid stored data for recovery. Recipe/favourite cleanup is atomic within one document; diary, health and appearance keys are not modified. Immutable ingredient and diary snapshots prevent historical corruption after source deletion. No secrets, user database files or generated exports belong in Git. Audit remains 8 existing findings (5 low/3 high), with no dependency changes or forced remediation.
+
 ## Stage 7 local health-data boundary
 
 Weights, height, personal goals and BMI inputs are sensitive personal data. They are kept in a separate local SQLite KV document, with no new network calls, permissions, analytics, accounts or cloud storage. Device/OS backup and access risks from Stage 5 still apply: this is not app-encrypted storage; clearing/uninstalling host/app data can lose records. Do not use real user data in tests or commit databases, exports or health payloads.

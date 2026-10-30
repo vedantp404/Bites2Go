@@ -1,5 +1,15 @@
 # Bites2Go
 
+## Stage 8: custom foods, recipes and favourites
+
+Open **Profile → My foods and recipes**, or **Add Food → My foods**, to create, view, edit or delete your own foods and recipes. Add Food now includes All, Favourites, Recent, Custom and Recipes filters. Favourite an item from its details; Recent lists up to 20 available items from actual confirmed diary activity. Search includes custom descriptions/brands.
+
+Custom food values describe a defined serving weight in grams; blank nutrients remain unknown and explicit zero stays zero. Recipes use built-in/custom ingredient snapshots, measured final yield in grams and a serving count. Review totals and per-serving estimates before saving. Log either grams or defined servings, review the selected meal/date and explicitly confirm. Editing or deleting a source never changes existing diary nutrition.
+
+A separate `bites2go.library.v1` document uses the existing SQLite KV repository pattern. Initialization is additive; diary, health and appearance data are untouched. No dependency changes, image uploads, nested recipes, backend or cloud sync. Bundled images/placeholders and Light/Dark/System are reused.
+
+66 tests, typecheck, lint, formatting, Expo Doctor 20/20, public configuration and Android bundle export passed. Audit remains 5 low / 3 high (existing tooling dependencies); no forced fixes. Native Android restart, layout and accessibility checks remain pending in [Test Plan](docs/TEST_PLAN.md). Stop after Stage 8; Stage 9 is not implemented.
+
 ## Stage 7: weights, goals and BMI
 
 Progress now provides dated kg measurements, latest/all-time change, edit/delete confirmation, a chart of actual recorded points and gain/loss/maintenance goal tracking. Profile and Progress link to Goals and height. BMI uses saved height and latest dated weight, displays one decimal and makes no diagnosis or weight-category classification.
@@ -8,7 +18,7 @@ Personal calorie/protein/carbohydrate/fat targets start unset. Save your own tar
 
 Weights, height and goals use a separate local SQLite KV document (`bites2go.health.v1`). Diary and appearance records are untouched. One weight per local date; future measurements are rejected. No backend, sync or new packages. [Architecture](docs/ARCHITECTURE.md) documents initialization, validation and conflict/retry handling; [Test Plan](docs/TEST_PLAN.md) contains the Android acceptance checklist.
 
-51 automated tests, TypeScript, lint, formatting, Expo Doctor 20/20, configuration validation and Android export passed during implementation. Audit remains 5 low / 3 high. Physical-device and rendered accessibility/theme verification is pending. Stage 8 is not implemented.
+51 automated tests, TypeScript, lint, formatting, Expo Doctor 20/20, configuration validation and Android export passed during implementation. Audit remains 5 low / 3 high. Physical-device and rendered accessibility/theme verification is pending. Stage 8 is described above.
 
 ## Visual redesign and appearance
 
@@ -17,23 +27,23 @@ The app now uses the Vibrant Food App direction: warm light surfaces, charcoal d
 - Home: daily nutrition ring, macro bars, food inspiration and saved meals.
 - Search/details: category chips, thumbnails, prominent food images and unchanged portion confirmation.
 - Diary/calendar: themed meal groups, historical food images, date markers and a themed delete confirmation.
-- Profile: Appearance → Light, Dark or System (default), with the effective mode displayed. Changes apply immediately and persist locally. Progress remains explicitly unfinished.
+- Profile: Appearance → Light, Dark or System (default), with the effective mode displayed. Changes apply immediately and persist locally. Progress now includes Stage 7 weight tracking.
 
 Appearance uses the separate SQLite key `bites2go.appearance.v1`; diary schema and nutrient snapshots are unchanged. The app waits for preference loading before mounting its screens. Persistence failures are reported in Profile with a retry by selecting the mode again.
 
 Two CC0 photos (apple/banana, about 228 KB total) are bundled for offline use; other foods use a reusable placeholder. See [image credits](apps/mobile/assets/food/README.md). Food values remain illustrative and photos do not represent exact portions.
 
-Run `cd apps/mobile` then `npm start -- --clear`, and scan with SDK 58 Expo Go on Android. Native configuration changes apply to rebuilt standalone/development clients; Expo Go controls its own launch screen and system-bar configuration. Physical Android acceptance is pending; see [Test Plan](docs/TEST_PLAN.md). Stage 7 is not implemented.
+Run `cd apps/mobile` then `npm start -- --clear`, and scan with SDK 58 Expo Go on Android. Native configuration changes apply to rebuilt standalone/development clients; Expo Go controls its own launch screen and system-bar configuration. Physical Android acceptance is pending; see [Test Plan](docs/TEST_PLAN.md). Stage 7 is described above.
 
 An Android nutrition tracker designed around everyday Indian meals, reliable food data, and optional AI-assisted logging.
 
-**Status: Stage 6 calendar/history implemented; calendar Android checks pending. Stage 5 persistence was verified by the user.** Product name is a working name based on the workspace folder. Stage 1 is committed as 458c3c1. Mobile dependencies are installed locally; no external services provisioned.
+**Status: Stage 8 implemented; Android acceptance remains pending. Stage 5 persistence was verified by the user.** Product name is a working name based on the workspace folder. Stage 1 is committed as 458c3c1. Mobile dependencies are installed locally; no external services provisioned.
 
 ## Goals and scope
 
 Make manual food logging quick, make nutrition calculations explainable, and preserve trustworthy diary history. The core product must work without an AI provider.
 
-The MVP includes a polished dashboard, food search, gram and supported serving entry, editable meal logs, daily totals, persistent diaries, past dates, basic nutrition goals, and weight records. Recipes, favorites, advanced insights, achievements, photo recognition, voice, and conversational assistance follow later.
+The MVP includes a polished dashboard, food search, gram and supported serving entry, editable meal logs, daily totals, persistent diaries, past dates, basic nutrition goals, and weight records. Recipes and favourites are implemented locally in Stage 8; advanced insights, achievements, photo recognition, voice, and conversational assistance remain future work.
 
 ## Proposed stack
 

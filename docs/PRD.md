@@ -1,5 +1,11 @@
 # Product requirements
 
+## Stage 8 delivered scope
+
+Users can manage custom foods and recipes from Profile or Add Food, search them alongside the illustrative catalogue, favourite available items, and reuse actual recently logged foods. Custom nutrition is entered per defined gram serving with optional description/brand and nullable calories/protein/carbs/fat/fiber. Recipes combine built-in/custom ingredients with editable gram quantities, final measured yield and serving count. Totals and per-serving estimates are reviewed before confirmation; incomplete nutrients are explicit.
+
+Quick-add supports grams and defined servings while retaining selected historical date, meal, quantity review and explicit save. Source changes affect future selections only; existing diary and recipe ingredient snapshots remain stable. Delete requires confirmation and removes the item from favourites/recents without deleting diary history. Unknown source records are not offered as available foods. All records are local; there is no account, backend, upload, sync or Stage 9 work. Android acceptance remains pending; automated evidence is in Test Plan. Earlier stage scope/status sections below are historical.
+
 ## Implemented Stage 7 scope
 
 This current section supersedes the historical Stage 1 plans below for Stage 7. Local, adult-focused tracking only: dated kg records (one per date), manual calorie/protein/carbohydrate/fat goals, cm height, numeric BMI and a target weight. No account, cloud synchronization, automatic dietary prescription, pediatric interpretation or Stage 8 functionality. Fiber goals and weekly averages from the earlier roadmap are outside this explicit four-target stage request.

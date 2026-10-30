@@ -1,4 +1,4 @@
-import { scaleNutrients, meals } from './food.ts';
+import { scaleNutrients, meals, sumNutrients } from './food.ts';
 import type { Food, FoodNutrients, Meal } from './food.ts';
 export const nutrientKeys = [
   'calories',
@@ -156,17 +156,5 @@ export function decodeDiary(raw: string | null): DiaryEntry[] {
   return value.entries;
 }
 export function diaryTotals(entries: readonly DiaryEntry[]) {
-  const values = {} as FoodNutrients;
-  const partial = {} as Record<keyof FoodNutrients, boolean>;
-  for (const key of nutrientKeys) {
-    const known = entries
-      .map((e) => e.nutrients[key])
-      .filter((v) => v !== null);
-    values[key] =
-      entries.length && !known.length ? null : known.reduce((a, b) => a + b, 0);
-    partial[key] = known.length < entries.length;
-    if (values[key] !== null && !Number.isFinite(values[key]))
-      throw new Error('Diary total exceeds supported range.');
-  }
-  return { values, partial, count: entries.length };
+  return sumNutrients(entries.map((entry) => entry.nutrients));
 }

@@ -15,6 +15,7 @@ export type Food = {
   nutrients: FoodNutrients;
   status: 'illustrative';
   source: string;
+  servingGrams?: number;
 };
 export function searchFoods(foods: readonly Food[], query: string): Food[] {
   const term = query.trim().toLowerCase();
@@ -120,4 +121,27 @@ export function foodDraftReducer(
         ? { ...state, confirmed: true }
         : state;
   }
+}
+
+export const foodNutrientKeys = [
+  'calories',
+  'protein',
+  'carbs',
+  'fat',
+  'fiber',
+] as const;
+export function sumNutrients(items: readonly FoodNutrients[]) {
+  const values = {} as FoodNutrients;
+  const partial = {} as Record<keyof FoodNutrients, boolean>;
+  for (const key of foodNutrientKeys) {
+    const known = items
+      .map((item) => item[key])
+      .filter((value) => value !== null);
+    values[key] =
+      items.length && !known.length ? null : known.reduce((a, b) => a + b, 0);
+    partial[key] = known.length < items.length;
+    if (values[key] !== null && !Number.isFinite(values[key]))
+      throw Error('Nutrition total exceeds supported range.');
+  }
+  return { values, partial, count: items.length };
 }

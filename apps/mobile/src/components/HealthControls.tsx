@@ -66,12 +66,14 @@ export function Field({
   onChangeText,
   disabled = false,
   date = false,
+  text = false,
 }: {
   label: string;
   value: string;
   onChangeText: (v: string) => void;
   disabled?: boolean;
   date?: boolean;
+  text?: boolean;
 }) {
   const { ui, t } = useUI();
   const styles = useFoodStyles();
@@ -83,7 +85,7 @@ export function Field({
         value={value}
         onChangeText={onChangeText}
         editable={!disabled}
-        keyboardType={date ? 'default' : 'decimal-pad'}
+        keyboardType={date || text ? 'default' : 'decimal-pad'}
         autoCapitalize="none"
         autoCorrect={false}
         selectionColor={t.colors.primary}
@@ -96,7 +98,13 @@ export function ConfirmDelete({
   visible,
   onCancel,
   onConfirm,
+  title = 'Delete this measurement?',
+  message = 'This removes the weight record from this device. A saved goal starting point remains unchanged.',
+  confirmLabel = 'Delete measurement',
 }: {
+  title?: string;
+  message?: string;
+  confirmLabel?: string;
   visible: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -119,18 +127,11 @@ export function ConfirmDelete({
         >
           <View accessibilityViewIsModal style={ui.card}>
             <Text accessibilityRole="header" style={ui.heading}>
-              Delete this measurement?
+              {title}
             </Text>
-            <Text style={ui.body}>
-              This removes the weight record from this device. A saved goal
-              starting point remains unchanged.
-            </Text>
+            <Text style={ui.body}>{message}</Text>
             <Action label="Cancel" variant="secondary" onPress={onCancel} />
-            <Action
-              label="Delete measurement"
-              variant="danger"
-              onPress={onConfirm}
-            />
+            <Action label={confirmLabel} variant="danger" onPress={onConfirm} />
           </View>
         </ScrollView>
       </SafeAreaView>

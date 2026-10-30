@@ -1,5 +1,11 @@
 # Design system and screen plan
 
+## Stage 8 library interactions
+
+Keep the existing Vibrant Food App palette and Light/Dark/System tokens. Profile and Add Food link to My foods and recipes; create/edit forms are stack routes with safe areas, keyboard-aware scrolling, labelled inputs and shared actions/delete dialogs. Existing FoodImage renders bundled images by stable ID and placeholders for custom foods/recipes; no new network assets.
+
+Search filters expose All/Favourites/Recent/Custom/Recipes without adding tabs. Cards distinguish built-in illustrative foods, user-created estimates and recipe snapshot estimates. Details offer favourites and grams/defined-serving radio controls before the existing confirm action; tapping the active unit preserves the quantity. Recipe ingredient search reuses FoodChoice and the existing search engine. Loading, unavailable-source, no-results, unknown nutrients, validation and retry states are visible. Shared controls retain accessible labels and 48-point actions. Native narrow-screen, large-text, TalkBack and theme inspection still needs Android acceptance; export is not visual verification.
+
 ## Stage 7 progress and settings
 
 Reuse the existing Light/Dark/System tokens, cards, 48 dp actions, safe areas and keyboard-aware scroll containers. Progress separates latest measurement, weight goal, dated chart/history and BMI. History is the accessible textual equivalent of the SVG chart; no line interpolation or invented missing-day values. Points and progress fills use theme primary, labels use text/muted, and errors use error tokens.

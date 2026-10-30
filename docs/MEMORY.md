@@ -1,5 +1,15 @@
 # Project memory
 
+## Current handoff: Stage 8
+
+Started from clean master and fetched origin/master both at e0c0ffee137392ae893b95da5375d3fedbbc3525 in C:\Users\Asus\Music\Bites2Go. Stage 8 supersedes earlier stop-before-8 notes. Added custom-food CRUD, recipe builder from ingredient snapshots, favourites, real diary-derived recents, and grams/defined-serving quick-add. New MyFoods/CustomFood/Recipe routes reuse existing theme, images and controls; five tabs retained. No dependencies or Stage 9 work.
+
+Separate `bites2go.library.v1` uses the existing parameterized SQLite KV adapter. Absent key loads empty without touching existing diary/health/appearance; no new SQL table/field migration. Source deletion and favourite cleanup are atomic in one document. Validation precedes serialization; corrupt/unsupported data blocks mutation. Serialized compare-before-write operations and retained pending payloads support safe retries. Recipe ingredient snapshots survive source edits/deletion; confirmed diary snapshots remain unchanged. Recents use actual entry creation times and currently available IDs, never synthetic history.
+
+Shared scaling/aggregation handles final measured recipe yield and servings; incomplete nutrient subtotals are disclosed and affected per-serving/per-100-g values remain null for logging. Built-in values remain illustrative and custom/recipe values labelled estimates. Gram units only, no nested recipes or guessed cooking changes. See Architecture for limits and Test Plan for acceptance scenarios.
+
+66 automated tests including actual temporary SQLite close/reopen, types, lint, formatting, Doctor 20/20, public config and Android export passed. Audit unchanged: 5 low/3 high, no forced fixes. No physical device/emulator, native SQLite bridge, rendered theme or TalkBack verification performed. Existing user-reported Stage 5 acceptance does not establish Stage 8 acceptance. Final commit and verified remote hash are reported after push; stop and await review before Stage 9.
+
 ## Current handoff: Stage 7
 
 Verified clean synchronized master at 2214b4861f0522be4f1c806d384f112d49008a99. Stage 7 is explicitly authorized and supersedes earlier stop-before-7 notes. Implemented dated weight CRUD/history/chart, effective-dated calorie/protein/carbs/fat goals, canonical cm height, numeric adult BMI and gain/loss/maintenance weight targets. Five tabs retained; new weight-entry and goals stack routes. No Stage 8 or new dependencies.

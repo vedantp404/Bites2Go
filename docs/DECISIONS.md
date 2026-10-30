@@ -1,5 +1,9 @@
 # Decision register
 
+## Stage 8 implementation plan
+
+Use a separate versioned library KV document for custom foods, recipes and favourite IDs. Preserve diary/health/appearance schemas. Normalize custom serving nutrition to the existing per-100-g engine; recipes store ingredient snapshots plus measured final yield in grams and serving count. Unknown recipe nutrients remain unknown for logging if any ingredient is incomplete. Extract the existing nutrient aggregation into the food domain for shared diary/recipe use. Recipes do not nest. Snapshot ingredients survive source edits/deletion; deletion removes favourites atomically in the same document. Recents derive from diary creation timestamps and resolve only currently available IDs. Quick-add keeps date/meal and explicit confirmation, with grams or defined servings converted to canonical diary grams. No image uploads, arbitrary URLs, new packages, backend or Stage 9.
+
 ## Stage 7 implementation plan
 
 Use a separate versioned SQLite KV document for weights, height, weight goal and effective-dated nutrition goals. Initial migration is absent key to empty v1; no diary/appearance schema changes or destructive SQL. Reuse the existing parameterized KV adapter and serialized, compare-before-write repository pattern. Defaults remain unset; today's explicit goal changes preserve earlier dates. Weight records are unique by local date and use kg; height uses cm. UI limits: weight/target 20–500 kg, height 100–250 cm, calories 0–10000 kcal, protein/fat 0–500 g, carbs 0–1500 g; these are data-entry bounds, not recommendations. Use existing SVG for dated measurement points without interpolated data. BMI is numeric only, adult-focused (20+), with screening limitations and no classification. No dependencies or Stage 8 work planned.

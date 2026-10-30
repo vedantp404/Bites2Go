@@ -1,5 +1,21 @@
 # Test strategy
 
+## Stage 8 verification — 2026-10-30
+
+Passed in `apps/mobile`: `npm test` (66/66), `npm run typecheck`, `npm run lint`, `npm run format:check`, `npx expo-doctor` (20/20), `npx expo config --type public`, and `npx expo export --platform android --output-dir <temporary-directory>` (1353 modules, Hermes Android bundle). Generated files remain outside the repository. Export emitted the environment's NO_COLOR/FORCE_COLOR warning; no build failure. New arithmetic assertions use 1e-9 tolerance for mathematically equivalent floating-point calculations without rounding the stored values.
+
+15 new library tests cover custom validation/CRUD/search, null versus zero, recipe scaling/yield/servings/ingredient snapshots/incomplete nutrients, overflow and invalid references, favourite uniqueness/deletion, actual recents ordering, gram/serving meal/date snapshots, source edit/delete historical integrity, invalid-storage preservation, stale-write/failure/idempotent retry handling, and real temporary SQLite close/reopen with the actual diary repository. Existing 51 tests cover diary CRUD, calendar, health/goals/BMI and appearance logic. These are domain/repository tests, not rendered interaction or Android native bridge tests.
+
+Fresh `npm audit --json`: 8 advisories by affected package (5 low, 3 high), unchanged from Stage 7 with no manifest/lockfile changes. Low: deepmerge and propagated @expo/config, @expo/metro-config, @expo/prebuild-config, @expo/local-build-cache-provider. High: zod and propagated @expo/cli/expo. Root advisories remain deepmerge GHSA-gcqx-w48m-w2h4 and zod GHSA-mrhx-c7xc-m3w5. No forced fixes or suppression.
+
+Android acceptance pending (not performed by the agent):
+
+- Create a custom food with zero fat and unknown fiber, find by brand, favourite, close/reopen Expo Go and verify persistence. Edit/delete with cancellation and confirmation; previously logged nutrition must remain unchanged.
+- Build a multi-ingredient recipe, change/remove ingredients, set measured yield and servings, compare totals, and test an ingredient with unknown nutrients. Edit/delete its source custom food, reopen the recipe and confirm retained ingredient snapshots and source-unavailable notice.
+- From a past Calendar date and each meal, select Custom/Favourites/Recent/Recipes, change grams/servings, review and confirm once. Rapid-tap save, return/Back, restart, edit diary portions and delete entries. Check independent historical snapshots and no duplicate saves. Deleted sources disappear from available lists.
+- Retry library/diary storage errors without clearing data; verify existing diary, health/weight/BMI/effective targets and appearance survive upgrade/restart.
+- Review Light/Dark/System, narrow screens, keyboard scrolling, Android Back, large text, TalkBack order/labels, delete dialogs and placeholders. No physical-device or emulator result is claimed.
+
 ## Stage 7 verification
 
 51 tests pass (0 failures/skips): the existing 37 regressions plus 14 health tests covering bounds and malformed inputs, valid local/leap dates, duplicates and ordering, detached edit/delete, effective-dated goals and zero/unset, remaining and excess/unknown nutrients, BMI and display precision, gain/loss/maintenance/overshoot, stable goal baselines, actual chart date spacing, corrupt/unsupported data, retry and stale-write safety, SQLite close/reopen isolation, timezone/DST and measurements predating the goal baseline.

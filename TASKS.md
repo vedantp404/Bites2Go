@@ -1,5 +1,19 @@
 # Ordered roadmap
 
+## Current task: Stage 8 custom foods, recipes and favourites
+
+- [x] Verify clean synchronized master at e0c0ffee137392ae893b95da5375d3fedbbc3525 and inspect repository/storage/calculation/theme conventions.
+- [x] Implement validated custom-food CRUD, estimate labels, nullable nutrients and searchable brands/descriptions.
+- [x] Implement built-in/custom ingredient recipe editing, measured yield/servings, shared calculations and incomplete-nutrient handling.
+- [x] Add persistent unique favourites, actual diary-derived recents and confirmed grams/servings quick-add with meal/date preservation.
+- [x] Add isolated additive SQLite library initialization, atomic source/favourite cleanup, retry/stale protection and unchanged diary snapshots.
+- [x] Verify 66 tests, types, lint, formatting, Doctor 20/20, public config and Android export; inspect unchanged 5 low/3 high audit findings.
+- [x] Document product, architecture/storage/calculation, design, security and testing decisions and limitations.
+- [ ] User verifies Stage 8 Android restart, CRUD/history, keyboard/Back, all themes and accessibility scenarios in Test Plan.
+- [ ] User review before Stage 9; do not begin it automatically.
+
+Older stage sections below are historical records, not current scope restrictions or new authorizations.
+
 ## Current task: Stage 7 weight, goals and BMI
 
 - [x] Verify clean synchronized master at 2214b4861f0522be4f1c806d384f112d49008a99 and inspect project/storage/theme conventions.
