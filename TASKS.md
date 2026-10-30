@@ -1,5 +1,16 @@
 # Ordered roadmap
 
+## Current task: Stage 10 Nutrition Insights
+
+- [x] Verify clean master/origin at 703b25ae1c5a726491d880f4955de2944ece3475 and run baseline suite: 79 tests passed.
+- [x] Inspect authoritative snapshots, date helpers, historical targets, weight/library/storage/theme and navigation conventions.
+- [x] Add offline Insights from Progress with 7/30-day/custom ranges, daily nutrition/targets, nutrient trends, averages, consistency, observations and actual weight context.
+- [x] Document and share per-nutrient eligibility, unknown values, limited meal coverage, today exclusion, inclusive tolerance and historical weight-goal limits.
+- [x] Verify 93 tests, types, lint, formatting, Doctor 20/20, configuration, Android export and existing SQL integration checks; review unchanged audit findings.
+- [x] Update feature/product/architecture/design/test/memory documentation. No new dependencies, migrations or cloud activation.
+- [ ] Physical Android acceptance (themes, scrolling, keyboard/Back, large text, TalkBack and offline regressions) in Test Plan.
+- [ ] User review and Stage 10 acceptance before authorizing Stage 11 consolidated quality/security. Do not start Stage 11 automatically.
+
 ## Current task: Stage 9 backend foundation (no configured cloud)
 
 - [x] Verify clean master and remote at 6f6794add78f9017089a9f100baaaee9e0b48c53; inspect local data and project instructions.

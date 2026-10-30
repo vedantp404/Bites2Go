@@ -1,5 +1,11 @@
 # Product requirements
 
+## Stage 10 delivered Nutrition Insights
+
+Offline Insights is available from Progress without replacing any tab. It reads authoritative historical diary snapshots and effective-dated goals. Users select rolling 7/30-day or custom 1–92-day ranges, inspect daily recorded nutrients and targets, select calorie/protein/carbohydrate/fat/fiber trends, inspect exact daily values, compare period averages and personal target consistency, and view deterministic observations and actual in-range weights.
+
+No-entry days, nutrient-incomplete days, limited meal coverage and today-in-progress are distinct. A conservative all-four-meal/known-nutrient proxy controls averages, plotted intake and consistency; skipped meals are excluded and no day is claimed proven complete. No diagnoses, nutritional adequacy scores, weight prediction or inferred deficiencies. No-entry days are not zero. [INSIGHTS.md](INSIGHTS.md) specifies formulas, tolerance, eligibility and known limitations. No cloud activation, schema changes or Stage 11 work. Automated acceptance passed; native Android review is pending.
+
 ## Stage 9 delivered scope: no-configuration fallback
 
 Optional Supabase backend selected after comparison. The implementation provides a tested diary-only synchronization boundary and cloud migration, not operational authentication or cloud sync. Profile discloses offline/not-signed-in mode; there are no fake login buttons, success states, pending counts or last-sync timestamps. All core features remain local and usable without an account.

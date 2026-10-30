@@ -1,5 +1,11 @@
 # Design system and screen plan
 
+## Stage 10 Insights presentation
+
+Progress links to a dedicated Nutrition insights stack screen; existing five tabs remain. Shared Light/Dark/System cards organize range controls, coverage, daily nutrition, selectable nutrient trend, averages, consistency, observations and weights. Custom date fields reuse the existing keyboard-aware page and require an explicit Apply action; invalid drafts leave the applied range unchanged. Previous/Next daily navigation stays within that range. Add Food carries the displayed date; generic Open food diary and Open weight progress navigate to existing destinations.
+
+Intake dots and target dashes use primary/secondary tokens plus shape/text labels. Excluded dates show gaps, not zero or connecting/interpolated lines. SVG is supplementary: exact daily text values and eligibility/target labels are available through Show exact daily values. Date points have at least 52 px spacing with horizontal scrolling for long ranges; body text/actions can wrap and scale. Shared controls provide accessible labels, radio selected states and 48 dp touch targets. Loading, data/range errors, no-entry and insufficient-data states are explicit. Native contrast/rendering, TalkBack focus, large fonts, scrolling and theme acceptance still require the Android checklist; no physical visual review is claimed.
+
 ## Stage 9 offline account disclosure
 
 Profile adds one shared themed card for Account and cloud. It shows Offline mode / not signed in, safe missing/invalid/configured-but-disabled messages, and states that no records are uploaded. No authentication form is presented before a configured and tested SDK integration. Existing tabs, forms, theme and navigation remain unchanged. Future consent must identify the account, selected records/date range and data leaving the device; future conflicts need explicit choices without silently choosing a version. Native rendering/TalkBack acceptance remains pending.

@@ -1,5 +1,19 @@
 # Test strategy
 
+## Stage 10 verification — 2026-10-30
+
+Baseline before edits: 79/79 tests passed on clean synchronized master 703b25ae1c5a726491d880f4955de2944ece3475. Final `npm test`: 93/93, including 14 new Insights tests. Coverage: 7/30-day and custom ranges, month/year/leap/1900 boundaries, actual Node timezone processes for New York DST and Kolkata date differences, future-date rejection, complete/partial/unknown nutrients, empty/limited meal days, duplicate identities, explicit zero, averages and eligibility, historical/changed/unset/disabled targets, inclusive tolerance boundaries, today exclusion, actual weight changes/current-goal dates and pure UI loading/error/ready/selection/accessibility-label behaviour. Existing theme contrast/appearance and storage/snapshot regressions remain passing.
+
+TypeScript, lint, formatting, Expo Doctor 20/20, public Expo configuration and Android export all passed (1358 modules, Hermes bundle in a temporary directory outside Git). Existing `scripts/test-cloud-sql.ps1` passed against a disposable local PostgreSQL database; stopped and removed afterward. No live cloud enabled or tested. Export emitted existing NO_COLOR/FORCE_COLOR environment warnings. Fresh audit unchanged: 8 affected packages (5 low/3 high; deepmerge and zod advisories propagated through Expo tooling). No dependency or lockfile changes and no forced fixes.
+
+UI-state tests exercise shared pure logic and labels used by the screen, not rendered React Native interaction tests. Physical Android/emulator tests were not performed. Manual acceptance:
+
+- Progress → Nutrition insights; inspect 7/30 days, valid/invalid custom ranges, 92-day scrolling, Previous/Next bounds, date selection from exact daily values, Back, Open food diary, Add Food on a historical date and return after saving.
+- Verify an empty period is unknown, two-meal days are visible but excluded, a mixed unknown protein day excludes protein only, today is in progress, and historical target edits affect only applicable dates. Check 90%/110% boundaries and displayed denominators with known synthetic data on a test device.
+- Review Light/Dark/System, narrow Android screens, keyboard/custom date entry, large fonts, chart shapes/text equivalence and TalkBack labels/focus. Make sure daily progress never presents incomplete subtotals as exact percentages.
+- Check in-range weights with zero/one/two measurements, missing/current goal and its dates. No interpolated or predicted weights should appear.
+- Airplane-mode startup, app restart and diary/calendar/custom-food/recipe/favourite/weight/goals/theme regressions. Existing records and source-edit-resistant diary snapshots must remain unchanged.
+
 ## Stage 9 verified boundary — 2026-10-30
 
 - `npm test`: 79/79 pass (66 prior regression tests plus 13 new cloud-boundary tests). Tests cover fail-closed configuration, session expiry/account switching, explicit selected-ID consent, upload/download planning, no duplicate IDs, historical snapshot/null preservation, edit/edit and edit/delete conflicts, stale/incomplete/wrong-owner responses, changed local data, newer checkpoints, mocked network/lost acknowledgements/partial success, checkpoint errors/retries and real SQLite close/reopen isolation.

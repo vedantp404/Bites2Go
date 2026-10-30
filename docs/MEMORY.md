@@ -1,5 +1,13 @@
 # Project memory
 
+## Current handoff: Stage 10 Nutrition Insights
+
+Started from clean verified master/origin 703b25ae1c5a726491d880f4955de2944ece3475; baseline 79 tests passed. Explicit Stage 10 nutrition-insights request supersedes older Stage 10 AI plans. Implemented read-only Insights stack route from Progress using existing diary/health providers and shared totals, local dates, historical targets and weight logic. 7/30-day rolling windows include today; custom ranges are 1–92 days, no future dates. Existing five tabs remain.
+
+No completion flag exists. Eligibility proxy requires a past day with all four meal sections and known values for that nutrient. Today/absent/limited-meal/unknown-nutrient days are excluded from averages, plotted intake and target consistency with explicit counts and caveats. Daily known subtotals remain visible without incomplete percentages. Calorie/protein comparison uses inclusive 90–110% of each historical positive target. Weight points are actual in-range records; current goal shown only when its date permits, with no historical goal invention or prediction. Details in INSIGHTS.md.
+
+Final 93 tests pass (14 new), plus types/lint/format, Doctor 20/20, public config, Android export and existing isolated PostgreSQL integration check. Audit unchanged 5 low/3 high. No dependencies/schema changes/storage writes/cloud activation; source-food changes cannot alter insights from diary snapshots. Native Android rendering, interaction, TalkBack and themes were not tested; checklist remains pending. Pure UI view-state/label tests are not rendered-device tests. Final commit/remote hash reported after push verification. Stop after Stage 10; recommend Stage 11 quality/security only after user acceptance and authorization.
+
 ## Current handoff: Stage 9 tested integration boundary
 
 Started from clean master/origin at 6f6794add78f9017089a9f100baaaee9e0b48c53 in C:\Users\Asus\Music\Bites2Go. User authorizes Stage 9 and direct master push, superseding earlier stop-before-9 notes. No backend URL/public key exists in repo env files or process configuration. No external account/service/deployment was created and no local personal data was accessed/uploaded. Selected Supabase after current official comparison in BACKEND.md.

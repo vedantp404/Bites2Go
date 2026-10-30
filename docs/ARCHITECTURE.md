@@ -1,5 +1,11 @@
 # Architecture proposal
 
+## Stage 10 read-only insights
+
+`domain/insights.ts` consumes loaded `DiaryProvider`/`HealthProvider` snapshots through `insightView`, with explicit loading/error/ready states. It reuses `indexDiaryDates`, `diaryTotals`, local `shiftDay`/date validation, `targetsForDate`, `validateHealth` and `weightProgress`. Calculations do not look up current foods or recipes and do not mutate input objects. Duplicate IDs fail closed rather than double-counting. Existing providers remain the only storage paths; no new repository or SQL migration is needed.
+
+`InsightsScreen` is an Expo Router stack destination linked from Progress. Shared cards, date fields, AddFood, nutrient progress and WeightChart retain themes, safe areas and keyboard behaviour. `InsightChart` uses the installed react-native-svg with distinct intake dots/target dashes, explicit gaps, scrollable date spacing and an exact-value text list. No new chart package or AI/network request. Memoized calculations recalculate when records/goals/range/today change; existing useToday handles foreground/midnight refresh. All plotted intake/averages/consistency use the same per-nutrient eligibility flag. [INSIGHTS.md](INSIGHTS.md) defines range bounds, formulas and limitations. Cloud foundation and all diary/health/library/appearance schemas are unchanged.
+
 ## Stage 9: offline-preserving backend boundary
 
 Supabase PostgreSQL/Auth selected; [BACKEND.md](BACKEND.md) records the official comparison and deployment gates. The current build has no live backend or authentication. Only config status is mounted in Profile; all existing providers and SQLite repositories are unchanged. No network work blocks startup or logging.

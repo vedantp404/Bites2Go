@@ -22,6 +22,10 @@ export default function ProgressScreen() {
   );
   return (
     <HealthPage title="Your progress">
+      <Action
+        label="Nutrition insights"
+        onPress={() => router.push('/insights')}
+      />
       <HealthStatus />
       {data ? (
         <>

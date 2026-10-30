@@ -1,5 +1,13 @@
 # Bites2Go
 
+## Stage 10: offline Nutrition Insights
+
+Open **Progress → Nutrition insights**. Choose the last 7 or 30 days (including today), or apply a custom local-date range up to 92 days. Browse daily calorie/macro/fiber snapshots and historical targets, nutrient trend dots with target markers, averages with eligibility counts, calorie/protein target consistency, neutral observations and actual in-range weight measurements. Add Food retains the displayed insight date; Open food diary opens the existing diary destination.
+
+Period calculations use a conservative proxy: past days with entries in all four meal sections and known values for the particular nutrient. There is no completed-diary flag, so this cannot prove completeness and excludes intentionally skipped meal sections. Today remains in progress. No-entry days are unknown intake, not zero; incomplete nutrients show daily known subtotals without percentages and are excluded from averages/consistency. [Insights rules](docs/INSIGHTS.md) explains the exact denominators, inclusive 90–110% target band and limitations.
+
+Baseline 79 tests; final 93/93 pass, plus TypeScript, lint, formatting, Expo Doctor 20/20, configuration validation, Android bundle export and existing local SQL integration checks. No dependency additions or database migrations. Cloud remains disabled. Audit unchanged at 5 low/3 high. Physical Android/TalkBack/theme verification remains pending in [Test Plan](docs/TEST_PLAN.md). Stage 11 is not started.
+
 ## Stage 9: backend integration foundation (cloud not enabled)
 
 Selected Supabase after comparing official Supabase/Firebase guidance. No cloud configuration was available, so this implements the brief's tested-boundary fallback: diary-only sync planning with account consent/binding, conflict and stale-response protection, tombstones/retry handling, isolated checkpoint storage, and an owner-scoped PostgreSQL migration. Profile honestly shows offline/not-signed-in status. No records leave the device; SQLite startup and every existing offline feature remain unchanged.
@@ -45,7 +53,7 @@ Run `cd apps/mobile` then `npm start -- --clear`, and scan with SDK 58 Expo Go o
 
 An Android nutrition tracker designed around everyday Indian meals, reliable food data, and optional AI-assisted logging.
 
-**Status: Stage 9 backend boundary implemented; live authentication/sync is not enabled and Android acceptance remains pending. Stage 5 persistence was verified by the user.** Product name is a working name based on the workspace folder. Stage 1 is committed as 458c3c1. Mobile dependencies are installed locally; no external services provisioned.
+**Status: Stage 10 Nutrition Insights implemented; live authentication/sync remains disabled and Android acceptance is pending. Stage 5 persistence was verified by the user.** Product name is a working name based on the workspace folder. Stage 1 is committed as 458c3c1. Mobile dependencies are installed locally; no external services provisioned.
 
 ## Goals and scope
 

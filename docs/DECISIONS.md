@@ -1,5 +1,11 @@
 # Decision register
 
+## Stage 10 implementation plan
+
+Add an offline Insights stack route reached from Progress; retain five tabs. Reuse loaded diary/health providers, diaryTotals, local date helpers, effective-dated targets, weightProgress and WeightChart. No packages, schema changes, cloud or source-food lookups. Offer 7/30-day rolling windows including today and explicit custom dates up to 92 days using existing date fields. Today's entries remain visible but are excluded from completed-day statistics.
+
+There is no diary-completion marker. Define a conservative calculation proxy: a past day with all four meal sections represented and all values known for the particular nutrient. This does not prove a complete diary and excludes intentionally skipped meals; disclose it prominently. Use that same eligibility for plotted intake, averages and goal consistency. Missing days are not zero; partial known subtotals appear only in daily detail without percentages. Compare eligible positive targets on their historical dates within an inclusive 90–110% band for calories and protein (descriptive user-target comparison, not advice). Show eligible denominator and excluded counts; no inference of deficiencies or diet quality. Weight charts use actual in-range measurements and existing current-goal logic with date guards, never interpolation/prediction.
+
 ## Stage 9 decision before implementation
 
 Choose Supabase PostgreSQL/Auth for the first diary-only sync boundary: SQL ownership policies, transactional revision checks and portable database exports fit immutable diary snapshots. Firebase is viable but introduces Firestore document/rules semantics and a second offline store; native Firebase requires a development build instead of Expo Go. A custom/self-hosted API is not justified before a configured backend exists: it adds deployment, patching and authentication operations. Current official sources, costs and tradeoffs are recorded in BACKEND.md.

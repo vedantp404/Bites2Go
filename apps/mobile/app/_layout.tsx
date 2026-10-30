@@ -55,6 +55,7 @@ function App() {
               >
                 <Stack.Screen name="(tabs)" />
                 <Stack.Screen name="my-foods" />
+                <Stack.Screen name="insights" />
                 <Stack.Screen
                   name="custom-food"
                   options={{ gestureEnabled: false }}
