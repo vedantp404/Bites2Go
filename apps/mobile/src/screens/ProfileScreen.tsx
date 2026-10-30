@@ -1,3 +1,4 @@
+import { cloudConfiguration } from '../cloud/config';
 import { router } from 'expo-router';
 import { Action } from '../components/FoodControls';
 import { HealthStatus, BmiCard } from '../components/HealthControls';
@@ -17,6 +18,10 @@ const options: { value: Preference; title: string; detail: string }[] = [
 ];
 export default function ProfileScreen() {
   const { ui, t } = useUI();
+  const cloud = cloudConfiguration(
+    process.env.EXPO_PUBLIC_SUPABASE_URL,
+    process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+  );
   const { preference, mode, select, saving, error } = useTheme();
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={ui.page}>
@@ -25,6 +30,18 @@ export default function ProfileScreen() {
         <Text accessibilityRole="header" style={ui.title}>
           Profile
         </Text>
+        <Card>
+          <Text accessibilityRole="header" style={ui.heading}>
+            Account and cloud
+          </Text>
+          <Text style={ui.label}>Offline mode / not signed in</Text>
+          <Text style={ui.body}>{cloud.message}</Text>
+          <Text style={ui.body}>
+            No records are uploaded. Food logging, history, goals and appearance
+            work without an account. Cloud sign-in and synchronisation are not
+            available yet.
+          </Text>
+        </Card>
         <HealthStatus />
         <Action
           label="Nutrition goals, height and weight target"

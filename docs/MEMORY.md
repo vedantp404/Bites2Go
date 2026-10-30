@@ -1,5 +1,13 @@
 # Project memory
 
+## Current handoff: Stage 9 tested integration boundary
+
+Started from clean master/origin at 6f6794add78f9017089a9f100baaaee9e0b48c53 in C:\Users\Asus\Music\Bites2Go. User authorizes Stage 9 and direct master push, superseding earlier stop-before-9 notes. No backend URL/public key exists in repo env files or process configuration. No external account/service/deployment was created and no local personal data was accessed/uploaded. Selected Supabase after current official comparison in BACKEND.md.
+
+Delivered the brief's no-configuration fallback: Profile offline status and public-config validator; pure diary-only account-consented sync plan/guarded merge/injected upload interface; isolated optional checkpoint repository; PostgreSQL RLS/CAS migration and tests. The app does not mount a sync worker/checkpoint or SDK, and configuration alone cannot enable cloud. Existing SQLite providers and diary/health/library/appearance schemas remain unchanged. No new dependencies. Auth screens/secure session persistence/live transport/consent-conflict UI/local transactional coordinator remain required before any uploads; no realtime sync.
+
+79 automated tests pass, including mocked transport/session gating and real SQLite preservation. Actual migration/policies passed in disposable PostgreSQL 18 using synthetic auth roles/identities; server stopped and temp data removed. Types, lint, format, Doctor 20/20, public config and Android export pass. Audit unchanged 5 low/3 high. Supabase Auth/PostgREST/email/gateway and physical Android checks were not run. BACKEND.md documents exact setup/remaining implementation, account binding, tombstones, conflict semantics, SQL payload-validation limits, export/deletion and secure storage requirements. Final commit/remote hash reported after verification. Stop after Stage 9 and await review; no Stage 10.
+
 ## Current handoff: Stage 8
 
 Started from clean master and fetched origin/master both at e0c0ffee137392ae893b95da5375d3fedbbc3525 in C:\Users\Asus\Music\Bites2Go. Stage 8 supersedes earlier stop-before-8 notes. Added custom-food CRUD, recipe builder from ingredient snapshots, favourites, real diary-derived recents, and grams/defined-serving quick-add. New MyFoods/CustomFood/Recipe routes reuse existing theme, images and controls; five tabs retained. No dependencies or Stage 9 work.

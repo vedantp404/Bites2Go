@@ -1,5 +1,16 @@
 # Test strategy
 
+## Stage 9 verified boundary — 2026-10-30
+
+- `npm test`: 79/79 pass (66 prior regression tests plus 13 new cloud-boundary tests). Tests cover fail-closed configuration, session expiry/account switching, explicit selected-ID consent, upload/download planning, no duplicate IDs, historical snapshot/null preservation, edit/edit and edit/delete conflicts, stale/incomplete/wrong-owner responses, changed local data, newer checkpoints, mocked network/lost acknowledgements/partial success, checkpoint errors/retries and real SQLite close/reopen isolation.
+- `powershell -NoProfile -File scripts/test-cloud-sql.ps1`: passed against an isolated real PostgreSQL 18 cluster. Applied the actual migration and verified owner/anonymous access, direct insert/update/delete denial, scoped RPC revisions/idempotency, stale writes, payload identity/size checks, tombstones, missing sessions and account-deletion cascade. Cluster stopped and its temporary directory removed. Synthetic `auth.uid()`/roles substitute for the gateway; this is NOT a Supabase Auth/PostgREST integration test.
+- `npm run typecheck`, `npm run lint`, `npm run format:check`: passed. `npx expo-doctor`: 20/20. `npx expo config --type public`: passed. Android export: passed, 1354 modules, Hermes bundle outside Git. Environment emitted the existing NO_COLOR/FORCE_COLOR warning.
+- Fresh audit: unchanged 8 affected packages (5 low/3 high). Low deepmerge GHSA-gcqx-w48m-w2h4 propagates to four Expo tooling packages; high zod GHSA-mrhx-c7xc-m3w5 propagates to @expo/cli and expo. No manifest/lockfile changes or forced fixes.
+
+Not performed: real registration/login/logout/restore, encrypted session storage, Supabase email/JWT/PostgREST integration, hosted RLS deployment, native device rendering or live uploads. No cloud is enabled. Follow [Backend rollout gates](BACKEND.md) before enabling it.
+
+Android checks pending: launch with no configuration in airplane mode; verify offline Profile disclosure, diary/historical CRUD, custom foods/recipes/favourites, weight/goals/BMI and theme restart persistence. Check narrow layout, Light/Dark/System, large text and TalkBack. Later live acceptance must include explicit selected-history consent, two accounts/devices, expired sessions, lost responses, edit/delete conflicts, account-switch races, and preserved local data on sign-out. Passing domain/SQL tests is not native or live-service acceptance.
+
 ## Stage 8 verification — 2026-10-30
 
 Passed in `apps/mobile`: `npm test` (66/66), `npm run typecheck`, `npm run lint`, `npm run format:check`, `npx expo-doctor` (20/20), `npx expo config --type public`, and `npx expo export --platform android --output-dir <temporary-directory>` (1353 modules, Hermes Android bundle). Generated files remain outside the repository. Export emitted the environment's NO_COLOR/FORCE_COLOR warning; no build failure. New arithmetic assertions use 1e-9 tolerance for mathematically equivalent floating-point calculations without rounding the stored values.

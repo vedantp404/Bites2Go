@@ -1,5 +1,11 @@
 # Product requirements
 
+## Stage 9 delivered scope: no-configuration fallback
+
+Optional Supabase backend selected after comparison. The implementation provides a tested diary-only synchronization boundary and cloud migration, not operational authentication or cloud sync. Profile discloses offline/not-signed-in mode; there are no fake login buttons, success states, pending counts or last-sync timestamps. All core features remain local and usable without an account.
+
+No data currently synchronises. Future first rollout requires explicit account/record consent, verified SDK authentication, secure session storage, tested transport and local atomic coordination, plus conflict UI. Other data types stay local until separately reviewed. [BACKEND.md](BACKEND.md) defines scope, setup, ownership, deletion/export and remaining acceptance. Stop before Stage 10. Earlier stage sections describe historical delivery.
+
 ## Stage 8 delivered scope
 
 Users can manage custom foods and recipes from Profile or Add Food, search them alongside the illustrative catalogue, favourite available items, and reuse actual recently logged foods. Custom nutrition is entered per defined gram serving with optional description/brand and nullable calories/protein/carbs/fat/fiber. Recipes combine built-in/custom ingredients with editable gram quantities, final measured yield and serving count. Totals and per-serving estimates are reviewed before confirmation; incomplete nutrients are explicit.

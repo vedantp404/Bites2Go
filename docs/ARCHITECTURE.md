@@ -1,5 +1,13 @@
 # Architecture proposal
 
+## Stage 9: offline-preserving backend boundary
+
+Supabase PostgreSQL/Auth selected; [BACKEND.md](BACKEND.md) records the official comparison and deployment gates. The current build has no live backend or authentication. Only config status is mounted in Profile; all existing providers and SQLite repositories are unchanged. No network work blocks startup or logging.
+
+`src/cloud/diarySync.ts` implements a pure, account-bound three-way diary planner, guarded entry merge and injected upload transport contract. `checkpointRepository.ts` stores only consented IDs/acknowledged baselines under a separate optional key, with stale-write checks; it is not mounted by the app. Cloud schema uses per-owner stable record IDs, server revisions, version-1 diary JSON snapshots and retained null tombstones. RLS grants owner SELECT only; mutations use an explicitly owner-scoped revision-checking RPC. The real migration is in `supabase/migrations` and its local PostgreSQL tests use synthetic auth identities.
+
+No SQL table or existing local document is migrated/replaced. Application of downloads and checkpoint commits needs a shared serialized/transactional coordinator before live enablement; no multi-key atomicity, background queue, HTTP transport or realtime functionality is claimed. Full remote pagination, SDK sessions and consent/conflict screens remain rollout work. Weight/health/targets/library/appearance stay local; no built-in catalogue duplication. See Backend for calculation snapshot preservation, conflicts, deletion, account switching and export design. Older backend proposals below are historical.
+
 ## Stage 8 local food library and initialization
 
 `domain/library.ts` owns validated custom foods, recipes, favourites, browsing and portion conversion. `LibraryProvider` and `storage/libraryRepository.ts` isolate persistence; existing diary/health/appearance repositories retain their schemas. MyFoods, CustomFood and Recipe stack screens reuse shared themed controls and food images. Five tabs are retained.

@@ -1,5 +1,13 @@
 # Security and privacy plan
 
+## Stage 9 security boundary and limits
+
+No cloud credentials/configuration were available and no data is uploaded. Only public URL/publishable-key placeholders ship; configuration alone cannot activate networking. No passwords or sessions are stored. Authentication, verified SDK sessions and an Expo SecureStore adapter remain required before live enablement; never store tokens in the existing plain SQLite documents or log raw provider errors.
+
+The actual PostgreSQL migration enables/forces RLS on `diary_records`, restricts SELECT to its authenticated owner, denies anonymous/direct writes, and grants only a scoped revision-checking function to authenticated callers. Its SECURITY DEFINER body derives owner from `auth.uid()`, fixes search_path, and serializes per-record mutations. Local PostgreSQL policy tests passed using two synthetic identities and anonymous/missing-session cases; hosted Auth/JWT gateway behaviour is not established. SQL bounds payload shape/identity/size; full nutrition validation is currently in shared mobile code, a documented production-hardening limit.
+
+Consent is explicit by selected ID/account; account bindings cannot be reassigned. Expired/switched sessions and stale plans fail without deleting data. Snapshot merging never consults current food sources. Existing device storage is not a multi-account privacy vault; logout must retain records but cannot promise they are hidden from another device user. No logout/account-deletion UI is provided in this configuration-free release. Cloud deletion/export, backup retention and live verification gates are detailed in [BACKEND.md](BACKEND.md). No compliance/security certification is claimed. Existing audit findings remain 5 low/3 high without forced fixes.
+
 ## Stage 8 local-library boundaries
 
 Custom names, brands and recipe ingredients may contain private dietary information. They remain in the existing local SQLite store; no logging, analytics, uploads, external image URLs or cloud services were added. Local storage is not app-level encrypted and uninstall/clearing app data can lose records; do not imply remote backup. Existing parameterized Expo KV writes handle serialized documents. Validation rejects malformed values/unsupported versions before writes and preserves raw invalid stored data for recovery. Recipe/favourite cleanup is atomic within one document; diary, health and appearance keys are not modified. Immutable ingredient and diary snapshots prevent historical corruption after source deletion. No secrets, user database files or generated exports belong in Git. Audit remains 8 existing findings (5 low/3 high), with no dependency changes or forced remediation.

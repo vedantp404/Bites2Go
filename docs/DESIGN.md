@@ -1,5 +1,9 @@
 # Design system and screen plan
 
+## Stage 9 offline account disclosure
+
+Profile adds one shared themed card for Account and cloud. It shows Offline mode / not signed in, safe missing/invalid/configured-but-disabled messages, and states that no records are uploaded. No authentication form is presented before a configured and tested SDK integration. Existing tabs, forms, theme and navigation remain unchanged. Future consent must identify the account, selected records/date range and data leaving the device; future conflicts need explicit choices without silently choosing a version. Native rendering/TalkBack acceptance remains pending.
+
 ## Stage 8 library interactions
 
 Keep the existing Vibrant Food App palette and Light/Dark/System tokens. Profile and Add Food link to My foods and recipes; create/edit forms are stack routes with safe areas, keyboard-aware scrolling, labelled inputs and shared actions/delete dialogs. Existing FoodImage renders bundled images by stable ID and placeholders for custom foods/recipes; no new network assets.

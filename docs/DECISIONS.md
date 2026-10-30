@@ -1,5 +1,12 @@
 # Decision register
 
+## Stage 9 decision before implementation
+
+Choose Supabase PostgreSQL/Auth for the first diary-only sync boundary: SQL ownership policies, transactional revision checks and portable database exports fit immutable diary snapshots. Firebase is viable but introduces Firestore document/rules semantics and a second offline store; native Firebase requires a development build instead of Expo Go. A custom/self-hosted API is not justified before a configured backend exists: it adds deployment, patching and authentication operations. Current official sources, costs and tradeoffs are recorded in BACKEND.md.
+
+Verified clean master/origin at 6f6794add78f9017089a9f100baaaee9e0b48c53. No cloud configuration is available. Follow the brief's fallback: implement a fail-closed configuration boundary, account-bound pure diary sync planning/guarded merging, isolated checkpoint storage, PostgreSQL migration and access-control tests, with an honest offline account-status card. Do not install an unused auth SDK, create accounts/services, deploy, upload history or pretend authentication works. Local PostgreSQL binaries are available for isolated SQL policy tests; real Supabase Auth/PostgREST tests remain a rollout prerequisite. Existing app repositories and startup remain local. Stage 10 is out of scope.
+
+
 ## Stage 8 implementation plan
 
 Use a separate versioned library KV document for custom foods, recipes and favourite IDs. Preserve diary/health/appearance schemas. Normalize custom serving nutrition to the existing per-100-g engine; recipes store ingredient snapshots plus measured final yield in grams and serving count. Unknown recipe nutrients remain unknown for logging if any ingredient is incomplete. Extract the existing nutrient aggregation into the food domain for shared diary/recipe use. Recipes do not nest. Snapshot ingredients survive source edits/deletion; deletion removes favourites atomically in the same document. Recents derive from diary creation timestamps and resolve only currently available IDs. Quick-add keeps date/meal and explicit confirmation, with grams or defined servings converted to canonical diary grams. No image uploads, arbitrary URLs, new packages, backend or Stage 9.

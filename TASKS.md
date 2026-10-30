@@ -1,5 +1,19 @@
 # Ordered roadmap
 
+## Current task: Stage 9 backend foundation (no configured cloud)
+
+- [x] Verify clean master and remote at 6f6794add78f9017089a9f100baaaee9e0b48c53; inspect local data and project instructions.
+- [x] Compare current official Supabase/Firebase documentation, select Supabase and document free limits, portability and operational responsibilities.
+- [x] Implement fail-closed public configuration and honest offline Profile status; preserve existing local providers/write paths.
+- [x] Add account-consented diary sync planning, guarded merge/upload contract, conflicts/tombstones/retries and isolated checkpoint repository, disconnected from live app data.
+- [x] Add PostgreSQL migration and verify ownership/RLS/RPC in a disposable real database with synthetic identities.
+- [x] Verify 79 tests, types, lint, formatting, Doctor 20/20, public config and Android bundle; review unchanged 5 low/3 high audit.
+- [x] Document backend setup, missing implementation gates, privacy, export/deletion, architecture and test limitations.
+- [ ] Configure a development Supabase project and live SDK authentication/secure session storage (not available in this task).
+- [ ] Implement/test real transport, consent/conflict UI and local transactional coordinator before any uploads; verify two real accounts and anonymous/expired sessions.
+- [ ] Android offline/regression/accessibility acceptance; later live cloud acceptance.
+- [ ] User review; do not begin Stage 10.
+
 ## Current task: Stage 8 custom foods, recipes and favourites
 
 - [x] Verify clean synchronized master at e0c0ffee137392ae893b95da5375d3fedbbc3525 and inspect repository/storage/calculation/theme conventions.

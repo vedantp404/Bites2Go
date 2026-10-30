@@ -1,5 +1,13 @@
 # Bites2Go
 
+## Stage 9: backend integration foundation (cloud not enabled)
+
+Selected Supabase after comparing official Supabase/Firebase guidance. No cloud configuration was available, so this implements the brief's tested-boundary fallback: diary-only sync planning with account consent/binding, conflict and stale-response protection, tombstones/retry handling, isolated checkpoint storage, and an owner-scoped PostgreSQL migration. Profile honestly shows offline/not-signed-in status. No records leave the device; SQLite startup and every existing offline feature remain unchanged.
+
+Authentication, secure session persistence, live transport, consent/conflict UI and the local transactional sync coordinator are not enabled or claimed complete. Public environment configuration alone does not activate them. [Backend setup and rollout](docs/BACKEND.md) gives the comparison, exact setup steps, data model, policies, export/deletion plan and remaining implementation gates.
+
+79 automated tests pass, including mocked sync and real SQLite preservation checks. The actual SQL migration also passed real temporary PostgreSQL policy/CAS tests with synthetic identities. Types, lint, formatting, Doctor 20/20, public config and Android export pass. Audit remains 5 low/3 high; no packages changed. Live Supabase Auth/PostgREST and physical Android acceptance remain pending. Stop after Stage 9; no Stage 10 work.
+
 ## Stage 8: custom foods, recipes and favourites
 
 Open **Profile → My foods and recipes**, or **Add Food → My foods**, to create, view, edit or delete your own foods and recipes. Add Food now includes All, Favourites, Recent, Custom and Recipes filters. Favourite an item from its details; Recent lists up to 20 available items from actual confirmed diary activity. Search includes custom descriptions/brands.
@@ -37,7 +45,7 @@ Run `cd apps/mobile` then `npm start -- --clear`, and scan with SDK 58 Expo Go o
 
 An Android nutrition tracker designed around everyday Indian meals, reliable food data, and optional AI-assisted logging.
 
-**Status: Stage 8 implemented; Android acceptance remains pending. Stage 5 persistence was verified by the user.** Product name is a working name based on the workspace folder. Stage 1 is committed as 458c3c1. Mobile dependencies are installed locally; no external services provisioned.
+**Status: Stage 9 backend boundary implemented; live authentication/sync is not enabled and Android acceptance remains pending. Stage 5 persistence was verified by the user.** Product name is a working name based on the workspace folder. Stage 1 is committed as 458c3c1. Mobile dependencies are installed locally; no external services provisioned.
 
 ## Goals and scope
 
