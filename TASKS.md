@@ -1,9 +1,9 @@
 # Ordered roadmap
 
-Status as of 2026-10-30. Stage 1 only is authorized. A stage is complete only with documented evidence. Each stage can contain multiple small reviewed tasks; do not implement a stage's entire feature list in one generation.
+Status as of 2026-10-30. Stage 2 is authorized; Stage 3 awaits review. A stage is complete only with documented evidence. Each stage can contain multiple small reviewed tasks; do not implement a stage's entire feature list in one generation.
 
 - [x] **Stage 1 — Foundation.** Inspect complete project workspace and Git/tools; preserve existing state; document product, architecture, design, tests, security, research, decisions, rules and GitHub process; review links/consistency. No app implementation, commits or pushes.
-- [ ] **Approval gate.** User reviews Stage 1 and approves Stage 2. No dependent implementation before approval.
+- [x] **Approval gate.** User reviews Stage 1 and approves Stage 2. No dependent implementation before approval.
 - [ ] **Stage 2 — Minimal Expo application.** Depends on approval. Acceptance checklist below; no backend/services needed.
 - [ ] **Stage 3 — UI prototype.** Depends on 2. Build dashboard and five-tab navigation in separate tasks using labeled synthetic data. Acceptance: Design tokens consistent, Add Food prototype reachable, empty/partial/error states and small-screen/TalkBack checks recorded; no fake persistence claim.
 - [ ] **Stage 4a — Data and backend decisions.** Depends on 3. Approve source coverage/rights matrix, runtime versions, Auth plan and environment approach. Acceptance: every MVP food category has lawful source or explicit documented gap; blockers resolved before catalog publication; no unverified values.
@@ -20,18 +20,34 @@ Status as of 2026-10-30. Stage 1 only is authorized. A stage is complete only wi
 
 ## Exact next implementation task: Stage 2
 
-Create one minimal Expo TypeScript app in `mobile/`, keeping root documentation intact. Use npm and a lockfile; no root workspace tooling, backend, auth, real food dataset or AI. Use one presentational landing screen to demonstrate the theme, not a functional dashboard.
+Create one minimal Expo TypeScript app in `apps/mobile/`, keeping root documentation intact. Use npm and a lockfile; no root workspace tooling, backend, auth, real food dataset or AI. Use one presentational landing screen to demonstrate the theme, not a functional dashboard.
 
 Acceptance criteria:
 
-- [ ] Reinspect Git/user changes and read RULES, Memory, Architecture and Design before scaffolding.
+- [x] Reinspect Git/user changes and read RULES, Memory, Architecture and Design before scaffolding.
 - [ ] Recheck official Expo SDK/device compatibility and package Node engines. Record exact Expo, React Native, React, Node and npm versions. Current docs show SDK 58 versus Expo Go SDK 57 transition; choose deliberately.
-- [ ] Initialize only `mobile/` with TypeScript and strict checking; no nested `.git` repository. Keep a single root Git history and review generated files.
-- [ ] Add reusable color, typography, spacing and radius tokens; minimal accessible screen shows Bites2Go and one clearly labeled demo action. Respect safe area and font scaling.
-- [ ] Configure actual npm `lint` and `typecheck` scripts; run them successfully along with Expo Doctor. Record exact commands/output; fix relevant failures.
+- [x] Initialize only `apps/mobile/` with TypeScript and strict checking; no nested `.git` repository. Keep a single root Git history and review generated files.
+- [x] Add reusable color, typography, spacing and radius tokens; minimal accessible screen shows Bites2Go and one clearly labeled demo action. Respect safe area and font scaling.
+- [x] Configure actual npm `lint` and `typecheck` scripts; run them successfully along with Expo Doctor. Record exact commands/output; fix relevant failures.
 - [ ] Launch on a recorded Android device or emulator and verify screen, interaction and reload without crash. Expo Go is acceptable for this small first task when SDK-compatible. A web preview alone does not satisfy Android acceptance.
-- [ ] Add no services, secrets, API calls, paid builds or feature-wide implementation. Do not create external accounts. If no Android device/emulator is available, report Stage 2 incomplete with that exact blocker rather than claiming launch success.
-- [ ] Update README with working install/run/check commands, chosen launch route, limitations and reproducible setup; update Memory and this checklist with actual evidence.
-- [ ] Review diff and generated dependency files for secrets/unrelated changes. Follow the user's then-current commit authorization and GitHub workflow; absence of a remote does not justify invented push success.
+- [x] Add no services, secrets, API calls, paid builds or feature-wide implementation. Do not create external accounts. If no Android device/emulator is available, report Stage 2 incomplete with that exact blocker rather than claiming launch success.
+- [x] Update README with working install/run/check commands, chosen launch route, limitations and reproducible setup; update Memory and this checklist with actual evidence.
+- [x] Review diff and generated dependency files for secrets/unrelated changes. Follow the user's then-current commit authorization and GitHub workflow; absence of a remote does not justify invented push success.
 
 Android path recommendation: use a physical device with matching Expo Go for Stage 2 if available; otherwise arrange local SDK/emulator setup after agreement. Own development builds and APK signing remain later bounded tasks.
+
+## Stage 2 implementation — 2026-10-30
+
+User approved Stage 2 in the current request. Implemented in `apps/mobile/` (supersedes the earlier `mobile/` proposal). Single empty diary screen, theme tokens, strict TypeScript, safe areas and a clearly labeled placeholder Add Food alert. No real nutrition data or services.
+
+Verified: typecheck, lint, formatting, one AA contrast test, Expo Doctor 21/21, public Expo config and Android Hermes bundle export passed. `npm start -- --localhost` started Metro at port 8081; its status endpoint returned `packager-status:running`. This verifies development-server startup, not on-device rendering. No Android execution: adb/emulator unavailable on PATH, Android SDK variables unset and standard local SDK adb absent. Device layout, TalkBack and font scaling still require manual verification.
+
+Installed: Expo 57.0.31, React Native 0.86.3, React 19.2.3, safe-area-context 5.7.0, TypeScript 6.0.3, ESLint 9.39.5/config-expo 57.0.2, Prettier 3.9.10, Expo Doctor 1.21.5. Node 22.23.2/npm 10.9.8. Lockfile records transitive versions. SDK 57 follows current Expo Go transition guidance: https://docs.expo.dev/get-started/create-a-project/ . No navigation library needed yet.
+
+Known issues: npm audit retains 8 transitive advisories (5 low, 3 high) involving Expo tooling's deepmerge/zod chain after compatible `npm audit fix`; forced remediation proposes incompatible Expo 51 downgrade and was not applied. Resolve/reassess before release. Expo-selected ESLint 9 emits an upstream support warning; retain compatibility pending supported SDK upgrade. The Node contrast test emits a module-type detection warning but passes. No claim of production security readiness.
+
+Next: review Stage 2 and verify the screen on Android before Stage 3. Stage 3 has not begun.
+
+- [x] Mobile foundation and developer checks implemented and verified.
+- [ ] Android device launch, layout and interaction verification (tooling/device unavailable).
+- [ ] Review unresolved dependency advisories before release.

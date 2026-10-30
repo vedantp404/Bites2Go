@@ -2,7 +2,7 @@
 
 An Android nutrition tracker designed around everyday Indian meals, reliable food data, and optional AI-assisted logging.
 
-**Status: Stage 1 documentation foundation. No runnable application yet.** Product name is a working name based on the workspace folder. No services have been provisioned, dependencies installed, or code committed or pushed in this stage.
+**Status: Stage 2 mobile foundation implemented; Android device verification pending.** Product name is a working name based on the workspace folder. Stage 1 is committed as 458c3c1. Mobile dependencies are installed locally; no external services provisioned.
 
 ## Goals and scope
 
@@ -30,7 +30,19 @@ React Native + Expo + TypeScript for Android; Python + FastAPI + Pydantic for th
 | [Research](docs/RESEARCH.md) | Official source, provider, licensing and cost findings |
 | [GitHub workflow](docs/GITHUB_WORKFLOW.md) | Safe repository setup and contribution process |
 
-Only these documents, `.gitignore`, `.env.example`, and the root `AGENTS.md` entrypoint exist as project files today. Future folders are `mobile/`, `backend/`, and `supabase/migrations/`; see Architecture. They have not been scaffolded.
+Actual mobile structure:
+
+```text
+apps/mobile/
+  App.tsx                         # safe-area provider and screen
+  src/screens/WelcomeScreen.tsx   # empty diary and preview action
+  src/theme/tokens.ts             # reusable design system
+  tests/theme.test.mjs            # AA text contrast check
+  app.json, tsconfig.json, eslint.config.js
+  package.json, package-lock.json
+```
+
+Expo template assets and its MIT notice are retained; final product branding/license selection remains pending.
 
 ## Roadmap
 
@@ -51,11 +63,24 @@ Testing and security are requirements throughout, not work postponed to Stage 11
 
 ## Setup and testing
 
-No install, run, lint, or test scripts exist yet. Do not run Expo scaffolding in the repository root or supply credentials now. After Stage 2 approval, initialize inside `mobile/`, record the chosen Expo SDK and compatible runtime, and add reproducible npm scripts and a lockfile. Stage 2 will document actual commands and Android launch evidence. Backend setup follows in Stage 4.
+Requires Node 22.23.2 (tested), npm 10.9.8, and a compatible Android Expo Go installation for physical-device testing. No credentials needed.
 
-Observed: Node 22.23.2, npm 10.9.8, Python 3.13.13, Java 21.0.8 and Git 2.55.0.windows.3. Android SDK tools are unavailable on PATH; an emulator or physical device has not been tested. See Memory for compatibility risks.
+```powershell
+cd apps/mobile
+npm ci
+npm start
+npm run typecheck
+npm run lint
+npm test
+npm run format:check
+npm run doctor
+```
 
-`.env.example` documents future variable names only. Public mobile variables are bundled into the app and must never contain secrets. Read Security before using real user data. Do not commit meal photos, private diaries, tokens or database dumps.
+Use `npm run format` to format. On a physical phone, use matching SDK 57 Expo Go and scan Metro's QR code on the same network. Recheck Expo Go support when installing. `npm run android` requires a configured Android SDK and running emulator/USB device. None was available here. Verify initial screen, scrolling at large text sizes, safe areas, Add Food alert and reload. Android bundle export (`npx expo export --platform android`) passed; it does not produce an installable APK or verify device behavior.
+
+Typecheck, lint, formatting, one contrast test, Expo Doctor (21/21), config validation and bundle export passed. Metro started with `npm start -- --localhost`; device rendering remains unverified. Eight transitive npm advisories remain after compatible remediation; see Test Plan. Never use forced audit downgrades without compatibility review.
+
+Only public configuration may be bundled in the app. No `.env` is required. Backend setup is deferred.
 
 ## Screenshots
 

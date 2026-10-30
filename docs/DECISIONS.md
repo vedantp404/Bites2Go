@@ -30,3 +30,15 @@ Recorded 2026-10-30. “Confirmed” means supplied project constraints or direc
 - Before Stage 6/7: confirm goal bands, streak backfills and weight/date limits with product review. Start with manual targets; no automatic medical recommendations.
 - Before Stage 10/release: real-user consent, provider retention/region/age terms, evaluation budget, hosting region/cost and privacy obligations. No account-specific quotas or model reliability verified.
 - OneDrive workspace may interfere with file watching, long paths or Android builds. If observed, use a user-approved nonsynced checkout later; do not move the workspace preemptively. Java printed shared archive warnings; Android Gradle/JDK compatibility remains unverified.
+
+## Stage 2 implementation — 2026-10-30
+
+User approved Stage 2 in the current request. Implemented in `apps/mobile/` (supersedes the earlier `mobile/` proposal). Single empty diary screen, theme tokens, strict TypeScript, safe areas and a clearly labeled placeholder Add Food alert. No real nutrition data or services.
+
+Verified: typecheck, lint, formatting, one AA contrast test, Expo Doctor 21/21, public Expo config and Android Hermes bundle export passed. `npm start -- --localhost` started Metro at port 8081; its status endpoint returned `packager-status:running`. This verifies development-server startup, not on-device rendering. No Android execution: adb/emulator unavailable on PATH, Android SDK variables unset and standard local SDK adb absent. Device layout, TalkBack and font scaling still require manual verification.
+
+Installed: Expo 57.0.31, React Native 0.86.3, React 19.2.3, safe-area-context 5.7.0, TypeScript 6.0.3, ESLint 9.39.5/config-expo 57.0.2, Prettier 3.9.10, Expo Doctor 1.21.5. Node 22.23.2/npm 10.9.8. Lockfile records transitive versions. SDK 57 follows current Expo Go transition guidance: https://docs.expo.dev/get-started/create-a-project/ . No navigation library needed yet.
+
+Known issues: npm audit retains 8 transitive advisories (5 low, 3 high) involving Expo tooling's deepmerge/zod chain after compatible `npm audit fix`; forced remediation proposes incompatible Expo 51 downgrade and was not applied. Resolve/reassess before release. Expo-selected ESLint 9 emits an upstream support warning; retain compatibility pending supported SDK upgrade. The Node contrast test emits a module-type detection warning but passes. No claim of production security readiness.
+
+Next: review Stage 2 and verify the screen on Android before Stage 3. Stage 3 has not begun.
