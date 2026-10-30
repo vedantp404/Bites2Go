@@ -1,5 +1,11 @@
 # Project memory
 
+## Current handoff: My Meals & Recipes
+
+Explicit user request authorizes this focused feature after Stage11, working on clean master 1088789808dd7777c3739058cf30f3ca80630e83. Reused existing Recipe/Library v1 SQLite and diary snapshot pipeline; no migration or new model. MyFoods now separates My Meals and custom foods, shows ingredients/whole/per-serving nutrition, and provides Log Meal plus edit/delete. Profile/Add Food entry labels updated. Recipe editor reused; defaultFoodPortion shares one-serving recipe defaults between draft reducer and logging screen, while other foods remain 100 g. Same-item reselection preserves edits. Fractional/multiple servings log one combined entry; history/insights stay snapshot-based and unknowns remain null.
+
+Baseline 96 tests; focused 22 tests passed; final 98 tests, types/lint/format, Doctor 20/20, public config and Android export passed. Extended real SQLite close/reopen multi-ingredient/1.5-serving test plus retry, source edit/delete, calendar/insights and 0.5/2-serving integration coverage. Audit FAILS exit 1 unchanged 3 high / 5 low; no dependency/lockfile or cloud changes. No physical Android/emulator, signed install or live-backend test performed. Native acceptance remains in Test Plan. Commit/push outcome and hashes reported after verification; stop without AI food recognition or other features.
+
 ## Current handoff: Stage 11 final development acceptance
 
 User explicitly authorizes direct master commit/push after all development criteria pass, with the unchanged investigated audit excepted only for development. This supersedes earlier no-commit notes in historical entries. Fresh 96 tests, types/lint/format, Doctor20/20, config, Android export, isolated PostgreSQL and scoped credential scan pass; audit still FAILS exit1 with identical 3 high/5 low rows. No dependencies/schema changes, no known new regression in review. Production remains blocked pending remediation/formal security decision plus native/privacy release gates.

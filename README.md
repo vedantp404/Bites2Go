@@ -1,5 +1,11 @@
 # Bites2Go
 
+## My Meals & Recipes
+
+Open **Profile → My Meals & Recipes** (also available from Add Food). In **My Meals**, choose **Create meal / recipe**, add built-in or custom ingredients with gram quantities, enter the measured final meal weight and number of servings, and save. Saved meals show ingredients, combined calories/protein/carbs/fat/fiber and per-serving values. **Log Meal** opens one serving by default; enter 0.5, 1.5, 2 or another positive quantity, select the diary meal category, then confirm. It saves one combined diary entry using the selected date from Diary/Calendar, or today from Profile.
+
+Edit/delete through the meal card; previously logged nutrition remains unchanged. Ingredient snapshots also survive source changes. Unknown nutrients stay unknown. Existing recipes appear automatically; no migration or duplicate store. Core persistence is offline SQLite. For "My Power Sandwich", add missing bread/peanut butter/cashew ingredients as custom foods using their actual label data; no guessed catalogue values are added. Light/Dark/System themes use existing controls. AI/cloud remain disabled and the existing audit production blocker remains unresolved.
+
 ## Stage 11 — accepted for development; production release blocked
 
 Local hardening and 96 passing tests are documented in [Release readiness](docs/RELEASE_READINESS.md). Types/lint/format, Doctor, configuration, Android export and local SQL policy tests pass. Dependency audit remains **3 high / 5 low** with no verified compatible patch; no dependency changes or live cloud. The user explicitly accepts these documented findings for the Stage 11 development commit only; this is not production security clearance. Physical Android acceptance and signed-build installation remain pending.

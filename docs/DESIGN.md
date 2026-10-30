@@ -1,5 +1,9 @@
 # Design system and screen plan
 
+## My Meals presentation
+
+Profile and Add Food expose My Meals & Recipes. Existing themed library page presents My Meals first, with an empty state/create action and accessible cards for ingredient quantities, whole-meal known totals and per-serving nutrition. Unknown values have an explicit incomplete notice. Each card offers Log Meal and edit/delete; custom foods remain available below for missing ingredients. Recipe editor retains shared keyboard-aware fields, measured yield, serving count and confirmed deletion. Logging defaults to one serving, permits positive decimals and shows the converted grams and computed nutrition before confirmation. Existing safe areas, scalable text, touch targets and Light/Dark/System tokens are retained. Native visual/TalkBack checks remain manual.
+
 ## Stage 10 Insights presentation
 
 Progress links to a dedicated Nutrition insights stack screen; existing five tabs remain. Shared Light/Dark/System cards organize range controls, coverage, daily nutrition, selectable nutrient trend, averages, consistency, observations and weights. Custom date fields reuse the existing keyboard-aware page and require an explicit Apply action; invalid drafts leave the applied range unchanged. Previous/Next daily navigation stays within that range. Add Food carries the displayed date; generic Open food diary and Open weight progress navigate to existing destinations.

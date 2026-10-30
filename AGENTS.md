@@ -14,3 +14,5 @@ Read [RULES.md](RULES.md), [docs/MEMORY.md](docs/MEMORY.md), and [TASKS.md](TASK
 - Do not create meaningless commits, backdate work or split changes merely to manipulate the GitHub contribution graph.
 
 The mobile app lives in `apps/mobile/`. The user reports Stage 5 save/restart/edit/delete verification on Android. Stage 6 is implemented. Stage 7 is implemented. Stage 8 is implemented. Stage 9 backend foundation is implemented with cloud disabled. Stage 11 is accepted for development under explicit user criteria despite the documented failing audit (3 high / 5 low); production release remains blocked. Stop before any next stage and keep authentication/sync disabled. Read docs/BACKEND.md before enabling authentication or uploads. Calendar and redesign device/accessibility checks remain pending. See Memory for evidence and limitations.
+
+Current explicit authorization: implement My Meals & Recipes using the existing offline recipe/library/diary architecture. This supersedes earlier stop-before-next-stage text for this feature only. Preserve snapshots and the documented audit release blocker. Stop after My Meals; no AI food recognition or cloud activation.

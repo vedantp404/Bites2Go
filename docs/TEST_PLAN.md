@@ -1,5 +1,19 @@
 # Test strategy
 
+## My Meals verification
+
+Baseline 96 tests. Targeted `node --experimental-strip-types --test tests/library.test.mjs tests/food.test.mjs`: 22 pass. Final `npm test`: 98 pass; `npm run typecheck`, `npm run lint`, `npm run format:check`, Doctor 20/20, `npx expo config --type public`, Android export all pass. Audit exits1, unchanged 3 high / 5 low. No forced fixes, dependencies or schema changes. No SQL/cloud policy changes, so PostgreSQL tests were not rerun for this feature. No physical/native UI pass is claimed.
+
+New tests cover direct-route/search recipe defaults, same-item draft preservation, multi-ingredient calculated nutrients, 0.5/2 servings as one entry each, uncertain-write retries/concurrent identical saves, selected dates/categories, calendar index and insight totals, unknown fiber and snapshot preservation after source/recipe edit/delete. Existing real SQLite close/reopen test now persists a multi-ingredient recipe logged as 1.5 servings, verifies unchanged health/appearance, then deletes the recipe and reopens again with diary snapshot intact. Existing recipe validation/persistence tests retained.
+
+Pending Android acceptance (Light/Dark/System, large text and TalkBack):
+
+1. Open Profile → My Meals & Recipes, create missing custom ingredients from known label data, and create a named multi-ingredient meal with measured yield/servings. Inspect whole/per-serving values and incomplete-nutrient notices.
+2. Save, force-stop/reopen offline, and confirm existing/new recipes and ingredient quantities persist. Edit/delete only intended recipes, including canceling deletion.
+3. From a past Calendar/Diary date and category, open Add Food → My Meals, tap Log Meal and verify default 1 serving. Log 0.5 and 2 servings, confirming a single row each with scaled totals on the selected date/category; check Home/Diary/Calendar/Insights.
+4. Edit/delete the recipe and source food; confirm earlier logged names/nutrients do not change. Add a new log from the updated recipe and verify only that entry uses the new values.
+5. Verify quantity mode changes, same-recipe reselection, keyboard/Back, double taps and error/retry behavior; scroll through long labels/cards and confirm accessible controls and all supported nutrient values.
+
 ## Stage 11 final acceptance rerun
 
 All development checks rerun and passed: 96 tests, types/lint/format, Doctor20/20, config, Android bundle/source-map export, disposable local PostgreSQL policies and scoped current/history/export credential scan (zero findings). Audit FAILED exit1 with unchanged 3 high/5 low rows, explicitly excepted by user for development commit only. No Stage11 physical-device confirmation, signed-install or hosted-Supabase evidence. Prior general user Android testing is not a substitute. See RELEASE_READINESS.md for exact evidence and remaining production/manual gates.

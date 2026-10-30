@@ -29,11 +29,15 @@ import { createEntry, editPortion, diaryTotals } from '../src/domain/diary.ts';
 import { createDiaryRepository } from '../src/storage/diaryRepository.ts';
 import {
   createDraft,
+  defaultFoodPortion,
   foodDraftReducer,
   scaleNutrients,
   sumNutrients,
 } from '../src/domain/food.ts';
 import { foods } from '../src/data/foods.ts';
+import { buildInsights } from '../src/domain/insights.ts';
+import { emptyHealth } from '../src/domain/health.ts';
+import { indexDiaryDates } from '../src/domain/calendar.ts';
 const now = '2026-10-30T12:00:00.000Z';
 const values = { calories: 200, protein: 10, carbs: 20, fat: 5, fiber: null };
 const custom = (id = 'custom:a') => ({
@@ -438,7 +442,10 @@ test('library and real diary entries survive SQLite close/reopen without health/
     let data = saveCustom(emptyLibrary(), custom());
     data = saveRecipe(
       data,
-      recipe([ingredientFromFood('custom:a', libraryFoods(data, foods), 100)]),
+      recipe([
+        ingredientFromFood('custom:a', libraryFoods(data, foods), 100),
+        ingredientFromFood('banana', foods, 200),
+      ]),
     );
     data = setFavourite(data, 'recipe:a', true, foods);
     await repo.save(data, emptyLibrary());
@@ -446,7 +453,7 @@ test('library and real diary entries survive SQLite close/reopen without health/
       recipeAsFood(data.recipes[0]),
       'Lunch',
       '2026-10-29',
-      150,
+      portionGrams('1.5', 'servings', recipeAsFood(data.recipes[0])),
       'logged',
       now,
     );
@@ -476,4 +483,130 @@ test('library and real diary entries survive SQLite close/reopen without health/
     assert.ok(directory.includes('bites2go-library-test-'));
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test('meal selection defaults to one serving; switching foods resets quantity but reselecting preserves edits', () => {
+  let draft = foodDraftReducer(createDraft('Lunch'), {
+    type: 'select',
+    id: 'recipe:a',
+  });
+  assert.deepEqual(defaultFoodPortion(draft.foodId), {
+    mode: 'servings',
+    quantity: '1',
+  });
+  assert.equal(draft.grams, '1');
+  assert.equal(draft.meal, 'Lunch');
+  draft = foodDraftReducer(draft, { type: 'grams', value: '0.5' });
+  draft = foodDraftReducer(draft, { type: 'back' });
+  assert.equal(
+    foodDraftReducer(draft, { type: 'select', id: 'recipe:a' }).grams,
+    '0.5',
+  );
+  assert.equal(
+    foodDraftReducer(draft, { type: 'select', id: 'recipe:b' }).grams,
+    '1',
+  );
+  for (const id of ['banana', 'custom:a']) {
+    assert.deepEqual(defaultFoodPortion(id), {
+      mode: 'grams',
+      quantity: '100',
+    });
+    assert.equal(foodDraftReducer(draft, { type: 'select', id }).grams, '100');
+  }
+});
+
+test('multi-ingredient meals log fractional/multiple servings as one snapshot each, with safe retries and history integration', async () => {
+  const { state, storage } = memory();
+  const library = createLibraryRepository(storage),
+    diary = createDiaryRepository(storage);
+  let data = saveCustom(emptyLibrary(), custom());
+  const ingredients = [
+    ingredientFromFood('banana', foods, 80),
+    ingredientFromFood('almonds', foods, 20),
+    ingredientFromFood('custom:a', libraryFoods(data, foods), 100),
+  ];
+  const meal = { ...recipe(ingredients), yieldGrams: 200, servings: 2 };
+  data = saveRecipe(data, meal);
+  await library.save(data, emptyLibrary());
+  const food = recipeAsFood((await library.load()).recipes[0]);
+  for (const [quantity, date, category] of [
+    ['0.5', '2026-10-28', 'Breakfast'],
+    ['2', '2026-10-29', 'Dinner'],
+  ]) {
+    const grams = portionGrams(quantity, 'servings', food);
+    const entry = createEntry(
+      food,
+      category,
+      date,
+      grams,
+      `meal-${quantity}`,
+      now,
+    );
+    state.ackError = true;
+    await assert.rejects(diary.save(entry));
+    state.ackError = false;
+    await Promise.all([diary.save(entry), diary.save(entry)]);
+    const logged = await diary.loadDate(date);
+    assert.equal(logged.length, 1);
+    assert.equal(logged[0].meal, category);
+    assert.equal(logged[0].foodId, meal.id);
+    for (const key of ['calories', 'protein', 'carbs', 'fat']) {
+      const expectedTotal = ingredients.reduce(
+        (sum, i) => sum + (i.reference[key] * i.grams) / 100,
+        0,
+      );
+      close(recipeNutrition(meal).total.values[key], expectedTotal);
+      close(
+        logged[0].nutrients[key],
+        (expectedTotal / meal.servings) * Number(quantity),
+      );
+      close(diaryTotals(logged).values[key], logged[0].nutrients[key]);
+    }
+    assert.equal(logged[0].nutrients.fiber, null);
+  }
+  const snapshots = await diary.loadAll();
+  assert.equal(snapshots.length, 2);
+  assert.equal(indexDiaryDates(snapshots).get('2026-10-28').length, 1);
+  const report = buildInsights(
+    snapshots,
+    emptyHealth(),
+    { start: '2026-10-28', end: '2026-10-29' },
+    '2026-10-30',
+  );
+  for (const day of report.days) {
+    assert.equal(day.entryCount, 1);
+    assert.equal(
+      day.nutrients.calories.value,
+      snapshots.find((e) => e.date === day.date).nutrients.calories,
+    );
+    assert.equal(day.nutrients.calories.eligible, false);
+    assert.equal(day.nutrients.fiber.partial, true);
+  }
+  let changed = saveCustom(
+    data,
+    { ...custom(), servingNutrients: { ...values, calories: 999 } },
+    true,
+  );
+  changed = saveRecipe(
+    changed,
+    {
+      ...meal,
+      name: 'Updated meal',
+      servings: 4,
+      ingredients: [ingredientFromFood('banana', foods, 50)],
+    },
+    true,
+  );
+  await library.save(changed, data);
+  assert.notEqual(
+    recipeAsFood(changed.recipes[0]).nutrients.calories,
+    food.nutrients.calories,
+  );
+  const deleted = removeLibraryItem(
+    removeLibraryItem(changed, meal.id),
+    'custom:a',
+  );
+  await library.save(deleted, changed);
+  assert.deepEqual(await createDiaryRepository(storage).loadAll(), snapshots);
+  assert.equal((await library.load()).recipes.length, 0);
 });

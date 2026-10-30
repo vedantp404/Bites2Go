@@ -1,5 +1,11 @@
 # Architecture proposal
 
+## My Meals & Recipes
+
+The existing `/my-foods` route now separates My Meals from custom foods. Recipe cards expose ingredients, whole/per-serving calculated values, Log Meal and edit/delete. Reuse RecipeScreen CRUD, LibraryProvider/libraryRepository and the unchanged `bites2go.library.v1` document. No new table, schema or duplicated meal model; existing recipes immediately appear.
+
+`defaultFoodPortion` supplies recipe defaults (one serving) and other food defaults (100 g); foodDraftReducer and FoodSearchScreen share it for direct routes and search selections. Reselecting the same item retains the edited quantity/mode. `recipeAsFood` and `portionGrams` feed `createEntry` and the existing queued/idempotent diary repository; one combined entry reaches the unchanged date index, daily totals and insights. No source lookup rewrites historical snapshots. Ingredient nutrition remains a saved snapshot until explicitly removed/re-added; incomplete values remain null. No nutrition constants, dependency changes or cloud/AI calls added.
+
 ## Stage 11 hardening
 
 Diary validation groups entries once by date before checking daily totals, preserving entry order and existing snapshot/schema semantics. Exiting uncertain diary mutations reloads authoritative persisted state and hides stale displayed entries while loading. Checkpoint persistence (still unmounted) preserves acknowledged revisions/tombstones monotonically, even when supplied the current original snapshot. No schema, dependency or live-cloud changes. Evidence and unresolved release gates: [Release readiness](RELEASE_READINESS.md).

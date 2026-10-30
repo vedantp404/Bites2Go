@@ -91,7 +91,7 @@ function Editor({ initial, item }: { initial: Library; item?: Recipe }) {
     /* Show a preview only for valid quantities/yield. */
   }
   return (
-    <HealthPage title={item ? 'Edit recipe' : 'Create recipe'}>
+    <HealthPage title={item ? 'Edit meal / recipe' : 'Create meal / recipe'}>
       <Action
         variant="secondary"
         label="Cancel / Back"
@@ -102,7 +102,7 @@ function Editor({ initial, item }: { initial: Library; item?: Recipe }) {
         <FoodImage foodId={id} />
         <Field
           text
-          label="Recipe name (1–120 characters)"
+          label="Meal / recipe name (1–120 characters)"
           value={name}
           onChangeText={setName}
           disabled={form.disabled}
@@ -255,7 +255,7 @@ function Editor({ initial, item }: { initial: Library; item?: Recipe }) {
             ? 'Saving...'
             : form.pending
               ? 'Retry pending library change'
-              : 'Confirm and save recipe'
+              : 'Confirm and save meal'
         }
         disabled={form.busy}
         onPress={() => {

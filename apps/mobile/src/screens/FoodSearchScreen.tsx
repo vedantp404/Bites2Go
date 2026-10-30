@@ -37,6 +37,7 @@ import { foods } from '../data/foods';
 import {
   meals,
   createDraft,
+  defaultFoodPortion,
   foodDraftReducer,
   scaleNutrients,
 } from '../domain/food';
@@ -65,7 +66,9 @@ export default function FoodSearchScreen() {
   const library = useLibrary();
   const [filter, setFilter] = useState<LibraryFilter>('All');
   const [quantityMode, setQuantityMode] = useState<'grams' | 'servings'>(
-    'grams',
+    () =>
+      defaultFoodPortion(typeof routeFoodId === 'string' ? routeFoodId : null)
+        .mode,
   );
   const available = libraryFoods(library.data ?? emptyLibrary(), foods);
   const [busy, setBusy] = useState(false);
@@ -126,7 +129,7 @@ export default function FoodSearchScreen() {
   }
   const select = (id: string) => {
     Keyboard.dismiss();
-    if (draft.foodId !== id) setQuantityMode('grams');
+    if (draft.foodId !== id) setQuantityMode(defaultFoodPortion(id).mode);
     dispatch({ type: 'select', id });
   };
   async function save() {
@@ -187,7 +190,11 @@ export default function FoodSearchScreen() {
           </Text>
         </Pressable>
         <Text accessibilityRole="header" style={ui.title}>
-          {draft.detail ? 'Food details' : 'Find food'}
+          {draft.detail
+            ? selected?.id.startsWith('recipe:')
+              ? 'Log Meal'
+              : 'Food details'
+            : 'Find food'}
         </Text>
         <Text style={ui.label}>
           {date ?? 'Invalid date'} / {draft.meal ?? 'Choose a meal below'}
@@ -227,6 +234,13 @@ export default function FoodSearchScreen() {
                   </Text>
                   <Nutrition values={selected.nutrients} />
                   <Text style={ui.body}>{selected.source}</Text>
+                  {selected.id.startsWith('recipe:') ? (
+                    <Text style={ui.body}>
+                      Log this whole meal as one diary entry. Choose 0.5, 1, 2
+                      or another positive number of servings below. Later recipe
+                      changes will not change this logged nutrition.
+                    </Text>
+                  ) : null}
                   <FavouriteButton
                     key={selected.id}
                     food={selected}
@@ -359,7 +373,9 @@ export default function FoodSearchScreen() {
                         ? 'Saving...'
                         : attempted
                           ? 'Retry saving this entry'
-                          : 'Confirm and save food'
+                          : selected.id.startsWith('recipe:')
+                            ? 'Confirm and Log Meal'
+                            : 'Confirm and save food'
                     }
                     disabled={
                       busy ||
@@ -387,7 +403,7 @@ export default function FoodSearchScreen() {
             <>
               <Action
                 variant="secondary"
-                label="My foods / create food or recipe"
+                label="My Meals & Recipes / custom foods"
                 onPress={() =>
                   router.push({
                     pathname: '/my-foods',

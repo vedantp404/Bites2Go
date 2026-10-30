@@ -119,3 +119,7 @@ Keep SDK 58 and the lockfile unchanged: current compatible Expo CLI requires vul
 ## Stage 11 final acceptance decision (2026-10-30)
 
 Explicit user instruction supersedes the earlier audit-based commit hold: accept Stage 11 for continued development when intended diff, tests/static/Expo/export/local-SQL/credential checks pass and the audit remains accurately disclosed. Final checks pass except unchanged audit exit1 (3 high/5 low). This is a development-only exception, not production release clearance or a finding suppression. No dependency changes. Commit/push directly to master, verify remote hash, stop without starting another stage.
+
+## My Meals implementation plan
+
+Reuse Stage 8 Recipe/Library v1 and the existing recipeAsFood → portionGrams → createEntry → diary repository pipeline. Expose a distinct My Meals section in the existing library route, with ingredient/nutrition summaries and explicit Log Meal actions. Recipe selection defaults to one serving; other foods retain 100 g, with same-selection drafts preserved. Existing recipe editor supplies CRUD, measured yield and serving count. No second meal schema, migration, database, dependency or nutrition engine. Extend end-to-end domain/storage tests for multi-ingredient recipes, fractional/multiple servings, retries, history and insights. Keep AI/cloud disabled and the dependency-audit production blocker explicit.

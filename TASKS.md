@@ -1,5 +1,17 @@
 # Ordered roadmap
 
+## My Meals & Recipes — implemented
+
+- [x] Inspect/reuse recipe/library/diary schemas and snapshots on clean master 1088789808dd7777c3739058cf30f3ca80630e83; baseline 96 tests passed.
+- [x] Expose My Meals with create/view/edit/delete, ingredient/whole/per-serving nutrition and explicit Log Meal actions.
+- [x] Default recipe selection to one serving with fractional/multiple serving entry; preserve date/category and one combined diary snapshot.
+- [x] Extend nutrition, serving-default, retry/deduplication, history/insights and SQLite close/reopen coverage; 22 targeted and 98 full tests pass.
+- [x] Final types/lint/format, Doctor 20/20, public configuration and Android export pass; no dependencies, schema, AI or cloud changes.
+- [x] Document workflow, architecture and current results; audit still FAILS unchanged (3 high/5 low), production blocker retained.
+- [ ] Physical Android My Meals acceptance checklist in TEST_PLAN.md. No native verification claimed.
+
+Stop after My Meals. AI food recognition remains deferred.
+
 ## Stage 11: development acceptance passed; production release blocked
 
 - [x] Verify clean master/origin at 369d562b7bfeee014810d9236f1097bef2d2ce85 and rerun baseline 93 tests/checks.

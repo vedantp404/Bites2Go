@@ -49,7 +49,7 @@ export default function ProfileScreen() {
         />
         <Action
           variant="secondary"
-          label="My foods and recipes"
+          label="My Meals & Recipes"
           onPress={() => router.push('/my-foods')}
         />
         <BmiCard />

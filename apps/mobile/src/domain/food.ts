@@ -78,6 +78,14 @@ export type FoodDraft = {
   detail: boolean;
   confirmed: boolean;
 };
+export function defaultFoodPortion(id: string | null | undefined): {
+  mode: 'grams' | 'servings';
+  quantity: string;
+} {
+  return id?.startsWith('recipe:')
+    ? { mode: 'servings', quantity: '1' }
+    : { mode: 'grams', quantity: '100' };
+}
 export function createDraft(value: string | string[] | undefined): FoodDraft {
   return {
     meal: mealContext(value),
@@ -109,7 +117,10 @@ export function foodDraftReducer(
         ...state,
         foodId: action.id,
         detail: true,
-        grams: state.foodId === action.id ? state.grams : '100',
+        grams:
+          state.foodId === action.id
+            ? state.grams
+            : defaultFoodPortion(action.id).quantity,
         confirmed: state.foodId === action.id && state.confirmed,
       };
     case 'grams':
