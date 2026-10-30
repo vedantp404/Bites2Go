@@ -205,7 +205,7 @@ export default function CalendarScreen() {
         <DiaryStatus />
         {entries ? (
           <>
-            <DaySummary entries={entries} />
+            <DaySummary entries={entries} date={state.selected} />
             <DiaryMeals
               entries={entries}
               date={state.selected}

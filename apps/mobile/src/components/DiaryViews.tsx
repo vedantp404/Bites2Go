@@ -1,3 +1,6 @@
+import { useHealth } from '../state/HealthProvider';
+import { targetsForDate, unsetTargets } from '../domain/health';
+import { HealthStatus } from './HealthControls';
 import { FoodImage } from './FoodImage';
 import { Text, View, Pressable } from 'react-native';
 import { router } from 'expo-router';
@@ -9,7 +12,6 @@ import { diaryTotals } from '../domain/diary';
 import type { DiaryEntry } from '../domain/diary';
 import { formatNutrient, meals } from '../domain/food';
 
-import { previewTargets } from '../data/dashboardPreview';
 export function DiaryStatus() {
   const { ui } = useUI();
   const diary = useDiary();
@@ -33,11 +35,20 @@ export function DiaryStatus() {
     </Card>
   );
 }
-export function DaySummary({ entries }: { entries: DiaryEntry[] }) {
+export function DaySummary({
+  entries,
+  date,
+}: {
+  entries: DiaryEntry[];
+  date: string;
+}) {
+  const { data } = useHealth();
+  const targets = data ? targetsForDate(data, date) : unsetTargets;
   const { ui, t } = useUI();
   const total = diaryTotals(entries);
   return (
     <Card>
+      <HealthStatus />
       <Text style={ui.label}>
         {entries.length
           ? 'Recorded intake'
@@ -65,11 +76,11 @@ export function DaySummary({ entries }: { entries: DiaryEntry[] }) {
         <CalorieRing
           consumed={total.values.calories}
           partial={total.partial.calories}
-          target={previewTargets.calories}
+          target={targets.calories}
         />
         <View>
-          <Text style={ui.heading}>{previewTargets.calories}</Text>
-          <Text style={ui.body}>sample target</Text>
+          <Text style={ui.heading}>{targets.calories ?? 'Not set'}</Text>
+          <Text style={ui.body}>daily target</Text>
         </View>
       </View>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16 }}>
@@ -89,14 +100,14 @@ export function DaySummary({ entries }: { entries: DiaryEntry[] }) {
             }
             consumed={total.values[key]}
             partial={total.partial[key]}
-            target={previewTargets[key]}
+            target={targets[key]}
             unit="g"
           />
         ))}
       </View>
       <Text style={ui.body}>
-        Targets are sample settings, not medical recommendations. Food nutrition
-        is illustrative.
+        Targets shown are effective for {date}. Set your own in Profile. Food
+        nutrition is illustrative; targets are not medical recommendations.
       </Text>
     </Card>
   );

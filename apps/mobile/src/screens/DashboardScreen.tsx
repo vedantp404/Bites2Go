@@ -45,7 +45,7 @@ export default function DashboardScreen() {
         <DiaryStatus />
         {entries ? (
           <>
-            <DaySummary entries={entries} />
+            <DaySummary entries={entries} date={date} />
             <AddFood date={date} />
           </>
         ) : null}

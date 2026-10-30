@@ -1,5 +1,15 @@
 # Design system and screen plan
 
+## Stage 7 progress and settings
+
+Reuse the existing Light/Dark/System tokens, cards, 48 dp actions, safe areas and keyboard-aware scroll containers. Progress separates latest measurement, weight goal, dated chart/history and BMI. History is the accessible textual equivalent of the SVG chart; no line interpolation or invented missing-day values. Points and progress fills use theme primary, labels use text/muted, and errors use error tokens.
+
+Goals and height live in one clearly labeled editor reached from Profile or Progress. Numeric fields display units and limits, and blank/zero behavior is explained before confirmation. Date entry uses YYYY-MM-DD with a keyboard that supports separators; future and duplicate dates have explicit errors. Deletion uses a themed confirmation with Cancel, Android Back dismissal and no write until confirmation.
+
+Home/Diary/Calendar retain existing meal content and display targets for their own date. Consumed, target and remaining/over-target labels are distinct. Zero targets are visibly disabled. Partial/null nutrition suppresses exact remaining/percentage. No sample personal goals or progress. BMI shows inputs/date and one decimal with adult screening limitations; no health-category colors or recommendations.
+
+Manual narrow-screen, large-font, TalkBack/modal focus, keyboard, system-appearance and native startup acceptance remains pending.
+
 ## Implemented visual direction: Vibrant Food App
 
 This section supersedes the historical Stage 1 palette below. `src/theme/tokens.ts` owns both complete semantic palettes; screens subscribe through `useTheme` / `useUI` rather than importing a static theme. Light uses warm #FAF7F0, white surfaces, #176044 green and #A64321 accents; Dark uses #151C18 / #202B24 charcoal, #9DE3B1 green and #FFB58F accents. Use `onPrimary` for button text, never `surface`. Semantic tokens include elevated surfaces, selected/input/disabled states, success/warning/error, hero and macro colors.

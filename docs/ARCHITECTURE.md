@@ -1,5 +1,19 @@
 # Architecture proposal
 
+## Stage 7 storage, initialization and calculations
+
+`domain/health.ts` owns weight/settings validation, canonical normalization, goal-date selection, BMI, weight progress and chart coordinates. `nutrientProgress` delegates arithmetic to the existing dashboard `progress`; consumption still comes from diary snapshot totals. It suppresses exact remaining/progress for null or partial totals. No second nutrient-scaling engine.
+
+`storage/healthRepository.ts` uses the same injected KV interface and serialized read/validate/compare/write pattern as the diary repository. Production adapter uses existing expo-sqlite/kv-store, whose SELECT/UPSERT bind key/value parameters. No SQL is interpolated in app code. Writes validate before serialization (so NaN cannot silently become null), reread persisted data, reject stale originals and acknowledge identical retry payloads without duplication. Malformed/unknown-version records block reads/writes; bytes are not cleared or silently reset.
+
+Additive initial migration: absent `bites2go.health.v1` key becomes an in-memory empty version-1 document; first confirmed write creates the key in the existing SQLite `storage` table. No new SQL tables/columns or changes to SQLite user_version are needed. Diary `bites2go.diary.v1` and appearance `bites2go.appearance.v1` stay byte-independent. Future document versions require explicit tested migration; unknown versions currently stop safely.
+
+Schema: `{version:1, weights:[{id,date,kg,unit:'kg'}], nutritionGoals:[{date,targets:{calories,protein,carbs,fat}}], heightCm:number|null, weightGoal:{targetKg,setDate,start:{kg,date}|null}|null}`. Numeric targets are nullable; zero disables percentages. Dates use validated local YYYY-MM-DD keys (1900 onward); record writes reject future dates. Weight IDs and dates are unique. Canonical load sorts histories by date. The unit discriminator and canonical kg/cm keep future conversion out of persisted historical values.
+
+`HealthProvider` owns successful saved snapshots and error/retry state. Shared form logic detaches drafts, locks writes/Back during submission, retains the exact pending document for uncertain-write retries, and reloads if leaving after an uncertain save. Full-document conflict detection avoids lost unrelated settings. This is a single-runtime writer contract, appropriate to this local app; large histories/multiple writers need a reviewed indexed-row/transaction migration.
+
+Existing five tabs remain. Progress exposes history/chart/BMI; Profile retains appearance and links to the new `/goals` route. `/weight-entry` handles add/edit/date changes and confirmed deletion. React-native-svg already exists and draws time-spaced dots only; exact values/dates are readable in the history below. No chart/date-picker dependencies were added. Native rendering and persistence across actual Android process death remain manual acceptance items despite the real SQLite close/reopen test.
+
 ## Appearance and image presentation
 
 `src/theme/appearance.ts` is a pure, testable preference store with synchronous subscriber notification and asynchronous persistence. It validates the three allowed values, defaults to System, serializes selection by disabling concurrent writes, and exposes read/write errors. Failed writes retain the selected session appearance and offer explicit retry without claiming persistence. Invalid stored values are preserved until the user selects a replacement.

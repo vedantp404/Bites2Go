@@ -1,5 +1,17 @@
 # Ordered roadmap
 
+## Current task: Stage 7 weight, goals and BMI
+
+- [x] Verify clean synchronized master at 2214b4861f0522be4f1c806d384f112d49008a99 and inspect project/storage/theme conventions.
+- [x] Implement validated kg records with local dates, unique dates/IDs, edit/delete confirmation, chronological history and actual-point chart.
+- [x] Implement effective-dated calorie/protein/carbs/fat targets and consume them in Home, Diary and Calendar without rewriting historical targets or nutrition snapshots.
+- [x] Add cm height, numeric adult BMI and explicit gain/loss/maintenance weight goals with safe missing/equal-baseline cases.
+- [x] Add isolated versioned SQLite KV persistence, retry/stale-write checks and non-destructive empty initialization.
+- [x] Verify 51 tests including SQLite close/reopen; typecheck, lint, formatting, Doctor 20/20, config and Android export.
+- [x] Update product, design, architecture/migration, security, test and memory documentation; disclose unchanged audit findings.
+- [ ] User verifies Stage 7 on Android (restart, keyboard/Back, historical CRUD/goals, narrow layout, all themes and TalkBack).
+- [ ] User review before Stage 8; do not start it automatically.
+
 ## Current task: visual redesign and appearance
 
 - [x] Verify clean master at Stage 6 commit 1f61e752422f2c13b251d05ff24326caaa360d44.

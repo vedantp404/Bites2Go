@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { useMemo, type PropsWithChildren } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { progress } from '../domain/dashboard';
+import { nutrientProgress } from '../domain/health';
 import type { Theme } from '../theme/tokens';
 import { useTheme } from '../theme/ThemeProvider';
 const makeUI = (t: Theme) =>
@@ -54,8 +54,9 @@ export function PreviewNotice() {
     >
       <Text style={ui.label}>NUTRITION DATA NOTICE</Text>
       <Text style={ui.body}>
-        Saved entries use illustrative food values. Targets are sample settings,
-        not medical recommendations. No sample meals are counted automatically.
+        Saved entries use illustrative food values. Personal targets are
+        tracking settings, not medical recommendations. No sample meals are
+        counted automatically.
       </Text>
     </View>
   );
@@ -123,17 +124,17 @@ export function NutrientProgress({
 }: {
   label: string;
   consumed: number | null;
-  target: number;
+  target: number | null;
   unit: string;
   color?: string;
   compact?: boolean;
   partial?: boolean;
 }) {
   const { ui, t } = useUI();
-  const value = progress(consumed ?? 0, target);
+  const value = nutrientProgress(consumed, target, partial);
   const incomplete = partial || consumed === null;
   const amount = consumed === null ? 'Unknown' : consumed.toFixed(1);
-  const description = `${label}: ${amount}${incomplete ? ' (incomplete data)' : ''} of ${target} ${unit}${incomplete ? ', percentage unavailable' : value.percent === null ? ', target not set' : `, ${Math.round(value.percent)} percent`}`;
+  const description = `${label}: ${amount}${incomplete ? ' (incomplete data)' : ''} of ${target ?? 'unset'} ${unit}${incomplete ? ', percentage unavailable' : value.percent === null ? ', target not set' : `, ${Math.round(value.percent)} percent`}`;
   return (
     <View
       accessible
@@ -155,11 +156,16 @@ export function NutrientProgress({
       <View style={compact ? { gap: 4 } : ui.row}>
         <Text style={ui.label}>{label}</Text>
         <Text style={ui.body}>
-          {amount}
-          {incomplete ? ' (incomplete)' : ''} /{' '}
-          {target > 0 ? target : 'Not set'} {unit}
+          {amount} consumed
+          {incomplete ? ' (incomplete)' : ''} / {target ?? 'Not set'} {unit}{' '}
+          target{target === 0 ? ' (disabled)' : ''}
         </Text>
       </View>
+      <Text style={ui.body}>
+        {value.remaining === null
+          ? 'Remaining unavailable'
+          : `${Math.abs(value.remaining).toFixed(1)} ${unit} ${value.remaining < 0 ? 'over target' : 'remaining'}`}
+      </Text>
       <View
         style={{
           height: 5,

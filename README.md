@@ -1,5 +1,15 @@
 # Bites2Go
 
+## Stage 7: weights, goals and BMI
+
+Progress now provides dated kg measurements, latest/all-time change, edit/delete confirmation, a chart of actual recorded points and gain/loss/maintenance goal tracking. Profile and Progress link to Goals and height. BMI uses saved height and latest dated weight, displays one decimal and makes no diagnosis or weight-category classification.
+
+Personal calorie/protein/carbohydrate/fat targets start unset. Save your own targets in Profile; Home, Diary and Calendar use the targets effective on the displayed date. Earlier goal history is preserved. Zero disables progress; unknown nutrients keep remaining amounts unavailable. Existing illustrative food values are unchanged.
+
+Weights, height and goals use a separate local SQLite KV document (`bites2go.health.v1`). Diary and appearance records are untouched. One weight per local date; future measurements are rejected. No backend, sync or new packages. [Architecture](docs/ARCHITECTURE.md) documents initialization, validation and conflict/retry handling; [Test Plan](docs/TEST_PLAN.md) contains the Android acceptance checklist.
+
+51 automated tests, TypeScript, lint, formatting, Expo Doctor 20/20, configuration validation and Android export passed during implementation. Audit remains 5 low / 3 high. Physical-device and rendered accessibility/theme verification is pending. Stage 8 is not implemented.
+
 ## Visual redesign and appearance
 
 The app now uses the Vibrant Food App direction: warm light surfaces, charcoal dark surfaces, green actions, restrained orange accents, rounded cards, local food photography and consistent navigation.

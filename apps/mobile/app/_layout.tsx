@@ -1,3 +1,4 @@
+import { HealthProvider } from '../src/state/HealthProvider';
 import { DiaryProvider } from '../src/state/DiaryProvider';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeProvider';
 import {
@@ -41,24 +42,31 @@ function App() {
     >
       <NavigationThemeProvider value={navigationTheme}>
         <DiaryProvider>
-          <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
-          <NavigationBar style={mode === 'dark' ? 'light' : 'dark'} />
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: t.colors.background },
-            }}
-          >
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen
-              name="food-search"
-              options={{ gestureEnabled: false }}
-            />
-            <Stack.Screen
-              name="diary-entry"
-              options={{ gestureEnabled: false }}
-            />
-          </Stack>
+          <HealthProvider>
+            <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
+            <NavigationBar style={mode === 'dark' ? 'light' : 'dark'} />
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: t.colors.background },
+              }}
+            >
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen
+                name="weight-entry"
+                options={{ gestureEnabled: false }}
+              />
+              <Stack.Screen name="goals" options={{ gestureEnabled: false }} />
+              <Stack.Screen
+                name="food-search"
+                options={{ gestureEnabled: false }}
+              />
+              <Stack.Screen
+                name="diary-entry"
+                options={{ gestureEnabled: false }}
+              />
+            </Stack>
+          </HealthProvider>
         </DiaryProvider>
       </NavigationThemeProvider>
     </View>

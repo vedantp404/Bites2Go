@@ -1,5 +1,13 @@
 # Security and privacy plan
 
+## Stage 7 local health-data boundary
+
+Weights, height, personal goals and BMI inputs are sensitive personal data. They are kept in a separate local SQLite KV document, with no new network calls, permissions, analytics, accounts or cloud storage. Device/OS backup and access risks from Stage 5 still apply: this is not app-encrypted storage; clearing/uninstalling host/app data can lose records. Do not use real user data in tests or commit databases, exports or health payloads.
+
+Validate numeric limits, finite values, units, document versions, dates and duplicate identities before writing. Corrupt/unknown records remain recoverable, with mutations blocked and no destructive fallback. Atomic single-key writes, serialized operations, stale-snapshot rejection and idempotent identical retries prevent accidental overwrite/duplication in the app's single-writer model. Expo's existing KV implementation uses parameterized SELECT/UPSERT. No raw values appear in error logs.
+
+The SQLite restart test creates synthetic data only in an isolated temporary database and removes it after closing. Physical Android persistence, device-lock/backup policy and a future export/deletion/privacy release review are not established by automated tests. Existing 5 low / 3 high Expo-tooling advisories remain; no forced dependency changes.
+
 ## Current Stage 5 local-data boundary
 
 Stage 5 intentionally stores personal diary entries locally in Expo SQLite, without app-added uploads, analytics, accounts, tracking or new runtime permissions. Existing future backend/RLS plans below are not implemented and are not prerequisites for this explicitly authorized local-only scope.

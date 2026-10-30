@@ -46,7 +46,7 @@ export default function DiaryScreen() {
         <DiaryStatus />
         {entries ? (
           <>
-            <DaySummary entries={entries} />
+            <DaySummary entries={entries} date={date} />
             <DiaryMeals entries={entries} date={date} />
           </>
         ) : null}

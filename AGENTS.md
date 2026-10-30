@@ -13,4 +13,4 @@ Read [RULES.md](RULES.md), [docs/MEMORY.md](docs/MEMORY.md), and [TASKS.md](TASK
 - If tests fail, a merge conflict occurs, or authentication/permissions prevent pushing, stop and report the problem accurately. Preserve changes; never claim success without confirming command output.
 - Do not create meaningless commits, backdate work or split changes merely to manipulate the GitHub contribution graph.
 
-The mobile app lives in `apps/mobile/`. The user reports Stage 5 save/restart/edit/delete verification on Android. Stage 6 is implemented. The visual redesign and appearance milestone is authorized; stop before Stage 7. Calendar and redesign device/accessibility checks remain pending. See Memory for evidence and limitations.
+The mobile app lives in `apps/mobile/`. The user reports Stage 5 save/restart/edit/delete verification on Android. Stage 6 is implemented. Stage 7 weight tracking, manual goals and BMI is authorized; stop before Stage 8. Calendar and redesign device/accessibility checks remain pending. See Memory for evidence and limitations.

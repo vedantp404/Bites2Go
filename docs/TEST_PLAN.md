@@ -1,5 +1,23 @@
 # Test strategy
 
+## Stage 7 verification
+
+51 tests pass (0 failures/skips): the existing 37 regressions plus 14 health tests covering bounds and malformed inputs, valid local/leap dates, duplicates and ordering, detached edit/delete, effective-dated goals and zero/unset, remaining and excess/unknown nutrients, BMI and display precision, gain/loss/maintenance/overshoot, stable goal baselines, actual chart date spacing, corrupt/unsupported data, retry and stale-write safety, SQLite close/reopen isolation, timezone/DST and measurements predating the goal baseline.
+
+The SQLite test uses Node's built-in SQLite with the same parameterized KV table/query shape, closes and reopens a temporary database, and verifies both saved health data and untouched diary/appearance keys. It does not execute Expo's Android bridge. Existing appearance persistence/token contrast tests pass; rendered Light/Dark/System screens are not automated UI tests.
+
+Typecheck, lint, formatting, Expo Doctor 20/20, public config and Android export passed during implementation. Initial hook lint errors were fixed with React state for rendered pending status and asynchronous reload state updates. A test caught NaN being serialized to null; validation now runs before serialization. Final review also suppressed goal percentage when the current measurement predates the saved baseline. Node's SQLite experimental/module-type warnings and Metro color warnings remain visible, not suppressed.
+
+Fresh npm audit is unchanged: 8 affected packages, 5 low/3 high. Root advisories are deepmerge GHSA-gcqx-w48m-w2h4 and zod GHSA-mrhx-c7xc-m3w5 propagating through Expo tooling. No dependencies changed and no forced fixes.
+
+Pending Android acceptance:
+
+1. Open Progress empty; record today and a past date, close/reopen the app, and verify latest-by-date/history/chart. Reject invalid/leap/future dates and a second record for the same date. Edit value/date; cancel deletion, then confirm it; verify remaining history and all-time change.
+2. Set height and a target weight. Check BMI inputs/date and one decimal; blank height gives an explanatory empty state. Try gain/loss targets, equal start/target, overshoot, no measurements, and deleting/editing a baseline record; saved starting point stays explicit.
+3. Configure the four nutrition targets. Verify Home totals/remaining, over-target text, blank/zero behavior and unknown nutrients. Confirm past Calendar dates before the first goal have no personal target, and subsequent goal edits preserve prior effective dates.
+4. Switch Light/Dark/System and OS appearance; inspect chart labels, inputs, empty/error states, confirmation dialog, narrow layout and large text. Use TalkBack for dated history, progress values, fields, buttons and modal focus. Verify keyboard and hardware Back never cause duplicate submissions.
+5. Repeat food search/save/edit/delete, historical diary/calendar navigation and theme restart checks. Confirm existing records/images/settings survive. No device verification has been claimed.
+
 ## Visual redesign validation and Android acceptance
 
 Automated validation covers 37 tests: existing diary/calendar/nutrition regressions plus preference default, persisted Light/Dark/System across a new store, immediate subscriber updates before write completion, concurrent-write prevention, read/write failures/retry, invalid preferences, system-mode resolution, semantic-token parity, both palettes' normal-text contrast and missing/null/failed food-image selection. These are unit tests, not mounted React/native UI tests.

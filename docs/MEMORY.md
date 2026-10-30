@@ -1,5 +1,15 @@
 # Project memory
 
+## Current handoff: Stage 7
+
+Verified clean synchronized master at 2214b4861f0522be4f1c806d384f112d49008a99. Stage 7 is explicitly authorized and supersedes earlier stop-before-7 notes. Implemented dated weight CRUD/history/chart, effective-dated calorie/protein/carbs/fat goals, canonical cm height, numeric adult BMI and gain/loss/maintenance weight targets. Five tabs retained; new weight-entry and goals stack routes. No Stage 8 or new dependencies.
+
+Separate `bites2go.health.v1` SQLite KV document initializes empty only when absent; no diary/appearance migration or overwrite. Numeric validation precedes JSON serialization; corrupt/unsupported documents block mutation without clearing data. Existing parameterized Expo KV writes are serialized and compared with original snapshots; uncertain writes retain payload for idempotent retry. No user data was accessed/reset.
+
+Personal targets begin unset, not copied from preview fixtures. Goal revisions preserve earlier dates. Weight target starting points are explicit snapshots, retained after record edit/deletion; changed target resets baseline. BMI is one decimal, 20+ adult scope, no category/diagnosis. SVG plots actual records only with date-proportional spacing. Limits and migration notes are documented in PRD/Architecture.
+
+51 tests, types, lint, format, Doctor 20/20, public config and Android export pass during implementation. Includes real temporary SQLite close/reopen testing, not Android bridge/device acceptance. Audit remains 5 low/3 high, no forced fixes. Native UI, restart, theme/TalkBack and diary regressions remain on the user's Android checklist. Stop after Stage 7 and await review before Stage 8; final commit/remote hashes are reported after verified push.
+
 ## Current handoff: visual redesign and themes
 
 Started from clean master at verified Stage 6 commit 1f61e752422f2c13b251d05ff24326caaa360d44. Implemented the Vibrant Food App direction and Light/Dark/System throughout the app, with Profile appearance controls. Existing diary schema, snapshots, nutrient values, CRUD repository, date logic and future-date restriction are preserved. Progress remains unfinished; no Stage 7 work.

@@ -1,5 +1,9 @@
 # Decision register
 
+## Stage 7 implementation plan
+
+Use a separate versioned SQLite KV document for weights, height, weight goal and effective-dated nutrition goals. Initial migration is absent key to empty v1; no diary/appearance schema changes or destructive SQL. Reuse the existing parameterized KV adapter and serialized, compare-before-write repository pattern. Defaults remain unset; today's explicit goal changes preserve earlier dates. Weight records are unique by local date and use kg; height uses cm. UI limits: weight/target 20–500 kg, height 100–250 cm, calories 0–10000 kcal, protein/fat 0–500 g, carbs 0–1500 g; these are data-entry bounds, not recommendations. Use existing SVG for dated measurement points without interpolated data. BMI is numeric only, adult-focused (20+), with screening limitations and no classification. No dependencies or Stage 8 work planned.
+
 ## Visual redesign and theme milestone
 
 - Adopt Option B (Vibrant Food App) without changing food values, diary schema, local date rules or stage scope.

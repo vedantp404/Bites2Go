@@ -1,5 +1,17 @@
 # Product requirements
 
+## Implemented Stage 7 scope
+
+This current section supersedes the historical Stage 1 plans below for Stage 7. Local, adult-focused tracking only: dated kg records (one per date), manual calorie/protein/carbohydrate/fat goals, cm height, numeric BMI and a target weight. No account, cloud synchronization, automatic dietary prescription, pediatric interpretation or Stage 8 functionality. Fiber goals and weekly averages from the earlier roadmap are outside this explicit four-target stage request.
+
+Acceptable measurement/target weight is 20–500 kg and height 100–250 cm. Nutrition targets may be unset, disabled (zero), or positive: calories 1–10000 kcal, protein/fat 0.1–500 g, carbs 0.1–1500 g. These are application input bounds, not medically appropriate ranges. No fake measurements or automatic targets. Earlier sample nutrition targets were presentation fixtures, not personal settings, and are not promoted into saved goals.
+
+Nutrition goals are effective-dated. Saving applies to the form's displayed local date until a later revision; prior dates are unchanged and dates before the first goal remain unset. Current settings can be cleared explicitly. Recorded intake uses existing snapshot totals; remaining is signed internally and shown as remaining/over-target, with no meaningful percentage for unset/zero or incomplete data.
+
+Weight goal starts from the latest measurement when a different target is confirmed. If none exists, the first recorded measurement on/after the goal date supplies its baseline. The saved starting point is a snapshot: later record edits/deletes do not silently rewrite it. Equal start/target uses a difference instead of a percentage; no percentage is shown if the current record predates the baseline. The chart plots actual points with proportional date spacing, no fabricated/interpolated entries. History lists exact values/dates.
+
+BMI is weight in kg divided by height in metres squared, shown to one decimal. Adults 20+ only; no classifications or diagnosis and no pediatric/adolescent interpretation. The interface states that BMI is a screening measure, not a complete measure of health/body composition. Formula and limitation checked against [CDC BMI information](https://www.cdc.gov/bmi/about/).
+
 Status: Stage 1 specification, 2026-10-30. Working name: Bites2Go. All features below are planned, not implemented.
 
 ## Vision, problem and audience

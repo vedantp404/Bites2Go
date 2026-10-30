@@ -1,7 +1,7 @@
 import Svg, { Circle, Path } from 'react-native-svg';
 import { Text, View } from 'react-native';
 import { useTheme } from '../theme/ThemeProvider';
-import { progress } from '../domain/dashboard';
+import { nutrientProgress } from '../domain/health';
 export function AppIcon({
   name,
   color,
@@ -41,11 +41,11 @@ export function CalorieRing({
   partial = false,
 }: {
   consumed: number | null;
-  target: number;
+  target: number | null;
   partial?: boolean;
 }) {
   const { theme: t } = useTheme();
-  const value = progress(consumed ?? 0, target);
+  const value = nutrientProgress(consumed, target, partial);
   const incomplete = consumed === null || partial;
   const circumference = 2 * Math.PI * 68;
   return (
@@ -55,11 +55,13 @@ export function CalorieRing({
       accessibilityLabel={
         incomplete
           ? 'Calories incomplete; remaining is unknown'
-          : `Calories: ${consumed?.toFixed(0)} consumed, ${target} sample target, ${value.remaining?.toFixed(0)} remaining`
+          : value.remaining === null
+            ? 'Calorie target not set'
+            : `Calories: ${consumed?.toFixed(0)} consumed, ${target} target, ${value.remaining?.toFixed(0)} remaining`
       }
       accessibilityValue={
-        incomplete
-          ? { text: 'Unknown remaining' }
+        incomplete || value.remaining === null
+          ? { text: incomplete ? 'Unknown remaining' : 'Target not set' }
           : { min: 0, max: 100, now: value.fill }
       }
       style={{
@@ -101,10 +103,16 @@ export function CalorieRing({
         />
       </Svg>
       <Text style={{ ...t.typography.title, color: t.colors.text }}>
-        {incomplete ? 'Unknown' : value.remaining?.toFixed(0)}
+        {incomplete
+          ? 'Unknown'
+          : value.remaining === null
+            ? 'Not set'
+            : Math.abs(value.remaining).toFixed(0)}
       </Text>
       <Text style={{ ...t.typography.label, color: t.colors.muted }}>
-        kcal remaining
+        {value.remaining !== null && value.remaining < 0
+          ? 'kcal over target'
+          : 'kcal remaining'}
       </Text>
     </View>
   );

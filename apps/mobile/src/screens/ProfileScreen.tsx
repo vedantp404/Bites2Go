@@ -1,3 +1,6 @@
+import { router } from 'expo-router';
+import { Action } from '../components/FoodControls';
+import { HealthStatus, BmiCard } from '../components/HealthControls';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, useUI } from '../components/dashboard';
@@ -22,6 +25,12 @@ export default function ProfileScreen() {
         <Text accessibilityRole="header" style={ui.title}>
           Profile
         </Text>
+        <HealthStatus />
+        <Action
+          label="Nutrition goals, height and weight target"
+          onPress={() => router.push('/goals')}
+        />
+        <BmiCard />
         <Card>
           <Text accessibilityRole="header" style={ui.heading}>
             Appearance
@@ -78,8 +87,8 @@ export default function ProfileScreen() {
           ) : null}
         </Card>
         <Text style={ui.body}>
-          Appearance is saved on this device. Account settings and personal
-          nutrition goals are not available yet.
+          Appearance and goals are saved on this device. Account settings are
+          not available.
         </Text>
       </ScrollView>
     </SafeAreaView>
