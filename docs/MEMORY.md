@@ -68,3 +68,9 @@ Existing Node module-type detection warning in the contrast test and NO_COLOR/FO
 ## Stage 3 dashboard — 2026-10-30
 
 Current branch: codex/stage-3-dashboard, based on SDK 58 64e5f33. Stage 3 implementation is ready for review: Home dashboard, sample Diary and clearly unfinished Calendar/Progress/Profile, reusable UI, isolated demo fixtures and tested sums/progress. All five tests, types, lint, formatting, Doctor 20/20, config and Android export pass. UTF-8 replacement-character scan passes. Physical Android and accessibility interaction checks remain pending. No backend, persistent logging or Stage 4. Next: user reviews preview on phone; do not merge or start Stage 4 automatically.
+
+## Reference-inspired UI refinement
+
+User supplied a nutrition-app visual reference. Adapted Home with a forest-green fading header, centered identity/date, calorie progress ring, compact colored macro bars, pill action and rounded meal rows. Diary shares meal-card styling; tabs now have consistent SVG line icons. Demo labeling remains visible and calculations/features are unchanged. No invented nutrition score, history chart or food-search feature was added.
+
+Added Expo-compatible SVG/linear-gradient modules. Installation exposed an existing react-dom 19.3.1 peer mismatch with React 19.3.0; `expo install react-dom` aligned it to the SDK-compatible version without force/legacy flags. Initial refactor syntax and strict icon-color typing failures were fixed; types, lint, formatting, five tests, Doctor 20/20 and Android export passed. Existing eight audit advisories remain. Visual fidelity, physical Android rendering, large text and TalkBack remain unverified and require phone review.

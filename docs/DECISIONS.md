@@ -54,3 +54,9 @@ Retain and disclose the existing npm audit findings; the reported forced remedy 
 ## Stage 3 dashboard — 2026-10-30
 
 Stage 3 authorized on codex/stage-3-dashboard from clean SDK 58 branch 64e5f33. Adopt the previously recommended Expo Router for five real tab destinations; avoid ad-hoc navigation state. Use labeled synthetic example meals for nonzero progress and two empty meal sections. Targets are demo values, not recommendations. Present incomplete destinations honestly. Current local date refreshes each minute and on foreground; no history/timezone persistence is implied. Keep strict typing and existing design tokens. No Stage 4 implementation.
+
+## Reference-inspired UI refinement
+
+User supplied a nutrition-app visual reference. Adapted Home with a forest-green fading header, centered identity/date, calorie progress ring, compact colored macro bars, pill action and rounded meal rows. Diary shares meal-card styling; tabs now have consistent SVG line icons. Demo labeling remains visible and calculations/features are unchanged. No invented nutrition score, history chart or food-search feature was added.
+
+Added Expo-compatible SVG/linear-gradient modules. Installation exposed an existing react-dom 19.3.1 peer mismatch with React 19.3.0; `expo install react-dom` aligned it to the SDK-compatible version without force/legacy flags. Initial refactor syntax and strict icon-color typing failures were fixed; types, lint, formatting, five tests, Doctor 20/20 and Android export passed. Existing eight audit advisories remain. Visual fidelity, physical Android rendering, large text and TalkBack remain unverified and require phone review.

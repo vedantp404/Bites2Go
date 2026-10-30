@@ -77,3 +77,9 @@ Existing Node module-type detection warning in the contrast test and NO_COLOR/FO
 ## Stage 3 dashboard — 2026-10-30
 
 Stage 3 results: typecheck, lint, formatting, Expo Doctor 20/20, configuration validation and Android export pass. Five node tests pass: meal aggregation/empty totals; progress and over-target clamping; zero/invalid targets; invalid intake; AA text contrast. Initial JSX apostrophe lint error was corrected, then formatting reapplied. UTF-8 scan of app/src files finds no U+FFFD replacement characters; the old preview sentence was replaced with ASCII punctuation. npm install reports the existing eight advisories; no forced fix applied. Node module-type and bundler color warnings remain unsuppressed. Physical-device preview, TalkBack, font scaling, navigation/back behavior and visual layout remain manual checks, not verified results.
+
+## Reference-inspired UI refinement
+
+User supplied a nutrition-app visual reference. Adapted Home with a forest-green fading header, centered identity/date, calorie progress ring, compact colored macro bars, pill action and rounded meal rows. Diary shares meal-card styling; tabs now have consistent SVG line icons. Demo labeling remains visible and calculations/features are unchanged. No invented nutrition score, history chart or food-search feature was added.
+
+Added Expo-compatible SVG/linear-gradient modules. Installation exposed an existing react-dom 19.3.1 peer mismatch with React 19.3.0; `expo install react-dom` aligned it to the SDK-compatible version without force/legacy flags. Initial refactor syntax and strict icon-color typing failures were fixed; types, lint, formatting, five tests, Doctor 20/20 and Android export passed. Existing eight audit advisories remain. Visual fidelity, physical Android rendering, large text and TalkBack remain unverified and require phone review.

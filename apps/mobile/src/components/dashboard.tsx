@@ -1,3 +1,4 @@
+import { AppIcon } from './NutritionVisuals';
 import type { PropsWithChildren } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { progress } from '../domain/dashboard';
@@ -17,7 +18,7 @@ export const ui = StyleSheet.create({
   body: { ...t.typography.body, color: t.colors.muted },
   label: { ...t.typography.label, color: t.colors.primary },
   card: {
-    padding: t.spacing.lg,
+    padding: t.spacing.md,
     gap: t.spacing.md,
     backgroundColor: t.colors.surface,
     borderRadius: t.radii.card,
@@ -65,7 +66,7 @@ export function AddFood({ meal }: { meal?: string }) {
       style={({ pressed }) => ({
         minHeight: t.sizing.touchTarget,
         padding: t.spacing.md,
-        borderRadius: t.radii.control,
+        borderRadius: 28,
         backgroundColor: t.colors.primary,
         opacity: pressed ? 0.8 : 1,
         alignItems: 'center',
@@ -89,11 +90,15 @@ export function NutrientProgress({
   consumed,
   target,
   unit,
+  color = t.colors.primary,
+  compact = false,
 }: {
   label: string;
   consumed: number;
   target: number;
   unit: string;
+  color?: string;
+  compact?: boolean;
 }) {
   const value = progress(consumed, target);
   const description = `${label}: ${consumed} of ${target} ${unit}${value.percent === null ? ', target not set' : `, ${Math.round(value.percent)} percent`}`;
@@ -107,9 +112,13 @@ export function NutrientProgress({
           ? { text: 'Target not set' }
           : { min: 0, max: 100, now: value.fill, text: description }
       }
-      style={{ gap: t.spacing.sm }}
+      style={{
+        gap: t.spacing.sm,
+        flex: compact ? 1 : undefined,
+        minWidth: compact ? 84 : undefined,
+      }}
     >
-      <View style={ui.row}>
+      <View style={compact ? { gap: 4 } : ui.row}>
         <Text style={ui.label}>{label}</Text>
         <Text style={ui.body}>
           {consumed} / {target > 0 ? target : 'Not set'} {unit}
@@ -117,7 +126,7 @@ export function NutrientProgress({
       </View>
       <View
         style={{
-          height: 10,
+          height: 5,
           borderRadius: 5,
           backgroundColor: t.colors.accent,
           overflow: 'hidden',
@@ -127,7 +136,7 @@ export function NutrientProgress({
           style={{
             height: '100%',
             width: `${value.fill}%`,
-            backgroundColor: t.colors.primary,
+            backgroundColor: color,
           }}
         />
       </View>
@@ -137,21 +146,51 @@ export function NutrientProgress({
 export function MealCard({ meal }: { meal: PreviewMeal }) {
   return (
     <Card>
-      <Text accessibilityRole="header" style={ui.heading}>
-        {meal.name}
-      </Text>
-      {meal.entries.length === 0 ? (
-        <Text style={ui.body}>
-          No sample entries. Ready for a meal when logging is available.
-        </Text>
-      ) : (
-        meal.entries.map((entry) => (
-          <View key={entry.name} style={ui.row}>
-            <Text style={ui.body}>{entry.name} (demo)</Text>
-            <Text style={ui.label}>{entry.nutrients.calories} kcal</Text>
-          </View>
-        ))
-      )}
+      <View style={{ flexDirection: 'row', gap: 16, alignItems: 'center' }}>
+        <View
+          style={{
+            backgroundColor: t.colors.accent,
+            padding: 12,
+            borderRadius: 16,
+          }}
+        >
+          <AppIcon name="leaf" />
+        </View>
+        <View style={{ flex: 1, gap: 4 }}>
+          <Text
+            accessibilityRole="header"
+            style={{
+              ...t.typography.body,
+              color: t.colors.text,
+              fontWeight: '600',
+            }}
+          >
+            {meal.name}
+          </Text>
+          {meal.entries.length === 0 ? (
+            <Text style={ui.body}>No sample entries yet</Text>
+          ) : (
+            meal.entries.map((entry) => (
+              <View key={entry.name}>
+                <Text
+                  style={{
+                    ...t.typography.body,
+                    color: t.colors.text,
+                    fontWeight: '600',
+                  }}
+                >
+                  {entry.nutrients.calories} kcal
+                </Text>
+                <Text style={ui.body}>{entry.name} (demo)</Text>
+                <Text style={ui.label}>
+                  P {entry.nutrients.protein}g C {entry.nutrients.carbs}g F{' '}
+                  {entry.nutrients.fat}g
+                </Text>
+              </View>
+            ))
+          )}
+        </View>
+      </View>
       <AddFood meal={meal.name} />
     </Card>
   );

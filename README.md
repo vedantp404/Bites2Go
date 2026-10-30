@@ -106,3 +106,5 @@ Branch `codex/stage-3-dashboard` builds on SDK 58 commit 64e5f33. Home displays 
 Demo targets and meal totals are synthetic UI fixtures, not user records or nutrition advice. Breakfast/lunch contain labeled samples; Snacks/Dinner demonstrate empty states. No data is saved. SDK 58 remains installed. Five tests, typecheck, lint, formatting, Doctor (20/20), config and Android export pass. Physical-device, TalkBack and large-text layout checks remain pending.
 
 Run `npm start -- --clear --lan` in apps/mobile and scan in SDK 58 Expo Go on the same Wi-Fi. Test all five tabs, Android Back, each meal's Add Food alert, large-text scrolling and screen-reader progress announcements. Stage 4 has not started.
+
+The dashboard now follows the supplied visual reference: green header, calorie ring, compact macro bars, rounded meal cards and icon tabs. Physical-device visual verification remains pending.
