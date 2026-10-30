@@ -1,5 +1,9 @@
 # Project memory
 
+## Current Stage 4 status — 2026-10-30
+
+Stage 4 is the user-authorized **offline food-search and portion-preview foundation**, superseding the earlier Stage 4a/4b backend scope. Historical stage notes below are retained as history, not current instructions. No backend/authentication/persistence has been implemented. Stop before Stage 5.
+
 Updated: 2026-10-30, Asia/Calcutta. Stage 2 implemented; Android verification and user review pending. Current root: C:\Users\Asus\Music\Bites2Go. Current branch codex/expo-sdk-58 (SDK 58); master preserved at f75c4f3. Remote https://github.com/vedantp404/Bites2Go.git. Foundation commit 458c3c1. Read the Stage 2 section below for current results; preceding Stage 1 observations are historical.
 
 ## Verified workspace inspection
@@ -74,3 +78,9 @@ Current branch: codex/stage-3-dashboard, based on SDK 58 64e5f33. Stage 3 implem
 User supplied a nutrition-app visual reference. Adapted Home with a forest-green fading header, centered identity/date, calorie progress ring, compact colored macro bars, pill action and rounded meal rows. Diary shares meal-card styling; tabs now have consistent SVG line icons. Demo labeling remains visible and calculations/features are unchanged. No invented nutrition score, history chart or food-search feature was added.
 
 Added Expo-compatible SVG/linear-gradient modules. Installation exposed an existing react-dom 19.3.1 peer mismatch with React 19.3.0; `expo install react-dom` aligned it to the SDK-compatible version without force/legacy flags. Initial refactor syntax and strict icon-color typing failures were fixed; types, lint, formatting, five tests, Doctor 20/20 and Android export passed. Existing eight audit advisories remain. Visual fidelity, physical Android rendering, large text and TalkBack remain unverified and require phone review.
+
+## Stage 4 handoff
+
+Current branch codex/stage-4-food-search from clean codex/stage-3-dashboard 2e81e27, correct origin vedantp404/Bites2Go. Stage 4 implements local illustrative food search, retained meal/draft, detail nutrition and gram preview with honest temporary confirmation. Existing SDK 58, dashboard, ring, macros and tabs preserved. No dependency changes or backend/persistence. Ten tests pass; types, lint, Doctor 20/20, public config and Android export pass. Formatting correction and fresh audit details are in Test Plan. Existing eight audit findings remain.
+
+Exact next task: user reviews Stage 4 on Android using the Test Plan checklist. Do not begin Stage 5 or merge into master. After approval, resolve production food-data rights/coverage and agree persistence/auth-isolation scope before real diary logging. Drafts are memory-only; fixture nutrition is not authoritative. Physical visual/accessibility checks remain pending. Commit/push outcomes are reported in the completion message, not predicted here.

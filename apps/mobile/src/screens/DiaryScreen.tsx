@@ -11,7 +11,8 @@ export default function DiaryScreen() {
         </Text>
         <PreviewNotice />
         <Text style={ui.body}>
-          Food search, saving and editing meals are not available yet.
+          Explore sample foods with Add Food. Saving and editing diary meals are
+          not available yet.
         </Text>
         {previewMeals.map((meal) => (
           <MealCard key={meal.name} meal={meal} />

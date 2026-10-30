@@ -2,7 +2,7 @@
 
 An Android nutrition tracker designed around everyday Indian meals, reliable food data, and optional AI-assisted logging.
 
-**Status: Stage 3 dashboard preview implemented; Android device verification pending.** Product name is a working name based on the workspace folder. Stage 1 is committed as 458c3c1. Mobile dependencies are installed locally; no external services provisioned.
+**Status: Stage 4 offline food search and portion preview implemented; Android device verification pending.** Product name is a working name based on the workspace folder. Stage 1 is committed as 458c3c1. Mobile dependencies are installed locally; no external services provisioned.
 
 ## Goals and scope
 
@@ -34,8 +34,8 @@ Actual mobile structure:
 
 ```text
 apps/mobile/
-  app/                            # Expo Router: five tab routes and layout
-  src/screens/                    # Home, Diary, unfinished-section screen
+  app/                            # root Stack, five routes under (tabs), food-search
+  src/screens/                    # Home, Diary, FoodSearch, unfinished sections
   src/components/dashboard.tsx    # cards, actions, accessible nutrient bars
   src/data/dashboardPreview.ts    # isolated synthetic meals and targets
   src/domain/dashboard.ts         # deterministic totals and progress
@@ -52,7 +52,7 @@ Expo template assets and its MIT notice are retained; final product branding/lic
 1. Foundation documentation (this stage).
 2. Minimal Expo app, TypeScript, tokens and developer checks.
 3. Dashboard and navigation prototype with labeled mock data.
-4. Licensed food catalog, backend foundation and calculation engine.
+4. Local illustrative food catalog, offline search and portion calculations. Production catalog rights and backend setup remain future prerequisites.
 5. Authenticated, persistent food logging.
 6. Calendar, history and logging streaks.
 7. Goals, BMI and weight progress: completes MVP scope.
@@ -105,6 +105,19 @@ Branch `codex/stage-3-dashboard` builds on SDK 58 commit 64e5f33. Home displays 
 
 Demo targets and meal totals are synthetic UI fixtures, not user records or nutrition advice. Breakfast/lunch contain labeled samples; Snacks/Dinner demonstrate empty states. No data is saved. SDK 58 remains installed. Five tests, typecheck, lint, formatting, Doctor (20/20), config and Android export pass. Physical-device, TalkBack and large-text layout checks remain pending.
 
-Run `npm start -- --clear --lan` in apps/mobile and scan in SDK 58 Expo Go on the same Wi-Fi. Test all five tabs, Android Back, each meal's Add Food alert, large-text scrolling and screen-reader progress announcements. Stage 4 has not started.
+Run `npm start -- --clear --lan` in apps/mobile and scan in SDK 58 Expo Go on the same Wi-Fi. Test all five tabs, Android Back, each meal's Add Food flow, large-text scrolling and screen-reader progress announcements. Stage 4 now adds local food search; see the instructions below.
 
 The dashboard now follows the supplied visual reference: green header, calorie ring, compact macro bars, rounded meal cards and icon tabs. Physical-device visual verification remains pending.
+
+## Try Stage 4
+
+From PowerShell:
+
+```powershell
+cd C:\Users\Asus\Music\Bites2Go\apps\mobile
+npm start -- --lan
+```
+
+Connect phone and PC to the same network, open SDK 58 Expo Go on Android and scan the QR code. In Home or Diary, tap a meal's Add Food, search `rice`, `chapati` or `dahi`, select a food and enter positive grams. Confirm shows a temporary preview; it never saves a diary entry or changes demo totals. Back to search retains query/selection/grams; leaving the flow clears the draft. All 12 foods are authored illustrative fixtures, **not verified nutrition data**. No imported food database or external API is used. Blank search browses all foods; no-match and invalid-portion states are supported. Synchronous local search needs no network loading state.
+
+Validation: `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm test`, `npx expo-doctor`, `npx expo config --type public`, `npx expo export --platform android`, `npm audit`. See Test Plan for results and manual checks. No package or lockfile changes in Stage 4.

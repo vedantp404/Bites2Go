@@ -1,6 +1,7 @@
+import { router } from 'expo-router';
 import { AppIcon } from './NutritionVisuals';
 import type { PropsWithChildren } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { progress } from '../domain/dashboard';
 import type { PreviewMeal } from '../domain/dashboard';
 import { theme as t } from '../theme/tokens';
@@ -58,10 +59,7 @@ export function AddFood({ meal }: { meal?: string }) {
       accessibilityRole="button"
       accessibilityLabel={meal ? `Add food to ${meal}` : 'Add food'}
       onPress={() =>
-        Alert.alert(
-          'Food logging is coming soon',
-          `${meal ? meal + ': ' : ''}Preview only - adding food is not available yet.`,
-        )
+        router.push({ pathname: '/food-search', params: meal ? { meal } : {} })
       }
       style={({ pressed }) => ({
         minHeight: t.sizing.touchTarget,
