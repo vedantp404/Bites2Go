@@ -1,5 +1,14 @@
 # Project memory
 
+## Current handoff: Stage 5 local diary
+
+Work started from clean synchronized master 412625c; direct-to-master policy remains. User explicitly approved local persistence instead of the earlier Auth/cloud roadmap. Implemented save/reload, meal selection, date navigation, real-entry-only Home/Diary totals, detached portion editing and confirmed deletion. Expo selected expo-sqlite 58.0.14 and expo-crypto 58.0.7; existing Expo/RN/React/TypeScript versions remain unchanged. Source nutrition and targets remain illustrative, not production guidance.
+
+Repository validation preserves malformed/unsupported data and blocks writes; no reset, telemetry or cloud service. Persisted source snapshots keep history independent of fixtures. 23 tests, typecheck, lint, formatting, Doctor 20/20, public config and Android export pass; Test Plan records initial failures/fixes and unchanged 8 audit findings. Device restart/native-storage/visual acceptance is still pending; Stage 4 user-reported phone verification is not Stage 5 evidence.
+
+Next: user executes the Stage 5 Android checklist and reviews local data/privacy limitations. Stop; do not start Stage 6. After acceptance and explicit authorization, minimal calendar/history is the recommended next stage. No branch/PR or automatic cloud/auth setup. Completion message records actual commit/push hashes after remote verification; no self-referential follow-up commit.
+
+
 ## Current workflow and integration
 
 Direct-to-master development is now the default under AGENTS and RULES; earlier branch-only/no-merge instructions are historical. The fetched remote master at 845b953 already contained SDK 58 (64e5f33) and the first dashboard (2c548e2). Integration preserves that merge and adds the dependent visual refinement (2e81e27) and local food search (b9f76f3) without cherry-picking or duplicating commits. The merge was conflict-free and its application tree matched the Stage 4 branch.

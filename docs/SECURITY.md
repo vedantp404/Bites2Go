@@ -1,5 +1,12 @@
 # Security and privacy plan
 
+## Current Stage 5 local-data boundary
+
+Stage 5 intentionally stores personal diary entries locally in Expo SQLite, without app-added uploads, analytics, accounts, tracking or new runtime permissions. Existing future backend/RLS plans below are not implemented and are not prerequisites for this explicitly authorized local-only scope.
+
+The database is not application-encrypted or protected by an app login. Device lock/access and host/OS backup behavior apply; do not claim that Expo Go storage is an encrypted vault or that OS-level backups are controlled by this app. Uninstalling, clearing host/app data or device loss may remove the diary; there is no implemented export/backup/sync. Use sample records for development. Public release requires a reviewed backup/encryption/retention policy. Never commit native database files or logs containing diary contents; existing Git ignores cover databases and build artifacts. Errors preserve records and expose no raw stored payload.
+
+
 Stage 1 requirements; policies and controls are not implemented. Treat nutrition diaries, weights, preferences and photos as sensitive personal information.
 
 ## Threats and trust boundaries

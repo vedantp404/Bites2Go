@@ -22,7 +22,7 @@
       "favicon": "./assets/favicon.png"
     },
     "platforms": ["android"],
-    "plugins": ["expo-status-bar", "expo-router"],
+    "plugins": ["expo-status-bar", "expo-router", "expo-sqlite"],
     "scheme": "bites2go"
   }
 }

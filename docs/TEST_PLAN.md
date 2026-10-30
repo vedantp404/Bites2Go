@@ -1,5 +1,16 @@
 # Test strategy
 
+## Stage 5 verification
+
+Final code: TypeScript and lint pass; 23 Node tests pass (0 failed/skipped). Formatting, Expo Doctor 20/20, public SDK 58 configuration and Android Hermes export pass. Initial checks found a save handler nested in an effect and React ref/effect lint violations; these were corrected without suppressions. Existing Node module-type and Metro color warnings remain visible.
+
+Thirteen new tests cover missing/empty storage; save and repository recreation; all meals and isolated dates; snapshot totals and null/partial coverage; edit/delete; cancellation with unchanged storage; fixture independence; concurrent saves/double submission; read/write failures with byte preservation; uncertain acknowledgements and idempotent retries; malformed/versioned/duplicate records; stale updates/deletes; leap/month/year/local-midnight/DST and two timezone subprocesses; unknown persistence and aggregate overflow rejection. Storage is an injected memory fake. No native SQLite/device execution or rendered-screen automation is claimed.
+
+Fresh npm audit: unchanged 8 affected packages, 5 low/3 high. deepmerge GHSA-gcqx-w48m-w2h4 and zod GHSA-mrhx-c7xc-m3w5 propagate through Expo tooling. No new advisory reported for SQLite/Crypto. Forced remediation proposes incompatible Expo 51 and was not run. These remain release risks, not waived by a successful bundle.
+
+Required Android acceptance (pending): start SDK 58 Expo Go, open an initially empty diary; save rice 200 g into Lunch, rapidly tap Save, verify exactly one entry and 300 illustrative kcal. Fully close/reopen the app and verify entry/meal/date/values persist. Edit to 100 g, cancel once (no change), then save (150 kcal); close/reopen again. Cancel deletion, then confirm deletion and verify totals only change on success. Repeat across Breakfast/Snacks/Dinner and yesterday, ensure Home shows today only and Diary keeps its chosen date on returning from search/edit. Generic Add Food requires choosing a meal. Verify unknown fiber, empty states, keyboard scrolling, Back, large text, TalkBack and offline use after bundle loading. Do not clear app data to test restart. No claim that prior Stage 4 phone verification covers Stage 5 storage.
+
+
 ## Current Stage 4 status — 2026-10-30
 
 Stage 4 is the user-authorized **offline food-search and portion-preview foundation**, superseding the earlier Stage 4a/4b backend scope. Historical stage notes below are retained as history, not current instructions. No backend/authentication/persistence has been implemented. Stop before Stage 5.

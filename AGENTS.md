@@ -13,4 +13,4 @@ Read [RULES.md](RULES.md), [docs/MEMORY.md](docs/MEMORY.md), and [TASKS.md](TASK
 - If tests fail, a merge conflict occurs, or authentication/permissions prevent pushing, stop and report the problem accurately. Preserve changes; never claim success without confirming command output.
 - Do not create meaningless commits, backdate work or split changes merely to manipulate the GitHub contribution graph.
 
-The mobile app lives in `apps/mobile/`. Stage 4 Android verification was reported by the user. No next development stage is authorized by this workflow change. See Memory for current evidence and limitations.
+The mobile app lives in `apps/mobile/`. Stage 4 Android verification was reported by the user. Stage 5 local diary persistence is authorized by the current user request. Stop before Stage 6; physical Stage 5 restart verification remains pending. See Memory for current evidence and limitations.

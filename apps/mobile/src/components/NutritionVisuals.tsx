@@ -37,18 +37,29 @@ export function AppIcon({
 export function CalorieRing({
   consumed,
   target,
+  partial = false,
 }: {
-  consumed: number;
+  consumed: number | null;
   target: number;
+  partial?: boolean;
 }) {
-  const value = progress(consumed, target);
+  const value = progress(consumed ?? 0, target);
+  const incomplete = consumed === null || partial;
   const circumference = 2 * Math.PI * 68;
   return (
     <View
       accessible
       accessibilityRole="progressbar"
-      accessibilityLabel={`Demo calories: ${consumed} consumed, ${target} target, ${value.remaining} remaining`}
-      accessibilityValue={{ min: 0, max: 100, now: value.fill }}
+      accessibilityLabel={
+        incomplete
+          ? 'Calories incomplete; remaining is unknown'
+          : `Calories: ${consumed?.toFixed(0)} consumed, ${target} sample target, ${value.remaining?.toFixed(0)} remaining`
+      }
+      accessibilityValue={
+        incomplete
+          ? { text: 'Unknown remaining' }
+          : { min: 0, max: 100, now: value.fill }
+      }
       style={{
         alignItems: 'center',
         justifyContent: 'center',
@@ -79,14 +90,16 @@ export function CalorieRing({
           stroke={t.colors.primary}
           strokeWidth={4}
           strokeDasharray={`${circumference} ${circumference}`}
-          strokeDashoffset={circumference * (1 - value.fill / 100)}
+          strokeDashoffset={
+            circumference * (1 - (incomplete ? 0 : value.fill) / 100)
+          }
           strokeLinecap="round"
           rotation={-90}
           origin="80,80"
         />
       </Svg>
       <Text style={{ ...t.typography.title, color: t.colors.text }}>
-        {value.remaining}
+        {incomplete ? 'Unknown' : value.remaining?.toFixed(0)}
       </Text>
       <Text style={{ ...t.typography.label, color: t.colors.muted }}>
         kcal remaining

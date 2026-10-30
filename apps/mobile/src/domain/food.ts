@@ -89,6 +89,7 @@ export function createDraft(value: string | string[] | undefined): FoodDraft {
 }
 export type DraftAction =
   | { type: 'query'; value: string }
+  | { type: 'meal'; value: Meal }
   | { type: 'select'; id: string }
   | { type: 'grams'; value: string }
   | { type: 'back' }
@@ -98,6 +99,8 @@ export function foodDraftReducer(
   action: DraftAction,
 ): FoodDraft {
   switch (action.type) {
+    case 'meal':
+      return { ...state, meal: action.value, confirmed: false };
     case 'query':
       return { ...state, query: action.value };
     case 'select':

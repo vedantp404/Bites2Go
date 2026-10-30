@@ -1,5 +1,20 @@
 # Ordered roadmap
 
+## Current task: Stage 5 local persistent diary
+
+The explicit request supersedes older Stage 5 Auth/Supabase dependencies. Work is directly on master. Historical checklists below do not authorize further work.
+
+- [x] Verify clean synchronized master and inspect existing code/docs/dependencies.
+- [x] Add Expo-compatible local SQLite storage behind a validated repository with failure-safe serialized writes.
+- [x] Save food/meal/date/portion snapshots, prevent duplicate retry entries, preserve unknown nutrients.
+- [x] Show real-entry totals and honest empty states; no sample meals counted.
+- [x] Add portion editing/cancellation, confirmed deletion and minimal diary-day navigation.
+- [x] Verify 23 automated tests, types, lint, formatting, Doctor, public config and Android bundle export; disclose existing audit findings.
+- [x] Document schema, local dates, failure handling, migration and privacy limitations.
+- [ ] Verify native SQLite persistence after closing/reopening on Android, plus the manual Test Plan scenarios.
+- [ ] User review and explicit authorization before Stage 6. No Stage 6 implementation.
+
+
 ## Current workflow and integration
 
 Direct-to-master development is now the default under AGENTS and RULES; earlier branch-only/no-merge instructions are historical. The fetched remote master at 845b953 already contained SDK 58 (64e5f33) and the first dashboard (2c548e2). Integration preserves that merge and adds the dependent visual refinement (2e81e27) and local food search (b9f76f3) without cherry-picking or duplicating commits. The merge was conflict-free and its application tree matched the Stage 4 branch.

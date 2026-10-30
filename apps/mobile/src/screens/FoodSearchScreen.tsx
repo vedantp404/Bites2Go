@@ -1,4 +1,9 @@
-import { useCallback, useReducer } from 'react';
+import { useCallback, useReducer, useRef, useState } from 'react';
+import { randomUUID } from 'expo-crypto';
+import { Action, Nutrition, styles } from '../components/FoodControls';
+import { useDiary } from '../state/DiaryProvider';
+import { createEntry, localDateKey, validDateKey } from '../domain/diary';
+import type { DiaryEntry } from '../domain/diary';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
   BackHandler,
@@ -7,7 +12,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   View,
@@ -16,6 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, ui } from '../components/dashboard';
 import { foods } from '../data/foods';
 import {
+  meals,
   createDraft,
   foodDraftReducer,
   formatNutrient,
@@ -25,59 +30,31 @@ import {
 } from '../domain/food';
 import type { FoodNutrients } from '../domain/food';
 import { theme as t } from '../theme/tokens';
-function Action({
-  label,
-  onPress,
-  disabled = false,
-}: {
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.button,
-        { opacity: disabled ? 0.5 : pressed ? 0.8 : 1 },
-      ]}
-    >
-      <Text style={styles.buttonText}>{label}</Text>
-    </Pressable>
-  );
-}
-const labels = {
-  calories: 'Energy',
-  protein: 'Protein',
-  carbs: 'Carbohydrates',
-  fat: 'Fat',
-  fiber: 'Fiber',
-} as const;
-function Nutrition({ values }: { values: FoodNutrients }) {
-  return (
-    <View style={{ gap: t.spacing.sm }}>
-      {(Object.keys(labels) as (keyof FoodNutrients)[]).map((key) => (
-        <View key={key} style={ui.row}>
-          <Text style={ui.body}>{labels[key]}</Text>
-          <Text style={ui.label}>
-            {formatNutrient(values[key], key === 'calories' ? 'kcal' : 'g')}
-          </Text>
-        </View>
-      ))}
-    </View>
-  );
-}
 export default function FoodSearchScreen() {
-  const { meal } = useLocalSearchParams<{ meal?: string | string[] }>();
+  const { meal, date: routeDate } = useLocalSearchParams<{
+    meal?: string | string[];
+    date?: string | string[];
+  }>();
+  const [date] = useState(() =>
+    routeDate === undefined
+      ? localDateKey()
+      : validDateKey(routeDate)
+        ? routeDate
+        : null,
+  );
+  const diary = useDiary();
+  const [busy, setBusy] = useState(false);
+  const [attempted, setAttempted] = useState(false);
+  const saving = useRef(false);
+  const pending = useRef<DiaryEntry | null>(null);
+  const [saveError, setSaveError] = useState('');
   const [draft, dispatch] = useReducer(foodDraftReducer, meal, createDraft);
   const selected = foods.find((food) => food.id === draft.foodId);
   const matches = searchFoods(foods, draft.query);
   const back = useCallback(() => {
+    if (saving.current) return;
     Keyboard.dismiss();
-    if (draft.detail) dispatch({ type: 'back' });
+    if (draft.detail && !pending.current) dispatch({ type: 'back' });
     else if (router.canGoBack()) router.back();
     else router.replace('/');
   }, [draft.detail]);
@@ -111,26 +88,68 @@ export default function FoodSearchScreen() {
     Keyboard.dismiss();
     dispatch({ type: 'select', id });
   };
+  async function save() {
+    if (
+      saving.current ||
+      !selected ||
+      !draft.meal ||
+      !date ||
+      date > localDateKey() ||
+      diary.entries === null ||
+      !calculated ||
+      grams === null
+    )
+      return;
+    saving.current = true;
+    setBusy(true);
+    setSaveError('');
+    Keyboard.dismiss();
+    try {
+      setAttempted(true);
+      pending.current ??= createEntry(
+        selected,
+        draft.meal,
+        date,
+        grams,
+        randomUUID(),
+        new Date().toISOString(),
+      );
+      await diary.save(pending.current);
+      if (router.canGoBack()) router.back();
+      else router.replace('/diary');
+    } catch (error) {
+      setSaveError(
+        error instanceof Error
+          ? error.message
+          : 'Saving failed. Retry the same entry.',
+      );
+    } finally {
+      saving.current = false;
+      setBusy(false);
+    }
+  }
   return (
     <SafeAreaView style={ui.page}>
       <View style={[ui.content, { paddingBottom: 0, gap: t.spacing.sm }]}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={
-            draft.detail ? 'Back to food search' : 'Back to dashboard or diary'
+            draft.detail && !attempted
+              ? 'Back to food search'
+              : 'Back to dashboard or diary'
           }
           onPress={back}
           style={styles.back}
         >
           <Text style={ui.label}>
-            {draft.detail ? '< Back to search' : '< Back'}
+            {draft.detail && !attempted ? '< Back to search' : '< Back'}
           </Text>
         </Pressable>
         <Text accessibilityRole="header" style={ui.title}>
           {draft.detail ? 'Food details' : 'Find food'}
         </Text>
         <Text style={ui.label}>
-          {draft.meal ? `For ${draft.meal}` : 'Food preview - no meal selected'}
+          {date ?? 'Invalid date'} / {draft.meal ?? 'Choose a meal below'}
         </Text>
       </View>
       <KeyboardAvoidingView
@@ -144,8 +163,8 @@ export default function FoodSearchScreen() {
           contentContainerStyle={[ui.content, { gap: t.spacing.md }]}
         >
           <Text style={ui.body}>
-            ILLUSTRATIVE SAMPLE DATA. Preview only, not nutritional guidance.
-            Nothing is saved to your diary.
+            ILLUSTRATIVE FOOD VALUES, not nutritional guidance. Entries are
+            saved only on this device after confirmation.
           </Text>
           {draft.detail ? (
             selected ? (
@@ -168,8 +187,35 @@ export default function FoodSearchScreen() {
                   <Text accessibilityRole="header" style={ui.heading}>
                     Your portion
                   </Text>
+                  <Text style={ui.label}>Meal</Text>
+                  <View style={ui.row}>
+                    {meals.map((meal) => (
+                      <Pressable
+                        key={meal}
+                        accessibilityRole="radio"
+                        accessibilityState={{
+                          checked: draft.meal === meal,
+                          disabled: busy || attempted,
+                        }}
+                        disabled={busy || attempted}
+                        style={[
+                          styles.back,
+                          {
+                            backgroundColor:
+                              draft.meal === meal
+                                ? t.colors.accent
+                                : t.colors.surface,
+                          },
+                        ]}
+                        onPress={() => dispatch({ type: 'meal', value: meal })}
+                      >
+                        <Text style={ui.label}>{meal}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
                   <Text style={ui.body}>Amount in grams</Text>
                   <TextInput
+                    editable={!busy && !attempted}
                     accessibilityLabel="Portion in grams"
                     accessibilityHint="Enter a positive decimal amount"
                     keyboardType="decimal-pad"
@@ -194,33 +240,43 @@ export default function FoodSearchScreen() {
                       <Nutrition values={calculated} />
                     </>
                   ) : null}
+                  {saveError ? (
+                    <Text accessibilityRole="alert" style={ui.body}>
+                      {saveError}
+                    </Text>
+                  ) : null}
+                  {diary.entries === null ? (
+                    <Text style={ui.body}>
+                      Diary is not available. Return and retry loading it before
+                      saving.
+                    </Text>
+                  ) : null}
+                  {!date || date > localDateKey() ? (
+                    <Text style={ui.body}>
+                      Choose a valid diary date no later than today.
+                    </Text>
+                  ) : null}
                   <Action
-                    label="Confirm preview selection"
-                    disabled={!calculated}
+                    label={
+                      busy
+                        ? 'Saving...'
+                        : attempted
+                          ? 'Retry saving this entry'
+                          : 'Confirm and save food'
+                    }
+                    disabled={
+                      busy ||
+                      !calculated ||
+                      !draft.meal ||
+                      !date ||
+                      date > localDateKey() ||
+                      diary.entries === null
+                    }
                     onPress={() => {
-                      Keyboard.dismiss();
-                      dispatch({ type: 'confirm' });
+                      void save();
                     }}
                   />
                 </Card>
-                {draft.confirmed && calculated ? (
-                  <Card>
-                    <Text
-                      accessibilityRole="header"
-                      accessibilityLiveRegion="polite"
-                      style={ui.heading}
-                    >
-                      Preview confirmed
-                    </Text>
-                    <Text style={ui.body}>
-                      {selected.name}, {draft.grams.trim()} g
-                      {draft.meal ? ` for ${draft.meal}` : ''}. This is a
-                      temporary sample selection, not a logged meal. Dashboard
-                      totals are unchanged.
-                    </Text>
-                    <Action label="Back to search" onPress={back} />
-                  </Card>
-                ) : null}
               </>
             ) : (
               <Card>
@@ -305,7 +361,7 @@ export default function FoodSearchScreen() {
               )}
               <Text style={ui.body}>
                 Leaving food search clears this temporary selection. Search
-                works offline; saving meals is a later stage.
+                works offline. Only confirmed entries are saved.
               </Text>
             </>
           )}
@@ -314,34 +370,3 @@ export default function FoodSearchScreen() {
     </SafeAreaView>
   );
 }
-const styles = StyleSheet.create({
-  input: {
-    ...t.typography.body,
-    color: t.colors.text,
-    backgroundColor: t.colors.surface,
-    minHeight: t.sizing.touchTarget,
-    borderWidth: 1,
-    borderColor: t.colors.border,
-    borderRadius: t.radii.control,
-    padding: t.spacing.md,
-  },
-  back: {
-    minHeight: t.sizing.touchTarget,
-    justifyContent: 'center',
-    alignSelf: 'flex-start',
-    paddingHorizontal: t.spacing.sm,
-  },
-  button: {
-    minHeight: t.sizing.touchTarget,
-    padding: t.spacing.md,
-    borderRadius: 28,
-    backgroundColor: t.colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonText: {
-    ...t.typography.body,
-    color: t.colors.surface,
-    fontWeight: '600',
-  },
-});

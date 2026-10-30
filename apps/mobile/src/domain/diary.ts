@@ -1,0 +1,172 @@
+import { scaleNutrients, meals } from './food.ts';
+import type { Food, FoodNutrients, Meal } from './food.ts';
+export const nutrientKeys = [
+  'calories',
+  'protein',
+  'carbs',
+  'fat',
+  'fiber',
+] as const;
+export function localDateKey(now = new Date()): string {
+  return `${now.getFullYear().toString().padStart(4, '0')}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
+}
+export function validDateKey(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value))
+    return false;
+  const [y, m, d] = value.split('-').map(Number);
+  const date = new Date(y, m - 1, d, 12);
+  return y >= 1900 && y <= 9999 && localDateKey(date) === value;
+}
+export function shiftDay(key: string, days: number): string {
+  if (!validDateKey(key) || !Number.isInteger(days))
+    throw new Error('Invalid diary date.');
+  const [y, m, d] = key.split('-').map(Number);
+  const result = localDateKey(new Date(y, m - 1, d + days, 12));
+  if (!validDateKey(result))
+    throw new Error('Date is outside the supported range.');
+  return result;
+}
+export type DiaryEntry = {
+  id: string;
+  foodId: string | null;
+  foodName: string;
+  meal: Meal;
+  date: string;
+  grams: number;
+  unit: 'g';
+  referenceGrams: 100;
+  reference: FoodNutrients;
+  nutrients: FoodNutrients;
+  preparation: string;
+  source: string;
+  status: 'illustrative' | 'verified';
+  createdAt: string;
+  updatedAt: string;
+};
+export function createEntry(
+  food: Food,
+  meal: Meal,
+  date: string,
+  grams: number,
+  id: string,
+  now: string,
+): DiaryEntry {
+  const entry: DiaryEntry = {
+    id,
+    foodId: food.id,
+    foodName: food.name,
+    meal,
+    date,
+    grams,
+    unit: 'g',
+    referenceGrams: 100,
+    reference: { ...food.nutrients },
+    nutrients: scaleNutrients(food.nutrients, grams),
+    preparation: food.preparation,
+    source: food.source,
+    status: food.status,
+    createdAt: now,
+    updatedAt: now,
+  };
+  assertEntry(entry);
+  return entry;
+}
+export function editPortion(
+  entry: DiaryEntry,
+  grams: number,
+  now: string,
+): DiaryEntry {
+  const edited = {
+    ...entry,
+    grams,
+    nutrients: scaleNutrients(entry.reference, grams),
+    updatedAt: now,
+  };
+  assertEntry(edited);
+  return edited;
+}
+function record(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+function nutrientRecord(value: unknown): value is FoodNutrients {
+  return (
+    record(value) &&
+    nutrientKeys.every(
+      (key) =>
+        value[key] === null ||
+        (typeof value[key] === 'number' &&
+          Number.isFinite(value[key]) &&
+          value[key] >= 0),
+    )
+  );
+}
+export function assertEntry(value: unknown): asserts value is DiaryEntry {
+  if (
+    !record(value) ||
+    !['id', 'foodName', 'preparation', 'source'].every(
+      (key) => typeof value[key] === 'string' && value[key].trim().length > 0,
+    ) ||
+    !(value.foodId === null || typeof value.foodId === 'string') ||
+    !meals.includes(value.meal as Meal) ||
+    !validDateKey(value.date) ||
+    typeof value.grams !== 'number' ||
+    value.unit !== 'g' ||
+    value.referenceGrams !== 100 ||
+    !nutrientRecord(value.reference) ||
+    !nutrientRecord(value.nutrients) ||
+    !['illustrative', 'verified'].includes(value.status as string) ||
+    !['createdAt', 'updatedAt'].every(
+      (key) =>
+        typeof value[key] === 'string' &&
+        /^\d{4}-\d{2}-\d{2}T.*Z$/.test(value[key]) &&
+        Number.isFinite(Date.parse(value[key])),
+    )
+  )
+    throw new Error('Invalid diary record.');
+  const expected = scaleNutrients(value.reference, value.grams);
+  for (const key of nutrientKeys) {
+    const a = expected[key],
+      b = value.nutrients[key];
+    if (
+      a === null
+        ? b !== null
+        : b === null || Math.abs(a - b) > Math.max(1, Math.abs(a)) * 1e-10
+    )
+      throw new Error('Invalid nutrition snapshot.');
+  }
+}
+export function decodeDiary(raw: string | null): DiaryEntry[] {
+  if (raw === null) return [];
+  const value: unknown = JSON.parse(raw);
+  if (!record(value) || value.version !== 1 || !Array.isArray(value.entries))
+    throw new Error('Unsupported or invalid diary document.');
+  const ids = new Set<string>();
+  for (const entry of value.entries) {
+    assertEntry(entry);
+    if (ids.has(entry.id)) throw new Error('Duplicate diary identity.');
+    ids.add(entry.id);
+  }
+  for (const date of new Set(
+    value.entries.map((entry: DiaryEntry) => entry.date),
+  )) {
+    diaryTotals(
+      value.entries.filter((entry: DiaryEntry) => entry.date === date),
+    );
+  }
+  return value.entries;
+}
+export function diaryTotals(entries: readonly DiaryEntry[]) {
+  const values = {} as FoodNutrients;
+  const partial = {} as Record<keyof FoodNutrients, boolean>;
+  for (const key of nutrientKeys) {
+    const known = entries
+      .map((e) => e.nutrients[key])
+      .filter((v) => v !== null);
+    values[key] =
+      entries.length && !known.length ? null : known.reduce((a, b) => a + b, 0);
+    partial[key] = known.length < entries.length;
+    if (values[key] !== null && !Number.isFinite(values[key]))
+      throw new Error('Diary total exceeds supported range.');
+  }
+  return { values, partial, count: entries.length };
+}

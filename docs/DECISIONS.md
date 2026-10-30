@@ -66,3 +66,11 @@ Added Expo-compatible SVG/linear-gradient modules. Installation exposed an exist
 The explicit Stage 4 request supersedes D16 and the old Stage 4a/4b backend roadmap: implement offline food search and portion previews only. No source catalog exists. Use 12 authored illustrative fixtures, each with sample provenance; no external composition dataset is imported or represented as verified. Production source rights/coverage remain unresolved.
 
 Wrap existing tabs in an Expo Router Stack; one food-search route owns search/detail draft state and preserves query, grams and meal context when returning from detail. Exiting the flow discards the temporary draft. Retain native Android Back behavior within that flow. Use existing tokens/components and dependencies. Pure TypeScript functions handle search, validation and scaling; Node tests cover them. Local preview uses unrounded JavaScript numbers with finite-result validation, not the future Decimal persistence contract. No saved nutrition or dashboard totals change.
+
+## Stage 5 local persistence plan
+
+The explicit Stage 5 request supersedes the earlier cloud/Auth scope. No existing storage library is installed. Use Expo-selected expo-sqlite (SDK 58/Expo Go supported) via its async key-value API for one versioned diary document, and expo-crypto UUIDs for stable retry-safe entry IDs. This is a small local diary, not an encrypted clinical record store. A single repository serializes read/validate/write operations; UI consumes shared state updated only after successful persistence. Invalid/unsupported documents block writes and remain untouched. No automatic clearing or destructive migration.
+
+Store immutable food/reference/portion snapshots, source/status, meal, local YYYY-MM-DD and UTC audit timestamps. Edits use recorded reference nutrition. Pure totals preserve missingness. Calendar-component date keys and noon-based day stepping avoid UTC slicing and DST day-length arithmetic. Existing demo targets remain explicitly illustrative; sample meal fixtures never seed the diary. A provider separates screens from storage; future sync needs explicit conflict/version/privacy design. No backend, accounts, analytics or Stage 6.
+
+References: https://docs.expo.dev/versions/v58.0.0/sdk/sqlite/ and https://docs.expo.dev/versions/v58.0.0/sdk/crypto/.

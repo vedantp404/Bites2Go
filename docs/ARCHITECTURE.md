@@ -1,5 +1,23 @@
 # Architecture proposal
 
+## Current implementation: Stage 5 local diary
+
+This explicitly authorized local-only scope supersedes earlier Auth/backend Stage 5 plans. No cloud services exist. Earlier stage notes below are historical.
+
+- `domain/diary.ts`: calendar keys, entry creation/validation, portion edits and totals with per-nutrient missingness. `food.ts` remains the scaling authority. Calories are source values, not inferred from macros; round for display only.
+- `storage/diaryRepository.ts`: injected async storage interface, loadAll/loadDate/save/update/remove. `storage/localDiary.ts` adapts Expo SQLite's key-value API. One singleton queue serializes operations, rereads and validates persisted data before mutation. One SQLite value replacement is atomic; no multi-key partial writes. No other runtime writes this document.
+- `state/DiaryProvider.tsx`: loads at startup, exposes loading/error/retry and successful snapshots to screens. UI changes totals only after a resolved write. Stable UUIDs make repeated additions idempotent; UI ref guards block concurrent taps. Retries retain the same record/timestamp. Update/delete detect stale originals; no optimistic deletion. Errors contain no raw diary contents.
+- Root provider covers existing tabs plus food-search and diary-entry routes. Home filters today's entries; Diary keeps selected date. Edit drafts are detached from stored entries and cancelled drafts never call storage. Delete requires confirmation. The existing visual identity and five tabs remain.
+
+Document key `bites2go.diary.v1` contains `{version: 1, entries: DiaryEntry[]}`. Each entry stores ID, foodId or null, foodName, meal, date, grams/unit, per-100 g reference, portion nutrient snapshot, preparation/source/status and createdAt/updatedAt UTC timestamps. No redundant daily totals. Food-fixture changes do not touch history; edits scale the recorded reference. Unknown nutrients remain null; mixed totals show a known subtotal with incomplete status, and incomplete calorie remaining/progress is not presented as exact.
+
+Dates use device-local getFullYear/getMonth/getDate components, never a UTC ISO slice. Day stepping constructs local noon on the adjacent calendar date (not +24 hours). Today refreshes on foreground and a timer. Opening Add Food captures the selected date; crossing midnight does not move that draft or older entries. Future-day selection/addition is blocked; valid keys span 1900–9999. UTC is used only for audit timestamps. No profile timezone or full calendar is introduced.
+
+Missing storage means a genuinely empty diary; malformed JSON, invalid records, duplicate IDs, invalid totals and unsupported versions block reads/writes without clearing or filtering records. Raw data remains available for deliberate recovery; there is no reset button. Write errors keep drafts and do not claim success. After an uncertain acknowledgement, retry the same action; leaving after an uncertain write requires reloading/reopening to inspect actual stored state.
+
+The single document is appropriate for this small local diary, with linear reads/writes. Before large histories, migrate to indexed rows through a tested versioned migration with backup/recovery and no silent destructive fallback. Future cloud sync should replace/extend the repository with explicit conflict and privacy contracts, not put network calls into screens. `allowImportingTsExtensions` enables the existing Node strip-types tests to execute shared runtime TypeScript imports; strict checking remains enabled.
+
+
 ## Current Stage 4 status — 2026-10-30
 
 Stage 4 is the user-authorized **offline food-search and portion-preview foundation**, superseding the earlier Stage 4a/4b backend scope. Historical stage notes below are retained as history, not current instructions. No backend/authentication/persistence has been implemented. Stop before Stage 5.

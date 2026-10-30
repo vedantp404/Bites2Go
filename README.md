@@ -2,7 +2,7 @@
 
 An Android nutrition tracker designed around everyday Indian meals, reliable food data, and optional AI-assisted logging.
 
-**Status: Stage 4 offline food search and portion preview implemented; Android verification reported by the user.** Product name is a working name based on the workspace folder. Stage 1 is committed as 458c3c1. Mobile dependencies are installed locally; no external services provisioned.
+**Status: Stage 5 local diary implemented; physical Android restart verification pending.** Product name is a working name based on the workspace folder. Stage 1 is committed as 458c3c1. Mobile dependencies are installed locally; no external services provisioned.
 
 ## Goals and scope
 
@@ -53,7 +53,7 @@ Expo template assets and its MIT notice are retained; final product branding/lic
 2. Minimal Expo app, TypeScript, tokens and developer checks.
 3. Dashboard and navigation prototype with labeled mock data.
 4. Local illustrative food catalog, offline search and portion calculations. Production catalog rights and backend setup remain future prerequisites.
-5. Authenticated, persistent food logging.
+5. Local persistent diary; cloud/authentication deferred.
 6. Calendar, history and logging streaks.
 7. Goals, BMI and weight progress: completes MVP scope.
 8. Custom foods, recipes, favorites and saved meals.
@@ -109,18 +109,19 @@ Run `npm start -- --clear --lan` in apps/mobile and scan in SDK 58 Expo Go on th
 
 The dashboard now follows the supplied visual reference: green header, calorie ring, compact macro bars, rounded meal cards and icon tabs. Physical-device visual verification remains pending.
 
-## Try Stage 4
-
-From PowerShell:
+## Try Stage 5
 
 ```powershell
 cd C:\Users\Asus\Music\Bites2Go\apps\mobile
-npm start -- --lan
+npm ci
+npm start -- --clear --lan
 ```
 
-Connect phone and PC to the same network, open SDK 58 Expo Go on Android and scan the QR code. In Home or Diary, tap a meal's Add Food, search `rice`, `chapati` or `dahi`, select a food and enter positive grams. Confirm shows a temporary preview; it never saves a diary entry or changes demo totals. Back to search retains query/selection/grams; leaving the flow clears the draft. All 12 foods are authored illustrative fixtures, **not verified nutrition data**. No imported food database or external API is used. Blank search browses all foods; no-match and invalid-portion states are supported. Synchronous local search needs no network loading state.
+Open SDK 58 Expo Go on the same Wi-Fi and scan the QR code. Add Food opens search, carries the chosen diary date/meal, and lets you choose a meal when needed. Review grams and confirm to save locally. Home uses today's saved entries; Diary supports Previous day / Today / Next day (no future entries). Tap an entry to edit its portion or delete with confirmation. Cancelling does not save a draft. Success feedback and totals appear only after persistence succeeds; failed actions retain drafts for retry.
 
-Validation: `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm test`, `npx expo-doctor`, `npx expo config --type public`, `npx expo export --platform android`, `npm audit`. See Test Plan for results and manual checks. No package or lockfile changes in Stage 4.
+Storage: Expo SQLite 58.0.14 key-value API and Expo Crypto 58.0.7 UUIDs. All 12 food records remain illustrative; saved reference/portion snapshots preserve history. Sample dashboard meals are never counted. Targets are clearly labeled sample settings, not medical recommendations. No account, cloud sync, analytics or app uploads. Local data is not application-encrypted and can be lost when uninstalling/clearing app data; OS/Expo Go host backup policies apply. Invalid/unsupported diary data blocks writes without clearing it. No destructive automatic migration or recovery reset is provided.
+
+Run `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm test`, `npx expo-doctor`, `npx expo config --type public`, `npx expo export --platform android`, and `npm audit`. See Test Plan for actual results. **Still required on Android:** save, close/reopen, edit/cancel, delete/cancel, separate dates, duplicate taps, keyboard and accessibility. Prior Stage 4 verification does not establish native persistence.
 
 ## Development workflow
 

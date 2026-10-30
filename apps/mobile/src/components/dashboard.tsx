@@ -1,9 +1,7 @@
 import { router } from 'expo-router';
-import { AppIcon } from './NutritionVisuals';
 import type { PropsWithChildren } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { progress } from '../domain/dashboard';
-import type { PreviewMeal } from '../domain/dashboard';
 import { theme as t } from '../theme/tokens';
 export const ui = StyleSheet.create({
   page: { flex: 1, backgroundColor: t.colors.background },
@@ -45,21 +43,24 @@ export function PreviewNotice() {
         borderRadius: t.radii.control,
       }}
     >
-      <Text style={ui.label}>DEMO PREVIEW</Text>
+      <Text style={ui.label}>NUTRITION DATA NOTICE</Text>
       <Text style={ui.body}>
-        Sample meals and targets only. Nothing here was logged by you. Targets
-        are not recommendations.
+        Saved entries use illustrative food values. Targets are sample settings,
+        not medical recommendations. No sample meals are counted automatically.
       </Text>
     </View>
   );
 }
-export function AddFood({ meal }: { meal?: string }) {
+export function AddFood({ meal, date }: { meal?: string; date: string }) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={meal ? `Add food to ${meal}` : 'Add food'}
       onPress={() =>
-        router.push({ pathname: '/food-search', params: meal ? { meal } : {} })
+        router.push({
+          pathname: '/food-search',
+          params: { date, ...(meal ? { meal } : {}) },
+        })
       }
       style={({ pressed }) => ({
         minHeight: t.sizing.touchTarget,
@@ -90,24 +91,30 @@ export function NutrientProgress({
   unit,
   color = t.colors.primary,
   compact = false,
+  partial = false,
 }: {
   label: string;
-  consumed: number;
+  consumed: number | null;
   target: number;
   unit: string;
   color?: string;
   compact?: boolean;
+  partial?: boolean;
 }) {
-  const value = progress(consumed, target);
-  const description = `${label}: ${consumed} of ${target} ${unit}${value.percent === null ? ', target not set' : `, ${Math.round(value.percent)} percent`}`;
+  const value = progress(consumed ?? 0, target);
+  const incomplete = partial || consumed === null;
+  const amount = consumed === null ? 'Unknown' : consumed.toFixed(1);
+  const description = `${label}: ${amount}${incomplete ? ' (incomplete data)' : ''} of ${target} ${unit}${incomplete ? ', percentage unavailable' : value.percent === null ? ', target not set' : `, ${Math.round(value.percent)} percent`}`;
   return (
     <View
       accessible
       accessibilityRole="progressbar"
       accessibilityLabel={description}
       accessibilityValue={
-        value.percent === null
-          ? { text: 'Target not set' }
+        incomplete || value.percent === null
+          ? {
+              text: incomplete ? 'Incomplete nutrition data' : 'Target not set',
+            }
           : { min: 0, max: 100, now: value.fill, text: description }
       }
       style={{
@@ -119,7 +126,9 @@ export function NutrientProgress({
       <View style={compact ? { gap: 4 } : ui.row}>
         <Text style={ui.label}>{label}</Text>
         <Text style={ui.body}>
-          {consumed} / {target > 0 ? target : 'Not set'} {unit}
+          {amount}
+          {incomplete ? ' (incomplete)' : ''} /{' '}
+          {target > 0 ? target : 'Not set'} {unit}
         </Text>
       </View>
       <View
@@ -133,63 +142,11 @@ export function NutrientProgress({
         <View
           style={{
             height: '100%',
-            width: `${value.fill}%`,
+            width: `${incomplete ? 0 : value.fill}%`,
             backgroundColor: color,
           }}
         />
       </View>
     </View>
-  );
-}
-export function MealCard({ meal }: { meal: PreviewMeal }) {
-  return (
-    <Card>
-      <View style={{ flexDirection: 'row', gap: 16, alignItems: 'center' }}>
-        <View
-          style={{
-            backgroundColor: t.colors.accent,
-            padding: 12,
-            borderRadius: 16,
-          }}
-        >
-          <AppIcon name="leaf" />
-        </View>
-        <View style={{ flex: 1, gap: 4 }}>
-          <Text
-            accessibilityRole="header"
-            style={{
-              ...t.typography.body,
-              color: t.colors.text,
-              fontWeight: '600',
-            }}
-          >
-            {meal.name}
-          </Text>
-          {meal.entries.length === 0 ? (
-            <Text style={ui.body}>No sample entries yet</Text>
-          ) : (
-            meal.entries.map((entry) => (
-              <View key={entry.name}>
-                <Text
-                  style={{
-                    ...t.typography.body,
-                    color: t.colors.text,
-                    fontWeight: '600',
-                  }}
-                >
-                  {entry.nutrients.calories} kcal
-                </Text>
-                <Text style={ui.body}>{entry.name} (demo)</Text>
-                <Text style={ui.label}>
-                  P {entry.nutrients.protein}g C {entry.nutrients.carbs}g F{' '}
-                  {entry.nutrients.fat}g
-                </Text>
-              </View>
-            ))
-          )}
-        </View>
-      </View>
-      <AddFood meal={meal.name} />
-    </Card>
   );
 }
