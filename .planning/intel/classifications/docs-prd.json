@@ -1,0 +1,29 @@
+{
+  "source_path": "docs/PRD.md",
+  "type": "PRD",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Product Requirements Document (Bites2Go)",
+  "summary": "Core product requirements for Bites2Go food diary, custom foods, recipes, nutrition insights, weight tracking, and goals.",
+  "scope": [
+    "food logging",
+    "nutrition diary",
+    "weight tracking",
+    "goals",
+    "BMI",
+    "custom foods",
+    "recipes",
+    "favourites",
+    "nutrition insights",
+    "offline-first storage",
+    "backend sync boundary"
+  ],
+  "cross_refs": [
+    "docs/INSIGHTS.md",
+    "docs/BACKEND.md",
+    "docs/TEST_PLAN.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": "PRD detailing delivered stages (Stages 4-10, My Meals & Recipes) and historical MVP scope."
+}
