@@ -2,6 +2,7 @@
 
 import json
 from typing import Optional
+import httpx
 from google import genai
 from google.genai import errors, types
 from pydantic import ValidationError
@@ -82,11 +83,13 @@ class GeminiService:
 
         contents = [image_part, prompt_text]
 
+        timeout_ms = int(self._settings.gemini_timeout_seconds * 1000)
         config = types.GenerateContentConfig(
             system_instruction=SYSTEM_INSTRUCTION,
             response_mime_type="application/json",
             response_schema=FoodRecognitionResponse,
             temperature=0.2,
+            http_options=types.HttpOptions(timeout=timeout_ms),
         )
 
         try:
@@ -95,6 +98,10 @@ class GeminiService:
                 contents=contents,
                 config=config,
             )
+        except (TimeoutError, httpx.TimeoutException) as exc:
+            raise GeminiServiceError(
+                "AI recognition request timed out. Please try again."
+            ) from exc
         except errors.APIError as exc:
             code = getattr(exc, "code", None)
             if code == 429:

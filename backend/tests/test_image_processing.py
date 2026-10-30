@@ -83,3 +83,19 @@ def test_validate_and_sanitize_rejects_empty_bytes() -> None:
     with pytest.raises(InvalidImageError):
         validate_and_sanitize_image(b"")
 
+
+def test_validate_and_sanitize_rejects_decompression_bomb(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify that images exceeding MAX_IMAGE_PIXELS raise InvalidImageError."""
+    import app.services.image as img_service
+    # Temporarily set MAX_IMAGE_PIXELS low to simulate a decompression bomb safely without allocating memory
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 500)
+
+    buf = io.BytesIO()
+    # 50x50 = 2500 pixels > 500
+    img = Image.new("RGB", (50, 50), color=(10, 10, 10))
+    img.save(buf, format="PNG")
+
+    with pytest.raises(InvalidImageError, match="maximum allowed resolution"):
+        img_service.validate_and_sanitize_image(buf.getvalue())
+
+

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   getBackendBaseUrl,
   checkBackendHealth,
+  recognizeFoodFromImage,
 } from '../src/services/aiFoodRecognition.ts';
 
 test('getBackendBaseUrl: resolves default and custom URL values', () => {
@@ -36,6 +37,31 @@ test('checkBackendHealth: returns error message safely when server unreachable w
         result.message.includes('Manual search remains available'),
     );
   } finally {
+    if (originalEnv) {
+      process.env.EXPO_PUBLIC_AI_BACKEND_URL = originalEnv;
+    } else {
+      delete process.env.EXPO_PUBLIC_AI_BACKEND_URL;
+    }
+  }
+});
+
+test('recognizeFoodFromImage: handles fetch timeout and abort signal cleanly', async () => {
+  const originalEnv = process.env.EXPO_PUBLIC_AI_BACKEND_URL;
+  const originalFetch = globalThis.fetch;
+  try {
+    process.env.EXPO_PUBLIC_AI_BACKEND_URL = 'http://127.0.0.1:8000';
+    // Mock fetch that simulates AbortError
+    globalThis.fetch = async () => {
+      const err = new Error('The operation was aborted');
+      err.name = 'AbortError';
+      throw err;
+    };
+
+    await assert.rejects(async () => {
+      await recognizeFoodFromImage('file:///test.jpg', 'fakeBase64');
+    }, /timed out/i);
+  } finally {
+    globalThis.fetch = originalFetch;
     if (originalEnv) {
       process.env.EXPO_PUBLIC_AI_BACKEND_URL = originalEnv;
     } else {

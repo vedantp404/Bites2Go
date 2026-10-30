@@ -6,6 +6,9 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app.config import get_settings
 
+# Enforce a strict 20 megapixel decoding limit to prevent decompression bomb denial-of-service
+Image.MAX_IMAGE_PIXELS = 20_000_000
+
 
 class InvalidImageError(ValueError):
     """Raised when an uploaded file is not a valid, decodable image."""
@@ -82,6 +85,8 @@ def validate_and_sanitize_image(
 
             return sanitized_bytes, "image/jpeg"
 
+    except Image.DecompressionBombError as exc:
+        raise InvalidImageError("Image exceeds maximum allowed resolution (20 megapixels).") from exc
     except UnidentifiedImageError as exc:
         raise InvalidImageError("Uploaded file could not be recognized as a valid image format.") from exc
     except Exception as exc:

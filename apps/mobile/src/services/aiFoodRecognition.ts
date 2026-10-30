@@ -102,27 +102,42 @@ export async function recognizeFoodFromImage(
   // If base64 data is already available from ImagePicker, prefer the base64 route
   if (base64Data && base64Data.length > 0) {
     const url = `${baseUrl}/api/v1/recognize-food/base64`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({ image_base64: base64Data }),
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 35000);
 
-    if (!response.ok) {
-      let detail = `Error ${response.status}`;
-      try {
-        const errorJson = await response.json();
-        detail = errorJson.detail || detail;
-      } catch {
-        // use default detail
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ image_base64: base64Data }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        let detail = `Error ${response.status}`;
+        try {
+          const errorJson = await response.json();
+          detail = errorJson.detail || detail;
+        } catch {
+          // use default detail
+        }
+        throw new Error(detail);
       }
-      throw new Error(detail);
-    }
 
-    return (await response.json()) as FoodRecognitionResult;
+      return (await response.json()) as FoodRecognitionResult;
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new Error(
+          'AI recognition request timed out. Please check your connection and try again.',
+        );
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   // Fallback to multipart FormData
@@ -139,24 +154,39 @@ export async function recognizeFoodFromImage(
     type: mimeType,
   } as unknown as Blob);
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-    },
-    body: formData,
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 35000);
 
-  if (!response.ok) {
-    let detail = `Error ${response.status}`;
-    try {
-      const errorJson = await response.json();
-      detail = errorJson.detail || detail;
-    } catch {
-      // use default detail
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+      },
+      body: formData,
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      let detail = `Error ${response.status}`;
+      try {
+        const errorJson = await response.json();
+        detail = errorJson.detail || detail;
+      } catch {
+        // use default detail
+      }
+      throw new Error(detail);
     }
-    throw new Error(detail);
-  }
 
-  return (await response.json()) as FoodRecognitionResult;
+    return (await response.json()) as FoodRecognitionResult;
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(
+        'AI recognition request timed out. Please check your connection and try again.',
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
