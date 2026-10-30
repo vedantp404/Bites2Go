@@ -42,3 +42,11 @@ Installed: Expo 57.0.31, React Native 0.86.3, React 19.2.3, safe-area-context 5.
 Known issues: npm audit retains 8 transitive advisories (5 low, 3 high) involving Expo tooling's deepmerge/zod chain after compatible `npm audit fix`; forced remediation proposes incompatible Expo 51 downgrade and was not applied. Resolve/reassess before release. Expo-selected ESLint 9 emits an upstream support warning; retain compatibility pending supported SDK upgrade. The Node contrast test emits a module-type detection warning but passes. No claim of production security readiness.
 
 Next: review Stage 2 and verify the screen on Android before Stage 3. Stage 3 has not begun.
+
+## D17 — Approved SDK 58 migration (2026-10-30)
+
+User's installed Android Expo Go requires SDK 58. Upgrade on `codex/expo-sdk-58` from clean master f75c4f3, using `npm install expo@^58.0.0` then `npx expo install --fix`; Expo selected compatible versions. Keep the existing app and tooling, with no independent React/RN version guesses. This supersedes D13's SDK 57 preview recommendation. Master must not be merged or changed by this task.
+
+Reviewed [upgrade guide](https://docs.expo.dev/workflow/upgrading-expo-sdk-walkthrough/), [SDK 58 walkthrough](https://expo.dev/blog/how-to-upgrade-to-sdk-58), [version reference](https://docs.expo.dev/versions/v58.0.0/) and [release notes](https://expo.dev/changelog/sdk-58). Relevant risks were stricter React Native types and removed APIs; the current screen uses none of the identified removed APIs and passed typecheck. Router/iOS/native-project migrations do not apply. The status-bar plugin was added by Expo alignment. No source compatibility changes were necessary.
+
+Retain and disclose the existing npm audit findings; the reported forced remedy downgrades Expo to 51 and conflicts with the task. No force fix, dependency overrides or warning suppression. Reassess upstream fixes before release.

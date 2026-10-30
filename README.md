@@ -68,7 +68,7 @@ Requires Node 22.23.2 (tested), npm 10.9.8, and a compatible Android Expo Go ins
 ```powershell
 cd apps/mobile
 npm ci
-npm start
+npm start -- --clear --lan
 npm run typecheck
 npm run lint
 npm test
@@ -76,9 +76,9 @@ npm run format:check
 npm run doctor
 ```
 
-Use `npm run format` to format. On a physical phone, use matching SDK 57 Expo Go and scan Metro's QR code on the same network. Recheck Expo Go support when installing. `npm run android` requires a configured Android SDK and running emulator/USB device. None was available here. Verify initial screen, scrolling at large text sizes, safe areas, Add Food alert and reload. Android bundle export (`npx expo export --platform android`) passed; it does not produce an installable APK or verify device behavior.
+Use `npm run format` to format. On a physical phone, use SDK 58 Expo Go and scan Metro's QR code on the same network. Recheck Expo Go support when installing. `npm run android` requires a configured Android SDK and running emulator/USB device. None was available here. Verify initial screen, scrolling at large text sizes, safe areas, Add Food alert and reload. Android bundle export (`npx expo export --platform android`) passed; it does not produce an installable APK or verify device behavior.
 
-Typecheck, lint, formatting, one contrast test, Expo Doctor (21/21), config validation and bundle export passed. Metro started with `npm start -- --localhost`; device rendering remains unverified. Eight transitive npm advisories remain after compatible remediation; see Test Plan. Never use forced audit downgrades without compatibility review.
+Typecheck, lint, formatting, one contrast test, Expo Doctor (20/20), config validation and bundle export passed. The earlier SDK 57 localhost startup did not verify phone connectivity; use LAN mode for your phone. Device rendering remains unverified. Eight transitive npm advisories remain after compatible remediation; see Test Plan. Never use forced audit downgrades without compatibility review.
 
 Only public configuration may be bundled in the app. No `.env` is required. Backend setup is deferred.
 
@@ -89,3 +89,9 @@ Screenshots will be added after the Stage 3 prototype exists. No mockups are pre
 ## Contributing
 
 Read RULES and the relevant documentation, agree one bounded task, preserve unrelated changes, validate, and review the diff. Use meaningful conventional commits and PRs for larger features. No automatic commit or push during Stage 1. A code license has not been selected; public hosting alone would not grant reuse rights.
+
+## SDK 58 upgrade
+
+On `codex/expo-sdk-58`: Expo 58.0.21, React Native 0.88.1, React 19.3.0 and TypeScript 6.0.3. The lockfile records the Expo-aligned dependency set. Master remains unchanged pending review.
+
+To preview on Android, stop old Metro servers, run the commands above from `apps/mobile`, connect your computer and phone to the same Wi-Fi, and scan the QR code with SDK 58 Expo Go. Allow Node through Windows Firewall for the private network if prompted. Do not use localhost mode for a separate phone. Android Studio is not required for Expo Go. Verify the screen, Add Food alert, scrolling at larger text sizes and reload; physical-device verification is still pending.
