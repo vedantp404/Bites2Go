@@ -5,29 +5,107 @@ export type FoodNutrients = {
   fat: number | null;
   fiber: number | null;
 };
+export type ExtendedNutrients = FoodNutrients & {
+  sugar?: number | null;
+  sodium?: number | null;
+};
+export type CommonServing = {
+  description: string;
+  grams: number;
+};
 export type Food = {
   id: string;
   name: string;
   aliases: readonly string[];
   category: string;
+  subcategory?: string;
   preparation: string;
   referenceGrams: 100;
-  nutrients: FoodNutrients;
-  status: 'illustrative';
+  nutrients: ExtendedNutrients;
+  status: 'illustrative' | 'verified';
   source: string;
   servingGrams?: number;
+  servingUnit?: string;
+  commonServings?: readonly CommonServing[];
+  imageKey?: string;
 };
 export function searchFoods(foods: readonly Food[], query: string): Food[] {
   const term = query.trim().toLowerCase();
   const seen = new Set<string>();
-  return foods.filter((food) => {
-    if (seen.has(food.id)) return false;
-    const match = [food.name, ...food.aliases].some((name) =>
-      name.toLowerCase().includes(term),
-    );
-    if (match) seen.add(food.id);
-    return match;
-  });
+  if (!term) {
+    const list: Food[] = [];
+    for (const food of foods) {
+      if (!seen.has(food.id)) {
+        seen.add(food.id);
+        list.push(food);
+      }
+    }
+    return list;
+  }
+
+  const tokens = term.split(/\s+/).filter(Boolean);
+  const scored: { food: Food; score: number }[] = [];
+
+  for (const food of foods) {
+    if (seen.has(food.id)) continue;
+
+    const name = food.name.toLowerCase();
+    const aliases = food.aliases.map((a) => a.toLowerCase());
+    const category = food.category.toLowerCase();
+    const subcategory = (food.subcategory ?? '').toLowerCase();
+    const searchable = [name, ...aliases, category, subcategory];
+
+    let score = 0;
+
+    // Exact matches (highest priority)
+    if (name === term) {
+      score = Math.max(score, 1000);
+    } else if (aliases.includes(term)) {
+      score = Math.max(score, 950);
+    }
+
+    // Prefix matches
+    if (name.startsWith(term)) {
+      score = Math.max(score, 800 + (term.length / name.length) * 50);
+    } else if (aliases.some((a) => a.startsWith(term))) {
+      const bestAlias = aliases.find((a) => a.startsWith(term))!;
+      score = Math.max(score, 820 + (term.length / bestAlias.length) * 50);
+    } else if (name.split(/\s+/).some((word) => word.startsWith(term))) {
+      score = Math.max(score, 700);
+    } else if (
+      aliases.some((a) => a.split(/\s+/).some((w) => w.startsWith(term)))
+    ) {
+      score = Math.max(score, 650);
+    }
+
+    // Substring matches
+    if (name.includes(term)) {
+      score = Math.max(score, 600);
+    } else if (aliases.some((a) => a.includes(term))) {
+      score = Math.max(score, 500);
+    } else if (category.includes(term) || subcategory.includes(term)) {
+      score = Math.max(score, 400);
+    }
+
+    // Multi-token search
+    if (tokens.length > 1) {
+      const allTokensMatch = tokens.every((token) =>
+        searchable.some((text) => text.includes(token)),
+      );
+      if (allTokensMatch) {
+        const inNameTokens = tokens.every((token) => name.includes(token));
+        score = Math.max(score, inNameTokens ? 550 : 450);
+      }
+    }
+
+    if (score > 0) {
+      seen.add(food.id);
+      scored.push({ food, score });
+    }
+  }
+
+  scored.sort((a, b) => b.score - a.score);
+  return scored.map((item) => item.food);
 }
 export function parseGrams(input: string): number | null {
   const value = input.trim().replace(',', '.');

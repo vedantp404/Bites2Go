@@ -34,14 +34,26 @@ export function FoodChoice({
   disabled?: boolean;
 }) {
   const { ui, t } = useUI();
+  const servingDesc =
+    food.commonServings?.[0]?.description ??
+    (food.servingGrams ? `${food.servingGrams}g` : '100g');
+  const cal =
+    food.nutrients.calories != null
+      ? `${Math.round(food.nutrients.calories)} kcal`
+      : 'Cal unknown';
+  const p =
+    food.nutrients.protein != null ? `${food.nutrients.protein}g P` : '-';
+  const c = food.nutrients.carbs != null ? `${food.nutrients.carbs}g C` : '-';
+  const f = food.nutrients.fat != null ? `${food.nutrients.fat}g F` : '-';
+
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${food.name}. ${foodOrigin(food)}. Select food`}
+      accessibilityLabel={`${food.name}, ${servingDesc}, ${cal}, ${p}, ${c}, ${f}. ${foodOrigin(food)}. Select food`}
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
-      style={[ui.card, { minHeight: 72 }]}
+      style={[ui.card, { minHeight: 76 }]}
     >
       <View
         style={{
@@ -50,10 +62,15 @@ export function FoodChoice({
           alignItems: 'center',
         }}
       >
-        <FoodImage foodId={food.id} />
-        <View style={{ flex: 1 }}>
+        <FoodImage foodId={food.id} category={food.category} />
+        <View style={{ flex: 1, gap: 2 }}>
           <Text style={ui.heading}>{food.name}</Text>
-          <Text style={ui.label}>{foodOrigin(food)}</Text>
+          <Text style={{ ...ui.label, color: t.colors.primary }}>
+            {cal} · {p} · {c} · {f}
+          </Text>
+          <Text style={ui.label}>
+            {servingDesc} · {foodOrigin(food)}
+          </Text>
         </View>
       </View>
     </Pressable>

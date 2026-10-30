@@ -1,5 +1,18 @@
 # Ordered roadmap
 
+## Expanded Food Catalogue & Food Images — implemented
+
+- [x] Substantially expanded built-in food database to 894 items across Indian staples, regional Maharashtrian dishes, dals, sabzis, South Indian breakfast, street food, snacks, sweets, international fruits, vegetables, proteins, dairy, grains, fast food, beverages, and ingredients.
+- [x] Preserved baseline items 0-11 (`rice-cooked`, `rice-raw`, `roti`, `moong`, `chickpeas`, `milk`, `curd`, `banana`, `apple`, `almonds`, `oats`, `paneer`) for strict backward compatibility with existing tests.
+- [x] Sourced, optimized, and bundled 32 CC0/Public Domain/CC-BY food photos (34 total photos with apple and banana) at 240x240 JPEG (~400 KB total) with full license attribution in `assets/food/README.md`.
+- [x] Upgraded image registry (`src/data/foodImages.ts` and `src/components/FoodImage.tsx`) supporting 34 photographic assets, imageKey resolution, and 12+ category SVG fallback icons/badges (`AppIcon`).
+- [x] Implemented enhanced scored search in `src/domain/food.ts`: exact match, prefix match, alias/regional match, multi-word matching, and relevance ranking.
+- [x] Enhanced search results UI (`FoodChoice`) displaying thumbnails/category badges, short serving descriptions, calories, and macros breakdown (`P · C · F`).
+- [x] Added interactive common serving size chips to food detail (`FoodSearchScreen.tsx`) with immediate live recalculation.
+- [x] Implemented idempotent SQLite catalogue repository (`src/storage/catalogRepository.ts`) managing `bites2go.catalog.v1` metadata, preserving user custom foods, recipes, favourites, and immutable diary history.
+- [x] Verified full test suites: 119 mobile tests passed, 19 backend tests passed, TypeScript, ESLint, Prettier, Expo doctor (20/20 passed), Android export, and credential security scan (0 findings).
+- [ ] User verifies food search, image display, and portion chips on physical Android device.
+
 ## My Meals & Recipes — implemented
 
 - [x] Inspect/reuse recipe/library/diary schemas and snapshots on clean master 1088789808dd7777c3739058cf30f3ca80630e83; baseline 96 tests passed.

@@ -5,32 +5,43 @@ import {
   searchFoods,
   parseGrams,
   scaleNutrients,
+  sumNutrients,
   formatNutrient,
   createDraft,
   foodDraftReducer,
   mealContext,
   meals,
+  defaultFoodPortion,
 } from '../src/domain/food.ts';
 const fixture = { calories: 150, protein: 10, carbs: 20, fat: 0, fiber: null };
-test('search: exact/partial names, aliases, case, empty, no matches and deduplication', () => {
+test('search: exact/partial names, aliases, case, empty, no matches, multi-word and deduplication', () => {
   assert.equal(searchFoods(foods, 'Cooked white rice')[0].id, 'rice-cooked');
   assert.deepEqual(
-    searchFoods(foods, 'rice').map((f) => f.id),
+    searchFoods(foods, 'rice')
+      .slice(0, 2)
+      .map((f) => f.id),
     ['rice-cooked', 'rice-raw'],
   );
   assert.equal(searchFoods(foods, '  CHAPATI ')[0].id, 'roti');
   assert.equal(searchFoods(foods, 'dah')[0].id, 'curd');
+  assert.equal(searchFoods(foods, 'brown rice')[0].id, 'rice-brown-cooked');
   assert.deepEqual(searchFoods(foods, '   '), foods);
   assert.deepEqual(searchFoods(foods, 'zzzz'), []);
   assert.equal(searchFoods([foods[0], foods[0]], 'rice').length, 1);
 });
-test('catalog identities, provenance and raw/cooked distinction', () => {
+test('catalog identities, provenance and raw/cooked distinction across 850+ items', () => {
+  assert.ok(
+    foods.length >= 850,
+    `Catalogue should have >= 850 items, got ${foods.length}`,
+  );
   assert.equal(new Set(foods.map((f) => f.id)).size, foods.length);
   for (const food of foods) {
     assert.equal(food.referenceGrams, 100);
     assert.equal(food.status, 'illustrative');
     assert.match(food.source, /synthetic/);
     assert.doesNotThrow(() => scaleNutrients(food.nutrients, 100));
+    assert.ok(food.category.length > 0);
+    assert.ok(food.preparation.length > 0);
   }
   const [cooked, raw] = searchFoods(foods, 'rice');
   assert.notEqual(cooked.preparation, raw.preparation);
@@ -80,6 +91,12 @@ test('invalid/nonfinite/overflow/underflow quantities and source values are reje
     '12g',
     '1.2.3',
     '0x10',
+    '+100',
+    '0.0',
+    '-0',
+    '1,2,3',
+    '.',
+    ',',
   ])
     assert.equal(parseGrams(input), null);
   for (const [input, expected] of [
@@ -87,8 +104,78 @@ test('invalid/nonfinite/overflow/underflow quantities and source values are reje
     [' 12.5 ', 12.5],
     ['12,5', 12.5],
     ['.5', 0.5],
+    [',5', 0.5],
+    ['100.', 100],
+    ['\t 50 \n', 50],
   ])
     assert.equal(parseGrams(input), expected);
+});
+test('sumNutrients aggregates all fields, preserves nulls and reports partial status', () => {
+  assert.deepEqual(sumNutrients([]), {
+    values: { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 },
+    partial: {
+      calories: false,
+      protein: false,
+      carbs: false,
+      fat: false,
+      fiber: false,
+    },
+    count: 0,
+  });
+  const single = sumNutrients([
+    { calories: 150, protein: 5, carbs: 20, fat: 2, fiber: null },
+  ]);
+  assert.equal(single.count, 1);
+  assert.equal(single.values.calories, 150);
+  assert.equal(single.values.fiber, null);
+  assert.equal(single.partial.calories, false);
+  assert.equal(single.partial.fiber, true);
+
+  const multiple = sumNutrients([
+    { calories: 100, protein: 10, carbs: 15, fat: 2, fiber: null },
+    { calories: 200, protein: null, carbs: 25, fat: 8, fiber: 3 },
+  ]);
+  assert.equal(multiple.count, 2);
+  assert.equal(multiple.values.calories, 300);
+  assert.equal(multiple.values.protein, 10);
+  assert.equal(multiple.partial.protein, true);
+  assert.equal(multiple.values.carbs, 40);
+  assert.equal(multiple.partial.carbs, false);
+  assert.equal(multiple.values.fat, 10);
+  assert.equal(multiple.partial.fat, false);
+  assert.equal(multiple.values.fiber, 3);
+  assert.equal(multiple.partial.fiber, true);
+
+  assert.throws(
+    () =>
+      sumNutrients([
+        { ...fixture, calories: Number.MAX_VALUE },
+        { ...fixture, calories: Number.MAX_VALUE },
+      ]),
+    /Nutrition total exceeds supported range/,
+  );
+});
+test('defaultFoodPortion chooses servings for recipes and grams otherwise', () => {
+  assert.deepEqual(defaultFoodPortion('recipe:soup'), {
+    mode: 'servings',
+    quantity: '1',
+  });
+  assert.deepEqual(defaultFoodPortion('custom:salad'), {
+    mode: 'grams',
+    quantity: '100',
+  });
+  assert.deepEqual(defaultFoodPortion('rice-cooked'), {
+    mode: 'grams',
+    quantity: '100',
+  });
+  assert.deepEqual(defaultFoodPortion(null), {
+    mode: 'grams',
+    quantity: '100',
+  });
+  assert.deepEqual(defaultFoodPortion(undefined), {
+    mode: 'grams',
+    quantity: '100',
+  });
 });
 test('draft keeps meal, query and portion on Back; changing food resets portion and confirmation', () => {
   for (const meal of meals) {

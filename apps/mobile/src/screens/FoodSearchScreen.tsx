@@ -222,7 +222,11 @@ export default function FoodSearchScreen() {
             selected ? (
               <>
                 <Card>
-                  <FoodImage foodId={selected.id} prominent />
+                  <FoodImage
+                    foodId={selected.id}
+                    category={selected.category}
+                    prominent
+                  />
                   <Text accessibilityRole="header" style={ui.heading}>
                     {selected.name}
                   </Text>
@@ -316,6 +320,46 @@ export default function FoodSearchScreen() {
                             <Text style={ui.label}>
                               {mode === 'grams' ? 'Grams' : 'Servings'}
                             </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </>
+                  ) : null}
+                  {selected.commonServings &&
+                  selected.commonServings.length > 0 ? (
+                    <>
+                      <Text style={ui.label}>Suggested portions</Text>
+                      <View
+                        style={[
+                          ui.row,
+                          { flexWrap: 'wrap', gap: t.spacing.xs },
+                        ]}
+                      >
+                        {selected.commonServings.map((serving, index) => (
+                          <Pressable
+                            key={index}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Select portion: ${serving.description}`}
+                            disabled={busy || attempted}
+                            onPress={() => {
+                              setQuantityMode('grams');
+                              dispatch({
+                                type: 'grams',
+                                value: String(serving.grams),
+                              });
+                            }}
+                            style={[
+                              styles.back,
+                              {
+                                backgroundColor:
+                                  quantityMode === 'grams' &&
+                                  draft.grams === String(serving.grams)
+                                    ? t.colors.accent
+                                    : t.colors.surface,
+                              },
+                            ]}
+                          >
+                            <Text style={ui.label}>{serving.description}</Text>
                           </Pressable>
                         ))}
                       </View>

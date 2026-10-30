@@ -1,5 +1,15 @@
 # Project memory
 
+## Current handoff: Expanded Food Catalogue & Food Images
+
+Expanded the built-in food catalogue to 894 unique, production-grade food entries covering diverse Indian staples, regional Maharashtrian cuisine, South Indian breakfast, dals, sabzis, street food, snacks, traditional mithai, international fruits, vegetables, healthy fitness foods, proteins, dairy, grains, fast food, and beverages. Baseline items 0-11 were strictly preserved to guarantee zero regressions for existing library, diary, and calendar test suites.
+
+Added 32 optimized CC0/Public Domain/CC-BY food photo thumbnails (~400 KB total) with complete license documentation in `apps/mobile/assets/food/README.md`. Upgraded the food image system (`foodImages.ts` and `FoodImage.tsx`) with 34 bundled photographic assets and category-specific SVG fallback badges (`bowl`, `cup`, `bread`, `dairy`, `meat`, `fruit`, `leaf`, `snack`) for items without photos.
+
+Implemented scored search ranking in `food.ts` (exact name 1000, exact alias 950, prefix 800-850, word prefix 700, substring 500-600, multi-word token matching). Search results (`FoodChoice`) now show thumbnails, short serving descriptions, calories, and macro breakdown. Food detail (`FoodSearchScreen.tsx`) provides interactive portion chips for common servings with live recalculation. Implemented idempotent SQLite catalogue repository (`catalogRepository.ts`) managing `bites2go.catalog.v1` metadata without altering custom foods, recipes, or immutable diary snapshots.
+
+Validation: 119 mobile tests passed (including new `catalog.test.mjs`), 19 backend tests passed, TypeScript, ESLint, Prettier, Expo doctor (20/20 passed), Android release export bundled (3.3MB JS bundle + 34 food photo assets), and security scan passed with 0 findings.
+
 ## Current handoff: My Meals & Recipes
 
 Explicit user request authorizes this focused feature after Stage11, working on clean master 1088789808dd7777c3739058cf30f3ca80630e83. Reused existing Recipe/Library v1 SQLite and diary snapshot pipeline; no migration or new model. MyFoods now separates My Meals and custom foods, shows ingredients/whole/per-serving nutrition, and provides Log Meal plus edit/delete. Profile/Add Food entry labels updated. Recipe editor reused; defaultFoodPortion shares one-serving recipe defaults between draft reducer and logging screen, while other foods remain 100 g. Same-item reselection preserves edits. Fractional/multiple servings log one combined entry; history/insights stay snapshot-based and unknowns remain null.
