@@ -103,13 +103,18 @@ test('baseline fixtures 0-11 are preserved for backward compatibility', () => {
 });
 
 test('food image registry correctly resolves assets and handles failures', () => {
-  // Baseline items
+  // Decorative assets (max 5 retained)
   assert.equal(foodImageKey('apple'), 'apple');
   assert.equal(foodImageKey('banana'), 'banana');
-  assert.equal(foodImageKey('rice-cooked'), 'rice');
-  assert.equal(foodImageKey('roti'), 'roti');
-  assert.equal(foodImageKey('paneer'), 'paneer');
-  assert.equal(foodImageKey('milk'), 'milk');
+  assert.equal(foodImageKey('dosa'), 'dosa');
+  assert.equal(foodImageKey('carrot'), 'carrot');
+  assert.equal(foodImageKey('oats'), 'oats');
+
+  // Individual food photographs are removed
+  assert.equal(foodImageKey('rice-cooked'), null);
+  assert.equal(foodImageKey('roti'), null);
+  assert.equal(foodImageKey('paneer'), null);
+  assert.equal(foodImageKey('milk'), null);
 
   // Food objects with imageKey
   const foodWithImage = foods.find((f) => f.imageKey === 'dosa');
@@ -121,8 +126,8 @@ test('food image registry correctly resolves assets and handles failures', () =>
   assert.equal(foodImageKey(null), null);
   assert.equal(foodImageKey('nonexistent-food-id'), null);
 
-  // Available image assets count
-  assert.equal(availableImageAssets.length, 34);
+  // Exactly 5 distinct decorative image assets are bundled
+  assert.equal(availableImageAssets.length, 5);
 });
 
 test('category fallback icons map accurately for all categories', () => {

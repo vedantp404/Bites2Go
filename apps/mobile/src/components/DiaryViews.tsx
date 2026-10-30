@@ -1,7 +1,6 @@
 import { useHealth } from '../state/HealthProvider';
 import { targetsForDate, unsetTargets } from '../domain/health';
 import { HealthStatus } from './HealthControls';
-import { FoodImage } from './FoodImage';
 import { Text, View, Pressable } from 'react-native';
 import { router } from 'expo-router';
 import { AddFood, Card, NutrientProgress, useUI } from './dashboard';
@@ -172,18 +171,7 @@ export function DiaryMeals({
                   })
                 }
               >
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: t.spacing.md,
-                  }}
-                >
-                  <FoodImage foodId={entry.foodId} />
-                  <Text style={[ui.heading, { flex: 1 }]}>
-                    {entry.foodName}
-                  </Text>
-                </View>
+                <Text style={ui.heading}>{entry.foodName}</Text>
                 <Text style={ui.body}>
                   {entry.grams} g /{' '}
                   {formatNutrient(entry.nutrients.calories, 'kcal')}

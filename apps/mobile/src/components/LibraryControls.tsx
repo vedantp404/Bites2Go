@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { memo, useCallback, useRef, useState } from 'react';
 import { BackHandler, Keyboard, Text, View, Pressable } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useLibrary } from '../state/LibraryProvider';
@@ -8,7 +8,6 @@ import type { Food } from '../domain/food';
 import { foods } from '../data/foods';
 import { Card, useUI } from './dashboard';
 import { Action } from './FoodControls';
-import { FoodImage } from './FoodImage';
 export function LibraryStatus() {
   const { data, error, reload } = useLibrary();
   const { ui, t } = useUI();
@@ -24,7 +23,7 @@ export function LibraryStatus() {
     </Card>
   );
 }
-export function FoodChoice({
+export const FoodChoice = memo(function FoodChoice({
   food,
   onPress,
   disabled = false,
@@ -53,29 +52,55 @@ export function FoodChoice({
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
-      style={[ui.card, { minHeight: 76 }]}
+      style={[
+        ui.card,
+        {
+          minHeight: 64,
+          paddingVertical: t.spacing.sm,
+          paddingHorizontal: t.spacing.md,
+          gap: 4,
+        },
+      ]}
     >
       <View
         style={{
           flexDirection: 'row',
-          gap: t.spacing.md,
-          alignItems: 'center',
+          justifyContent: 'space-between',
+          alignItems: 'baseline',
+          gap: t.spacing.sm,
         }}
       >
-        <FoodImage foodId={food.id} category={food.category} />
-        <View style={{ flex: 1, gap: 2 }}>
-          <Text style={ui.heading}>{food.name}</Text>
-          <Text style={{ ...ui.label, color: t.colors.primary }}>
-            {cal} · {p} · {c} · {f}
-          </Text>
-          <Text style={ui.label}>
-            {servingDesc} · {foodOrigin(food)}
-          </Text>
-        </View>
+        <Text style={[ui.heading, { flex: 1 }]} numberOfLines={1}>
+          {food.name}
+        </Text>
+        <Text
+          style={{
+            ...t.typography.body,
+            fontWeight: '700',
+            color: t.colors.primary,
+          }}
+        >
+          {cal}
+        </Text>
+      </View>
+      <View
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: t.spacing.sm,
+        }}
+      >
+        <Text style={[ui.label, { flex: 1 }]} numberOfLines={1}>
+          {servingDesc} · {foodOrigin(food)}
+        </Text>
+        <Text style={[ui.label, { color: t.colors.secondary }]}>
+          {p} · {c} · {f}
+        </Text>
       </View>
     </Pressable>
   );
-}
+});
 export function FavouriteButton({
   food,
   disabled = false,

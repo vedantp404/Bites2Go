@@ -7,7 +7,6 @@ import { Card, useUI } from '../components/dashboard';
 import { Action, Nutrition } from '../components/FoodControls';
 import { HealthPage, Field, ConfirmDelete } from '../components/HealthControls';
 import { LibraryStatus, useLibraryForm } from '../components/LibraryControls';
-import { FoodImage } from '../components/FoodImage';
 import {
   customAsFood,
   saveCustom,
@@ -90,7 +89,6 @@ function Editor({ initial, item }: { initial: Library; item?: CustomFood }) {
         onPress={form.back}
       />
       <Card>
-        <FoodImage foodId={id} />
         <Field
           text
           label="Food name (1–120 characters)"

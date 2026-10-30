@@ -1,4 +1,3 @@
-import { FoodImage } from '../components/FoodImage';
 import { useCallback, useRef, useState } from 'react';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
@@ -128,7 +127,6 @@ function EntryEditor({ original }: { original: DiaryEntry }) {
             Review entry
           </Text>
           <Card>
-            <FoodImage foodId={entry.foodId} prominent />
             <Text style={ui.heading}>{entry.foodName}</Text>
             <Text style={ui.label}>
               {entry.date} / {entry.meal}

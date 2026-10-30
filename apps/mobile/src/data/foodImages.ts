@@ -1,82 +1,36 @@
-// Presentation-only image registry. Food and diary schemas remain unchanged.
-import type { Food } from '../domain/food.ts';
+// Presentation-only image registry for decorative illustrations.
+// Food search, detail rows, and diary entries use clean text-based layouts for high performance.
 
-export const availableImageAssets = [
-  'almonds',
+export const decorativeImageKeys = [
   'apple',
   'banana',
-  'bread',
-  'broccoli',
-  'burger',
-  'carrot',
-  'chicken_breast',
-  'chickpeas',
-  'chocolate',
-  'coffee',
-  'curd',
-  'dal',
   'dosa',
-  'egg',
-  'grapes',
-  'idli',
-  'mango',
-  'milk',
+  'carrot',
   'oats',
-  'orange',
-  'paneer',
-  'pasta',
-  'pizza',
-  'potato',
-  'rice',
-  'roti',
-  'salmon',
-  'samosa',
-  'spinach',
-  'strawberry',
-  'tea',
-  'tomato',
-  'watermelon',
 ] as const;
 
-export type FoodImageAsset = (typeof availableImageAssets)[number];
+export type DecorativeImageKey = (typeof decorativeImageKeys)[number];
+export type FoodImageAsset = DecorativeImageKey;
 
-export const foodImageKeys: Readonly<Record<string, FoodImageAsset>> = {
-  // Baseline items
+export const availableImageAssets = decorativeImageKeys;
+
+export const foodImageKeys: Readonly<Record<string, DecorativeImageKey>> = {
   apple: 'apple',
   banana: 'banana',
-  'rice-cooked': 'rice',
-  'rice-raw': 'rice',
-  roti: 'roti',
-  moong: 'dal',
-  chickpeas: 'chickpeas',
-  milk: 'milk',
-  curd: 'curd',
-  almonds: 'almonds',
+  dosa: 'dosa',
+  carrot: 'carrot',
   oats: 'oats',
-  paneer: 'paneer',
 };
 
 export function foodImageKey(
-  foodOrId: string | Food | null | undefined,
+  target: { id?: string; imageKey?: string } | string | null | undefined,
   failed = false,
-): FoodImageAsset | null {
-  if (!foodOrId || failed) return null;
-
-  if (typeof foodOrId === 'object') {
-    if (
-      foodOrId.imageKey &&
-      availableImageAssets.includes(foodOrId.imageKey as FoodImageAsset)
-    ) {
-      return foodOrId.imageKey as FoodImageAsset;
-    }
-    return Object.hasOwn(foodImageKeys, foodOrId.id)
-      ? foodImageKeys[foodOrId.id]
-      : null;
-  }
-
-  return Object.hasOwn(foodImageKeys, foodOrId)
-    ? foodImageKeys[foodOrId]
-    : null;
+): DecorativeImageKey | null {
+  if (!target || failed) return null;
+  const key =
+    typeof target === 'string' ? target : (target.imageKey ?? target.id);
+  if (!key || typeof key !== 'string') return null;
+  return Object.hasOwn(foodImageKeys, key) ? foodImageKeys[key] : null;
 }
 
 export function categoryIcon(category?: string): string {

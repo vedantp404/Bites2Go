@@ -11,7 +11,6 @@ import {
   LibraryStatus,
   useLibraryForm,
 } from '../components/LibraryControls';
-import { FoodImage } from '../components/FoodImage';
 import { foods } from '../data/foods';
 import {
   libraryFoods,
@@ -99,7 +98,6 @@ function Editor({ initial, item }: { initial: Library; item?: Recipe }) {
         onPress={form.back}
       />
       <Card>
-        <FoodImage foodId={id} />
         <Field
           text
           label="Meal / recipe name (1–120 characters)"
@@ -170,32 +168,49 @@ function Editor({ initial, item }: { initial: Library; item?: Recipe }) {
               onChangeText={setQuery}
               disabled={form.disabled}
             />
-            {searchFoods(available, query).length === 0 ? (
-              <Text style={ui.body}>
-                No matching ingredients. Create a custom food in My foods first
-                if needed.
-              </Text>
-            ) : null}
-            {searchFoods(available, query).map((food) => (
-              <FoodChoice
-                key={food.id}
-                food={food}
-                disabled={
-                  form.disabled || ingredients.some((i) => i.foodId === food.id)
-                }
-                onPress={() => {
-                  setIngredients([
-                    ...ingredients,
-                    {
-                      ...ingredientFromFood(food.id, available, 100),
-                      amount: '100',
-                    },
-                  ]);
-                  setSearching(false);
-                  setQuery('');
-                }}
-              />
-            ))}
+            {(() => {
+              const allMatches = searchFoods(available, query);
+              const visibleMatches = allMatches.slice(0, 30);
+              if (allMatches.length === 0) {
+                return (
+                  <Text style={ui.body}>
+                    No matching ingredients. Create a custom food in My foods
+                    first if needed.
+                  </Text>
+                );
+              }
+              return (
+                <>
+                  {visibleMatches.map((food) => (
+                    <FoodChoice
+                      key={food.id}
+                      food={food}
+                      disabled={
+                        form.disabled ||
+                        ingredients.some((i) => i.foodId === food.id)
+                      }
+                      onPress={() => {
+                        setIngredients([
+                          ...ingredients,
+                          {
+                            ...ingredientFromFood(food.id, available, 100),
+                            amount: '100',
+                          },
+                        ]);
+                        setSearching(false);
+                        setQuery('');
+                      }}
+                    />
+                  ))}
+                  {allMatches.length > 30 ? (
+                    <Text style={ui.label}>
+                      Showing top 30 matches of {allMatches.length}. Type to
+                      refine.
+                    </Text>
+                  ) : null}
+                </>
+              );
+            })()}
           </>
         ) : null}
       </Card>

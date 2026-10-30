@@ -12,8 +12,14 @@ import {
   foodOrigin,
   type LibraryFilter,
 } from '../domain/library';
-import { FoodImage } from '../components/FoodImage';
-import { useCallback, useReducer, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from 'react';
 import { randomUUID } from 'expo-crypto';
 import { Action, Nutrition, useFoodStyles } from '../components/FoodControls';
 import { AIFoodScannerModal } from '../components/AIFoodScannerModal';
@@ -23,6 +29,7 @@ import type { DiaryEntry } from '../domain/diary';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
   BackHandler,
+  FlatList,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -71,7 +78,10 @@ export default function FoodSearchScreen() {
       defaultFoodPortion(typeof routeFoodId === 'string' ? routeFoodId : null)
         .mode,
   );
-  const available = libraryFoods(library.data ?? emptyLibrary(), foods);
+  const available = useMemo(
+    () => libraryFoods(library.data ?? emptyLibrary(), foods),
+    [library.data],
+  );
   const [busy, setBusy] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const saving = useRef(false);
@@ -83,17 +93,41 @@ export default function FoodSearchScreen() {
       ? foodDraftReducer(initial, { type: 'select', id: routeFoodId })
       : initial;
   });
+  const [queryInput, setQueryInput] = useState(draft.query);
   const [category, setCategory] = useState<string | null>(null);
   const [aiScannerOpen, setAiScannerOpen] = useState(false);
-  const categories = [...new Set(available.map((food) => food.category))];
-  const selected = available.find((food) => food.id === draft.foodId);
-  const matches = browseFoods(
-    library.data ?? emptyLibrary(),
-    foods,
-    diary.entries ?? [],
-    filter,
-    draft.query,
-  ).filter((food) => category === null || food.category === category);
+
+  // Debounce search query input to prevent UI thread lockups during typing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (draft.query !== queryInput) {
+        dispatch({ type: 'query', value: queryInput });
+      }
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [queryInput, draft.query]);
+
+  const categories = useMemo(
+    () => [...new Set(available.map((food) => food.category))],
+    [available],
+  );
+  const selected = useMemo(
+    () => available.find((food) => food.id === draft.foodId),
+    [available, draft.foodId],
+  );
+  const matches = useMemo(() => {
+    const list = browseFoods(
+      library.data ?? emptyLibrary(),
+      foods,
+      diary.entries ?? [],
+      filter,
+      draft.query,
+    );
+    return category === null
+      ? list
+      : list.filter((food) => food.category === category);
+  }, [library.data, diary.entries, filter, draft.query, category]);
+
   const back = useCallback(() => {
     if (saving.current) return;
     Keyboard.dismiss();
@@ -174,6 +208,151 @@ export default function FoodSearchScreen() {
       setBusy(false);
     }
   }
+
+  const renderSearchHeader = () => (
+    <View style={{ gap: t.spacing.md }}>
+      <Text style={ui.body}>
+        Food values are illustrative or user-entered estimates, not nutritional
+        guidance. Entries are saved only on this device after confirmation.
+      </Text>
+      <LibraryStatus />
+      <Action
+        variant="primary"
+        label="Scan Meal with Gemini AI"
+        onPress={() => setAiScannerOpen(true)}
+      />
+      <Action
+        variant="secondary"
+        label="My Meals & Recipes / custom foods"
+        onPress={() =>
+          router.push({
+            pathname: '/my-foods',
+            params: {
+              ...(date ? { date } : {}),
+              ...(draft.meal ? { meal: draft.meal } : {}),
+            },
+          })
+        }
+      />
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: t.spacing.sm }}
+      >
+        {(['All', 'Favourites', 'Recent', 'Custom', 'Recipes'] as const).map(
+          (value) => (
+            <Pressable
+              key={value}
+              accessibilityRole="button"
+              accessibilityState={{ selected: filter === value }}
+              onPress={() => {
+                setFilter(value);
+                setCategory(null);
+              }}
+              style={{
+                minHeight: 48,
+                paddingHorizontal: 16,
+                justifyContent: 'center',
+                borderRadius: 24,
+                backgroundColor:
+                  filter === value ? t.colors.primary : t.colors.elevated,
+              }}
+            >
+              <Text
+                style={{
+                  ...t.typography.label,
+                  color: filter === value ? t.colors.onPrimary : t.colors.text,
+                }}
+              >
+                {value}
+              </Text>
+            </Pressable>
+          ),
+        )}
+      </ScrollView>
+      {filter === 'Recent' && diary.entries === null ? (
+        <Text style={ui.body}>
+          Recent foods are unavailable until the diary loads. Return to Diary to
+          retry loading.
+        </Text>
+      ) : null}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: t.spacing.sm }}
+      >
+        {[null, ...categories].map((item) => (
+          <Pressable
+            key={item ?? 'all'}
+            accessibilityRole="button"
+            accessibilityState={{ selected: category === item }}
+            onPress={() => setCategory(item)}
+            style={{
+              minHeight: 48,
+              paddingHorizontal: 20,
+              justifyContent: 'center',
+              borderRadius: 24,
+              backgroundColor:
+                category === item ? t.colors.primary : t.colors.elevated,
+            }}
+          >
+            <Text
+              style={{
+                ...t.typography.label,
+                color: category === item ? t.colors.onPrimary : t.colors.text,
+              }}
+            >
+              {item ?? 'All foods'}
+            </Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+      <Text style={ui.body}>Search by food name or alias</Text>
+      <TextInput
+        selectionColor={t.colors.primary}
+        accessibilityLabel="Search foods"
+        placeholder="Try rice, chapati or dahi"
+        placeholderTextColor={t.colors.muted}
+        value={queryInput}
+        onChangeText={setQueryInput}
+        autoCapitalize="none"
+        autoCorrect={false}
+        returnKeyType="search"
+        onSubmitEditing={Keyboard.dismiss}
+        style={styles.input}
+      />
+      {queryInput ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => {
+            setQueryInput('');
+            dispatch({ type: 'query', value: '' });
+          }}
+          style={styles.back}
+        >
+          <Text style={ui.label}>Clear search</Text>
+        </Pressable>
+      ) : null}
+      {selected ? (
+        <Card>
+          <Text style={ui.body}>
+            Current preview: {selected.name}, {draft.grams} {quantityMode}.
+            Retained while this flow is open.
+          </Text>
+          <Action
+            label="Review current selection"
+            onPress={() => select(selected.id)}
+          />
+        </Card>
+      ) : null}
+      <Text accessibilityLiveRegion="polite" style={ui.label}>
+        {draft.query.trim()
+          ? `${matches.length} matching foods`
+          : `${matches.length} foods${category ? ` / ${category}` : ''}`}
+      </Text>
+    </View>
+  );
+
   return (
     <SafeAreaView style={ui.page}>
       <View style={[ui.content, { paddingBottom: 0, gap: t.spacing.sm }]}>
@@ -206,27 +385,22 @@ export default function FoodSearchScreen() {
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <ScrollView
-          key={draft.detail ? 'detail' : 'search'}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          contentContainerStyle={[ui.content, { gap: t.spacing.md }]}
-        >
-          <Text style={ui.body}>
-            Food values are illustrative or user-entered estimates, not
-            nutritional guidance. Entries are saved only on this device after
-            confirmation.
-          </Text>
-          <LibraryStatus />
-          {draft.detail ? (
-            selected ? (
+        {draft.detail ? (
+          <ScrollView
+            key="detail"
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            contentContainerStyle={[ui.content, { gap: t.spacing.md }]}
+          >
+            <Text style={ui.body}>
+              Food values are illustrative or user-entered estimates, not
+              nutritional guidance. Entries are saved only on this device after
+              confirmation.
+            </Text>
+            <LibraryStatus />
+            {selected ? (
               <>
                 <Card>
-                  <FoodImage
-                    foodId={selected.id}
-                    category={selected.category}
-                    prominent
-                  />
                   <Text accessibilityRole="header" style={ui.heading}>
                     {selected.name}
                   </Text>
@@ -444,172 +618,42 @@ export default function FoodSearchScreen() {
                 </Text>
                 <Action label="Back to search" onPress={back} />
               </Card>
-            )
-          ) : (
-            <>
-              <Action
-                variant="primary"
-                label="Scan Meal with Gemini AI"
-                onPress={() => setAiScannerOpen(true)}
-              />
-              <Action
-                variant="secondary"
-                label="My Meals & Recipes / custom foods"
-                onPress={() =>
-                  router.push({
-                    pathname: '/my-foods',
-                    params: {
-                      ...(date ? { date } : {}),
-                      ...(draft.meal ? { meal: draft.meal } : {}),
-                    },
-                  })
-                }
-              />
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ gap: t.spacing.sm }}
-              >
-                {(
-                  ['All', 'Favourites', 'Recent', 'Custom', 'Recipes'] as const
-                ).map((value) => (
-                  <Pressable
-                    key={value}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: filter === value }}
-                    onPress={() => {
-                      setFilter(value);
-                      setCategory(null);
-                    }}
-                    style={{
-                      minHeight: 48,
-                      paddingHorizontal: 16,
-                      justifyContent: 'center',
-                      borderRadius: 24,
-                      backgroundColor:
-                        filter === value ? t.colors.primary : t.colors.elevated,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        ...t.typography.label,
-                        color:
-                          filter === value ? t.colors.onPrimary : t.colors.text,
-                      }}
-                    >
-                      {value}
-                    </Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-              {filter === 'Recent' && diary.entries === null ? (
+            )}
+          </ScrollView>
+        ) : (
+          <FlatList
+            key="search"
+            data={matches}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <FoodChoice food={item} onPress={() => select(item.id)} />
+            )}
+            initialNumToRender={12}
+            maxToRenderPerBatch={15}
+            windowSize={5}
+            removeClippedSubviews={Platform.OS === 'android'}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            contentContainerStyle={[ui.content, { gap: t.spacing.sm }]}
+            ListHeaderComponent={renderSearchHeader}
+            ListEmptyComponent={
+              <Card>
+                <Text style={ui.heading}>No foods found</Text>
                 <Text style={ui.body}>
-                  Recent foods are unavailable until the diary loads. Return to
-                  Diary to retry loading.
+                  Try All foods, a shorter name or another alias. Add favourites
+                  from food details; recents appear after confirmed diary saves.
+                  Create custom foods and recipes in My foods.
                 </Text>
-              ) : null}
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ gap: t.spacing.sm }}
-              >
-                {[null, ...categories].map((item) => (
-                  <Pressable
-                    key={item ?? 'all'}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: category === item }}
-                    onPress={() => setCategory(item)}
-                    style={{
-                      minHeight: 48,
-                      paddingHorizontal: 20,
-                      justifyContent: 'center',
-                      borderRadius: 24,
-                      backgroundColor:
-                        category === item
-                          ? t.colors.primary
-                          : t.colors.elevated,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        ...t.typography.label,
-                        color:
-                          category === item
-                            ? t.colors.onPrimary
-                            : t.colors.text,
-                      }}
-                    >
-                      {item ?? 'All foods'}
-                    </Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-              <Text style={ui.body}>Search by food name or alias</Text>
-              <TextInput
-                selectionColor={t.colors.primary}
-                accessibilityLabel="Search foods"
-                placeholder="Try rice, chapati or dahi"
-                placeholderTextColor={t.colors.muted}
-                value={draft.query}
-                onChangeText={(value) => dispatch({ type: 'query', value })}
-                autoCapitalize="none"
-                autoCorrect={false}
-                returnKeyType="search"
-                onSubmitEditing={Keyboard.dismiss}
-                style={styles.input}
-              />
-              {draft.query ? (
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => dispatch({ type: 'query', value: '' })}
-                  style={styles.back}
-                >
-                  <Text style={ui.label}>Clear search</Text>
-                </Pressable>
-              ) : null}
-              {selected ? (
-                <Card>
-                  <Text style={ui.body}>
-                    Current preview: {selected.name}, {draft.grams}{' '}
-                    {quantityMode}. Retained while this flow is open.
-                  </Text>
-                  <Action
-                    label="Review current selection"
-                    onPress={() => select(selected.id)}
-                  />
-                </Card>
-              ) : null}
-              <Text accessibilityLiveRegion="polite" style={ui.label}>
-                {draft.query.trim()
-                  ? `${matches.length} matching foods`
-                  : `${matches.length} foods${category ? ` / ${category}` : ''}`}
-              </Text>
-              {matches.length === 0 ? (
-                <Card>
-                  <Text style={ui.heading}>No foods found</Text>
-                  <Text style={ui.body}>
-                    Try All foods, a shorter name or another alias. Add
-                    favourites from food details; recents appear after confirmed
-                    diary saves. Create custom foods and recipes in My foods.
-                  </Text>
-                </Card>
-              ) : (
-                matches.map((food) => (
-                  <FoodChoice
-                    key={food.id}
-                    food={food}
-                    onPress={() => select(food.id)}
-                  />
-                ))
-              )}
-
-              <Text style={ui.body}>
+              </Card>
+            }
+            ListFooterComponent={
+              <Text style={[ui.body, { paddingVertical: t.spacing.md }]}>
                 Leaving food search clears this temporary selection. Search
                 works offline. Only confirmed entries are saved.
               </Text>
-            </>
-          )}
-        </ScrollView>
+            }
+          />
+        )}
       </KeyboardAvoidingView>
       <AIFoodScannerModal
         visible={aiScannerOpen}
