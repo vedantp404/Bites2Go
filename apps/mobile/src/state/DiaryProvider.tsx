@@ -18,6 +18,7 @@ type DiaryState = {
   error: string;
   reload: () => void;
   save: (entry: DiaryEntry) => Promise<void>;
+  saveAll: (entries: DiaryEntry[]) => Promise<void>;
   update: (entry: DiaryEntry, original: DiaryEntry) => Promise<void>;
   remove: (entry: DiaryEntry) => Promise<void>;
   message: string;
@@ -75,6 +76,13 @@ export function DiaryProvider({ children }: PropsWithChildren) {
         message,
         save: (entry) =>
           commit(diaryRepository.save(entry), 'Food saved on this device.'),
+        saveAll: (entries) =>
+          commit(
+            diaryRepository.saveAll(entries),
+            entries.length === 1
+              ? 'Food saved on this device.'
+              : `${entries.length} foods saved on this device.`,
+          ),
         update: (entry, original) =>
           commit(
             diaryRepository.update(entry, original),

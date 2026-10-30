@@ -55,6 +55,26 @@ export function createDiaryRepository(storage: DiaryStorage) {
         }
         return write([...entries, entry]);
       }),
+    saveAll: (entriesToSave: DiaryEntry[]) =>
+      serialize(async () => {
+        for (const entry of entriesToSave) {
+          assertEntry(entry);
+        }
+        const entries = await read();
+        const next = [...entries];
+        for (const entry of entriesToSave) {
+          const existing = next.find((e) => e.id === entry.id);
+          if (existing) {
+            if (JSON.stringify(existing) !== JSON.stringify(entry))
+              throw new Error(
+                'This entry ID is already saved with different details. Reload the diary.',
+              );
+          } else {
+            next.push(entry);
+          }
+        }
+        return write(next);
+      }),
     update: (entry: DiaryEntry, original: DiaryEntry) =>
       serialize(async () => {
         assertEntry(entry);

@@ -16,6 +16,7 @@ import { FoodImage } from '../components/FoodImage';
 import { useCallback, useReducer, useRef, useState } from 'react';
 import { randomUUID } from 'expo-crypto';
 import { Action, Nutrition, useFoodStyles } from '../components/FoodControls';
+import { AIFoodScannerModal } from '../components/AIFoodScannerModal';
 import { useDiary } from '../state/DiaryProvider';
 import { createEntry, localDateKey, validDateKey } from '../domain/diary';
 import type { DiaryEntry } from '../domain/diary';
@@ -83,6 +84,7 @@ export default function FoodSearchScreen() {
       : initial;
   });
   const [category, setCategory] = useState<string | null>(null);
+  const [aiScannerOpen, setAiScannerOpen] = useState(false);
   const categories = [...new Set(available.map((food) => food.category))];
   const selected = available.find((food) => food.id === draft.foodId);
   const matches = browseFoods(
@@ -402,6 +404,11 @@ export default function FoodSearchScreen() {
           ) : (
             <>
               <Action
+                variant="primary"
+                label="Scan Meal with Gemini AI"
+                onPress={() => setAiScannerOpen(true)}
+              />
+              <Action
                 variant="secondary"
                 label="My Meals & Recipes / custom foods"
                 onPress={() =>
@@ -560,6 +567,16 @@ export default function FoodSearchScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+      <AIFoodScannerModal
+        visible={aiScannerOpen}
+        meal={draft.meal || 'Lunch'}
+        date={date}
+        onClose={() => setAiScannerOpen(false)}
+        onSuccess={() => {
+          setAiScannerOpen(false);
+          router.back();
+        }}
+      />
     </SafeAreaView>
   );
 }

@@ -71,6 +71,89 @@ export function createEntry(
   assertEntry(entry);
   return entry;
 }
+export type AIDiaryEntryInput = {
+  id: string;
+  foodName: string;
+  meal: Meal;
+  date: string;
+  grams: number;
+  calories: number | null;
+  protein: number | null;
+  carbs: number | null;
+  fat: number | null;
+  fiber?: number | null;
+  preparation?: string;
+  source?: string;
+  now?: string;
+};
+export function createAIDiaryEntry(input: AIDiaryEntryInput): DiaryEntry {
+  const {
+    id,
+    foodName,
+    meal,
+    date,
+    grams,
+    calories,
+    protein,
+    carbs,
+    fat,
+    fiber = 0,
+    preparation = 'Recognized by Gemini AI',
+    source = 'Gemini AI',
+    now = new Date().toISOString(),
+  } = input;
+  const trimmedName = foodName.trim();
+  if (!trimmedName) {
+    throw new Error('Food name cannot be empty.');
+  }
+  if (!Number.isFinite(grams) || grams <= 0) {
+    throw new RangeError('Portion must be a positive number of grams.');
+  }
+  if (!meals.includes(meal)) {
+    throw new Error('Invalid meal category.');
+  }
+  if (!validDateKey(date)) {
+    throw new Error('Invalid diary date.');
+  }
+  const checkVal = (
+    v: number | null | undefined,
+    name: string,
+  ): number | null => {
+    if (v === null || v === undefined) return null;
+    if (!Number.isFinite(v) || v < 0) {
+      throw new RangeError(`${name} must be a non-negative finite number.`);
+    }
+    return v;
+  };
+  const portion: FoodNutrients = {
+    calories: checkVal(calories, 'Calories'),
+    protein: checkVal(protein, 'Protein'),
+    carbs: checkVal(carbs, 'Carbohydrates'),
+    fat: checkVal(fat, 'Fat'),
+    fiber: checkVal(fiber, 'Fiber'),
+  };
+  const reference = scaleNutrients(portion, 10000 / grams);
+  const nutrients: FoodNutrients = { ...portion };
+  const entry: DiaryEntry = {
+    id,
+    foodId: null,
+    foodName: trimmedName,
+    meal,
+    date,
+    grams,
+    unit: 'g',
+    referenceGrams: 100,
+    reference,
+    nutrients,
+    preparation: preparation.trim() || 'Recognized by Gemini AI',
+    source: source.trim() || 'Gemini AI',
+    status: 'illustrative',
+    createdAt: now,
+    updatedAt: now,
+  };
+  assertEntry(entry);
+  return entry;
+}
 export function editPortion(
   entry: DiaryEntry,
   grams: number,
