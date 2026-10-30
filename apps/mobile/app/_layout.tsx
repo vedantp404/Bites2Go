@@ -36,8 +36,8 @@ function App() {
     <View
       style={{ flex: 1, backgroundColor: t.colors.background }}
       onLayout={() => {
-        void SplashScreen.hideAsync().catch((error) =>
-          console.warn('Splash screen hide failed', error),
+        void SplashScreen.hideAsync().catch(() =>
+          console.warn('Splash screen hide failed'),
         );
       }}
     >

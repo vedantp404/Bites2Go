@@ -1,5 +1,13 @@
 # Test strategy
 
+## Stage 11 final acceptance rerun
+
+All development checks rerun and passed: 96 tests, types/lint/format, Doctor20/20, config, Android bundle/source-map export, disposable local PostgreSQL policies and scoped current/history/export credential scan (zero findings). Audit FAILED exit1 with unchanged 3 high/5 low rows, explicitly excepted by user for development commit only. No Stage11 physical-device confirmation, signed-install or hosted-Supabase evidence. Prior general user Android testing is not a substitute. See RELEASE_READINESS.md for exact evidence and remaining production/manual gates.
+
+## Stage 11 executed validation
+
+Baseline 93 tests; final 96 pass, including uncertain-write reloads, large date-separated histories/per-day overflow and checkpoint monotonic persistence. Expanded existing contrast assertions pass. Types/lint/format, Doctor 20/20, public config, Android export and real isolated PostgreSQL policy tests pass. Dependency audit fails unchanged (3 high / 5 low). Scoped credential-pattern scans pass. See [Release readiness](RELEASE_READINESS.md) for commands, exact limits and pending per-screen Android checklist. Repository tests do not establish rendered Back/button/TalkBack behavior; no native device or hosted Supabase pass is claimed.
+
 ## Stage 10 verification — 2026-10-30
 
 Baseline before edits: 79/79 tests passed on clean synchronized master 703b25ae1c5a726491d880f4955de2944ece3475. Final `npm test`: 93/93, including 14 new Insights tests. Coverage: 7/30-day and custom ranges, month/year/leap/1900 boundaries, actual Node timezone processes for New York DST and Kolkata date differences, future-date rejection, complete/partial/unknown nutrients, empty/limited meal days, duplicate identities, explicit zero, averages and eligibility, historical/changed/unset/disabled targets, inclusive tolerance boundaries, today exclusion, actual weight changes/current-goal dates and pure UI loading/error/ready/selection/accessibility-label behaviour. Existing theme contrast/appearance and storage/snapshot regressions remain passing.

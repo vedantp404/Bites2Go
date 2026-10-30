@@ -1,5 +1,9 @@
 # Bites2Go
 
+## Stage 11 — accepted for development; production release blocked
+
+Local hardening and 96 passing tests are documented in [Release readiness](docs/RELEASE_READINESS.md). Types/lint/format, Doctor, configuration, Android export and local SQL policy tests pass. Dependency audit remains **3 high / 5 low** with no verified compatible patch; no dependency changes or live cloud. The user explicitly accepts these documented findings for the Stage 11 development commit only; this is not production security clearance. Physical Android acceptance and signed-build installation remain pending.
+
 ## Stage 10: offline Nutrition Insights
 
 Open **Progress → Nutrition insights**. Choose the last 7 or 30 days (including today), or apply a custom local-date range up to 92 days. Browse daily calorie/macro/fiber snapshots and historical targets, nutrient trend dots with target markers, averages with eligibility counts, calorie/protein target consistency, neutral observations and actual in-range weight measurements. Add Food retains the displayed insight date; Open food diary opens the existing diary destination.

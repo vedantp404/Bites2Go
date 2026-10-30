@@ -93,9 +93,13 @@ export default function FoodSearchScreen() {
     if (saving.current) return;
     Keyboard.dismiss();
     if (draft.detail && !pending.current) dispatch({ type: 'back' });
-    else if (router.canGoBack()) router.back();
-    else router.replace('/');
-  }, [draft.detail]);
+    else {
+      // A write may have succeeded before its acknowledgement failed.
+      if (pending.current) diary.reload();
+      if (router.canGoBack()) router.back();
+      else router.replace('/');
+    }
+  }, [draft.detail, diary]);
   useFocusEffect(
     useCallback(() => {
       const subscription = BackHandler.addEventListener(

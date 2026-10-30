@@ -141,18 +141,16 @@ export function decodeDiary(raw: string | null): DiaryEntry[] {
   if (!record(value) || value.version !== 1 || !Array.isArray(value.entries))
     throw new Error('Unsupported or invalid diary document.');
   const ids = new Set<string>();
+  const byDate = new Map<string, DiaryEntry[]>();
   for (const entry of value.entries) {
     assertEntry(entry);
     if (ids.has(entry.id)) throw new Error('Duplicate diary identity.');
     ids.add(entry.id);
+    const day = byDate.get(entry.date);
+    if (day) day.push(entry);
+    else byDate.set(entry.date, [entry]);
   }
-  for (const date of new Set(
-    value.entries.map((entry: DiaryEntry) => entry.date),
-  )) {
-    diaryTotals(
-      value.entries.filter((entry: DiaryEntry) => entry.date === date),
-    );
-  }
+  for (const day of byDate.values()) diaryTotals(day);
   return value.entries;
 }
 export function diaryTotals(entries: readonly DiaryEntry[]) {

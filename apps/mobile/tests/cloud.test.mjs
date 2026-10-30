@@ -390,3 +390,21 @@ test('a newer checkpoint invalidates an older in-flight download or upload plan'
   );
   assert.equal(called, false);
 });
+
+test('checkpoint persistence rejects removed, rewound and rewritten acknowledgements', async () => {
+  const { storage, values } = memory();
+  const repo = createCheckpointRepository(storage);
+  const current = checkpoint(bound(), row(null, 3));
+  await repo.save(current, null);
+  const before = values.get(syncKey);
+  for (const base of [[], [row(null, 2)], [row(entry(), 3)]]) {
+    await assert.rejects(
+      repo.save({ ...current, base }, current),
+      /cannot be removed or rewound/,
+    );
+    assert.equal(values.get(syncKey), before);
+  }
+  const next = checkpoint(current, row(entry(), 4));
+  assert.deepEqual(await repo.save(next, current), next);
+  assert.deepEqual(await repo.save(next, current), next);
+});

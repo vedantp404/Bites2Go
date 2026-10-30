@@ -55,14 +55,20 @@ function EntryEditor({ original }: { original: DiaryEntry }) {
     null,
   );
   const diary = useDiary();
+  const leave = useCallback(() => {
+    if (locked.current) return;
+    Keyboard.dismiss();
+    if (failedAction) diary.reload();
+    back();
+  }, [diary, failedAction]);
   useFocusEffect(
     useCallback(() => {
-      const sub = BackHandler.addEventListener(
-        'hardwareBackPress',
-        () => locked.current,
-      );
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        leave();
+        return true;
+      });
       return () => sub.remove();
-    }, []),
+    }, [leave]),
   );
   const grams = parseGrams(portion);
   let preview: DiaryEntry | null = null;
@@ -116,7 +122,7 @@ function EntryEditor({ original }: { original: DiaryEntry }) {
             variant="secondary"
             label="Cancel / Back"
             disabled={busy}
-            onPress={back}
+            onPress={leave}
           />
           <Text accessibilityRole="header" style={ui.title}>
             Review entry

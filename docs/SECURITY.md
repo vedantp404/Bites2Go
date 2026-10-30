@@ -1,5 +1,9 @@
 # Security and privacy plan
 
+## Stage 11 findings
+
+See [Release readiness](RELEASE_READINESS.md) for all eight unresolved dependency rows, verified tooling exposure, compatible-fix limits and mitigations. Production release remains blocked. The user explicitly permits a development-only Stage 11 commit after the other required checks pass; this does not waive the security findings. No live cloud. Scoped current/history/Android-export credential-pattern scan found zero matches; this is not comprehensive secret certification. Fixed checkpoint regression acceptance and raw splash-error logging. Local storage remains unencrypted at application level; privacy/backup/retention and signed Android acceptance are still required.
+
 ## Stage 9 security boundary and limits
 
 No cloud credentials/configuration were available and no data is uploaded. Only public URL/publishable-key placeholders ship; configuration alone cannot activate networking. No passwords or sessions are stored. Authentication, verified SDK sessions and an Expo SecureStore adapter remain required before live enablement; never store tokens in the existing plain SQLite documents or log raw provider errors.

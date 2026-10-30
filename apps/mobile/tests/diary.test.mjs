@@ -295,3 +295,42 @@ test('unknown values survive persistence; overflowing stored totals are rejected
   assert.equal(corrupt.state.raw, raw);
   assert.equal(corrupt.state.writes, 0);
 });
+
+test('large date-separated histories retain order, unknowns and per-day overflow validation', () => {
+  const entries = Array.from({ length: 5000 }, (_, i) =>
+    entry(String(i), shiftDay('1990-01-01', i)),
+  );
+  assert.deepEqual(
+    decodeDiary(JSON.stringify({ version: 1, entries })),
+    entries,
+  );
+  const huge = entry('huge');
+  huge.reference.calories = 5e307;
+  huge.nutrients.calories = 1e308;
+  const second = { ...huge, id: 'second', date: shiftDay(huge.date, -1) };
+  assert.equal(
+    decodeDiary(JSON.stringify({ version: 1, entries: [huge, second] })).length,
+    2,
+  );
+  assert.throws(() =>
+    decodeDiary(
+      JSON.stringify({
+        version: 1,
+        entries: [huge, { ...second, date: huge.date }],
+      }),
+    ),
+  );
+});
+
+test('reload after uncertain save, edit and delete reconciles persisted outcomes', async () => {
+  const { repo, state } = memory();
+  state.ackError = true;
+  const value = entry();
+  await assert.rejects(repo.save(value));
+  assert.deepEqual(await repo.loadAll(), [value]);
+  const changed = editPortion(value, 300, now);
+  await assert.rejects(repo.update(changed, value));
+  assert.deepEqual(await repo.loadAll(), [changed]);
+  await assert.rejects(repo.remove(changed));
+  assert.deepEqual(await repo.loadAll(), []);
+});

@@ -32,6 +32,18 @@ export function createCheckpointRepository(storage: DiaryStorage) {
         if (same(current, next)) return current;
         if (!same(current, original))
           throw Error('Sync checkpoint changed. Reload before retrying.');
+        const nextRows = new Map(next.base.map((row) => [row.id, row]));
+        for (const previous of current?.base ?? []) {
+          const row = nextRows.get(previous.id);
+          if (
+            !row ||
+            row.revision < previous.revision ||
+            (row.revision === previous.revision && !same(row, previous))
+          )
+            throw Error(
+              'Acknowledged sync revisions cannot be removed or rewound.',
+            );
+        }
         try {
           await storage.setItem(syncKey, JSON.stringify(next));
         } catch {

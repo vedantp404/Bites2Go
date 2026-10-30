@@ -1,5 +1,16 @@
 # Ordered roadmap
 
+## Stage 11: development acceptance passed; production release blocked
+
+- [x] Verify clean master/origin at 369d562b7bfeee014810d9236f1097bef2d2ce85 and rerun baseline 93 tests/checks.
+- [x] Trace both advisories and all eight audit rows; verify installed versions, tooling call sites and compatible patch availability.
+- [x] Fix diary uncertain-write exit reconciliation, repeated validation scans and checkpoint revision regression; remove raw splash errors.
+- [x] Verify 96 tests, expanded existing contrast assertions, types/lint/format, Doctor 20/20, config, Android export and real local SQL policy tests.
+- [x] Review current/history/export credential patterns and document findings, privacy/accessibility limits and release checklist.
+- [ ] Resolve audit: 3 high / 5 low remain; no supported compatible patch verified. This remains a production release blocker; the user explicitly permits the Stage 11 development commit.
+- [ ] Physical Android, signed build/install and release privacy checklist in RELEASE_READINESS.md.
+- [x] Final development acceptance: repeat all required checks, local SQL and credential scan; audit fails unchanged and is explicitly excepted for the development commit only. Commit/push outcome is verified in the final report. Stop before another stage.
+
 ## Current task: Stage 10 Nutrition Insights
 
 - [x] Verify clean master/origin at 703b25ae1c5a726491d880f4955de2944ece3475 and run baseline suite: 79 tests passed.
@@ -187,3 +198,11 @@ Next: review Stage 2 and verify the screen on Android before Stage 3. Stage 3 ha
 - [x] Integrate completed dashboard refinement and food search on master without duplicate commits.
 - [x] Establish permanent direct-to-master rules; no new feature branch or PR.
 - [x] Rerun integrated master checks: types, lint, formatting, 10 tests, Doctor, config and Android export; disclose unchanged audit findings.
+
+## Stage 11 dependency follow-up
+
+- [x] Rerun audit/tree and official registry/advisory checks; all eight affected rows documented in RELEASE_READINESS.md.
+- [x] Verify latest stable SDK/CLI and transitive range limitations; no safe supported patch found, dependencies unchanged.
+- [x] Rerun 96 tests, types/lint/format, Doctor 20/20, public config and Android export; verify affected libraries absent from this export map.
+- [x] Hash-check preservation of existing Stage 11 work and document mitigations without claiming remediation.
+- [x] User supplied explicit development-only acceptance criteria and conditional commit/push authorization after investigation. Public-release/device gates remain pending.

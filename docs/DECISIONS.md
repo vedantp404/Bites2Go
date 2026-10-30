@@ -111,3 +111,11 @@ References: https://docs.expo.dev/versions/v58.0.0/sdk/sqlite/ and https://docs.
 Reuse the validated Stage 5 SQLite document and provider; do not migrate or duplicate records. Build a memoized date index once per entries update. Home/Diary/Calendar select date buckets; calendar checks only the displayed month's cells. No per-month full-document rereads, second cache of persisted data, new library, or SQL schema migration. SQL row queries would require a broader migration of the single JSON document and are deferred until history size justifies it.
 
 Calendar renders a Monday-first month grid with independent visible month and selected diary date, today text, logged bullet/count semantics and selected outline. Its selected-day diary reuses existing summaries/meals/actions inline, so stack Back returns from Add Food/edit to the same calendar state. Month browsing alone never changes the selected date. Today explicitly selects the device-local date. Future dates can be browsed, but the existing PRD/Stage 5 future-logging restriction remains clearly labeled. Minimum 48 dp date targets use horizontal scrolling on narrow screens. No streaks, weight, accounts, cloud or Stage 7.
+
+## Stage 11 review plan (2026-10-30)
+
+Keep SDK 58 and the lockfile unchanged: current compatible Expo CLI requires vulnerable Zod 3 and deepmerge has no patched release. Do not force a major override or SDK downgrade. Audit remains a release/commit gate. Fix demonstrated diary exit reconciliation, repeated per-date validation scans and checkpoint revision regression; add regression and theme contrast tests. Review tracked/history/export credential patterns and document native/live-cloud limits. No schema changes or cloud activation.
+
+## Stage 11 final acceptance decision (2026-10-30)
+
+Explicit user instruction supersedes the earlier audit-based commit hold: accept Stage 11 for continued development when intended diff, tests/static/Expo/export/local-SQL/credential checks pass and the audit remains accurately disclosed. Final checks pass except unchanged audit exit1 (3 high/5 low). This is a development-only exception, not production release clearance or a finding suppression. No dependency changes. Commit/push directly to master, verify remote hash, stop without starting another stage.

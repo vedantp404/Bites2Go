@@ -32,7 +32,7 @@ export function DiaryProvider({ children }: PropsWithChildren) {
     () => (entries === null ? null : indexDiaryDates(entries)),
     [entries],
   );
-  const reload = () => {
+  const load = () => {
     const current = ++revision.current;
     void diaryRepository
       .loadAll()
@@ -52,7 +52,7 @@ export function DiaryProvider({ children }: PropsWithChildren) {
       });
   };
   useEffect(() => {
-    reload();
+    load();
   }, []);
   async function commit(operation: Promise<DiaryEntry[]>, notice: string) {
     const next = await operation;
@@ -67,7 +67,11 @@ export function DiaryProvider({ children }: PropsWithChildren) {
         entries,
         entriesByDate,
         error,
-        reload,
+        reload: () => {
+          setEntries(null);
+          setMessage('');
+          load();
+        },
         message,
         save: (entry) =>
           commit(diaryRepository.save(entry), 'Food saved on this device.'),

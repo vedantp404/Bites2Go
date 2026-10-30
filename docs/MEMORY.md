@@ -1,5 +1,19 @@
 # Project memory
 
+## Current handoff: Stage 11 final development acceptance
+
+User explicitly authorizes direct master commit/push after all development criteria pass, with the unchanged investigated audit excepted only for development. This supersedes earlier no-commit notes in historical entries. Fresh 96 tests, types/lint/format, Doctor20/20, config, Android export, isolated PostgreSQL and scoped credential scan pass; audit still FAILS exit1 with identical 3 high/5 low rows. No dependencies/schema changes, no known new regression in review. Production remains blocked pending remediation/formal security decision plus native/privacy release gates.
+
+Reviewed all intended Stage 11 files from baseline369d562b7bfeee014810d9236f1097bef2d2ce85; no unexpected user work. All prior implementation preserved. No specific Stage 11 device acceptance reported; regular user Android testing and prior Stage4/5 reports do not establish it. No Codex device/emulator, signed build/install or live Supabase tests; cloud stays disabled. See RELEASE_READINESS.md for final evidence. Commit/push and exact hashes are reported only after Git verifies them; do not create a follow-up commit solely to record its own hash. Stop here, no new feature authorized.
+
+## Historical handoff: Stage 11 initial blocked release gate (superseded below by final acceptance)
+
+Authorized Stage 11 supersedes earlier stop-before-11 notes. Started clean master/fetched origin 369d562b7bfeee014810d9236f1097bef2d2ce85. Baseline 93 tests pass; final 96 pass. Types/lint/format, Doctor 20/20, public config, final Android export and isolated PostgreSQL policies pass. Initial lint failure was fixed, not suppressed. No device/emulator or hosted Supabase tested.
+
+Local changes reconcile diary display on exit after uncertain save/edit/delete, group diary validation by date, reject checkpoint rollback/removal and remove raw splash error logging. Existing theme contrast coverage expanded; scoped current/history/export credential scanner added (zero patterns). No dependencies/schema/cloud changes. All 3 high and 5 low audit rows remain: Zod 3.25.76 requires breaking major upgrade unsupported by current Expo CLI; deepmerge 4.3.1 has no patched release. Export source map has neither module, but tooling risks remain. See RELEASE_READINESS.md for exact paths, advisories and reproduction.
+
+User conditions commit/push on all required checks passing: no Stage 11 commit or push; changes intentionally remain in working tree on master. Preserve them on resume. Do not claim release-ready, enable cloud or begin another stage. Android/native, privacy and signed-build acceptance remain pending.
+
 ## Current handoff: Stage 10 Nutrition Insights
 
 Started from clean verified master/origin 703b25ae1c5a726491d880f4955de2944ece3475; baseline 79 tests passed. Explicit Stage 10 nutrition-insights request supersedes older Stage 10 AI plans. Implemented read-only Insights stack route from Progress using existing diary/health providers and shared totals, local dates, historical targets and weight logic. 7/30-day rolling windows include today; custom ranges are 1–92 days, no future dates. Existing five tabs remain.
@@ -161,3 +175,7 @@ Exact next task: user reviews Stage 4 on Android using the Test Plan checklist. 
 TypeScript, lint, all 10 automated tests, Expo Doctor (20/20), public Expo configuration and Android Hermes export passed on the integrated application. Formatting initially failed because core.autocrlf=true converted checkout text to CRLF. Verified normalized content matched committed source; added .gitattributes for LF mobile text and normalized working files. Formatting rerun passed. No application logic or dependency versions changed beyond the existing feature commits.
 
 Fresh npm audit still exits 1 with 8 affected packages (5 low, 3 high): deepmerge GHSA-gcqx-w48m-w2h4 and zod GHSA-mrhx-c7xc-m3w5 through Expo tooling. No forced fixes applied. Existing Node module-type and Metro color warnings remain visible. User reports Stage 4 phone verification; agent did not run a device test. Commit/push outcomes are verified and reported in the completion message; no self-referential follow-up commit is required.
+
+## Stage 11 dependency follow-up (2026-10-30)
+
+Explicit investigation-only request: no commit/push, no next phase. Fresh audit remains 3 high/5 low. Registry confirms installed Expo/CLI are latest stable and no compatible Zod/deepmerge patch; no dependency changes. Installed CLI schema bounded invalid-array probe demonstrates issue-count growth; no remote exploit or OOM test claimed. Fresh export source map again excludes both libraries. 96 tests, types/lint/format, Doctor20/20, config/export pass. Existing code/test/manifest/lockfile hashes preserved; only appended notes in RELEASE_READINESS.md, TASKS.md and this Memory. Physical Android/live Supabase not tested. Acceptance criteria were not changed: user reviews evidence before any commit decision. Full eight-row table, ranges, parent edges and commands are appended to RELEASE_READINESS.md.

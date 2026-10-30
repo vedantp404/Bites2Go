@@ -1,5 +1,9 @@
 # Architecture proposal
 
+## Stage 11 hardening
+
+Diary validation groups entries once by date before checking daily totals, preserving entry order and existing snapshot/schema semantics. Exiting uncertain diary mutations reloads authoritative persisted state and hides stale displayed entries while loading. Checkpoint persistence (still unmounted) preserves acknowledged revisions/tombstones monotonically, even when supplied the current original snapshot. No schema, dependency or live-cloud changes. Evidence and unresolved release gates: [Release readiness](RELEASE_READINESS.md).
+
 ## Stage 10 read-only insights
 
 `domain/insights.ts` consumes loaded `DiaryProvider`/`HealthProvider` snapshots through `insightView`, with explicit loading/error/ready states. It reuses `indexDiaryDates`, `diaryTotals`, local `shiftDay`/date validation, `targetsForDate`, `validateHealth` and `weightProgress`. Calculations do not look up current foods or recipes and do not mutate input objects. Duplicate IDs fail closed rather than double-counting. Existing providers remain the only storage paths; no new repository or SQL migration is needed.

@@ -14,8 +14,8 @@ const store = createAppearanceStore(Storage);
 const ThemeContext = createContext<ReturnType<typeof useAppearance> | null>(
   null,
 );
-void SplashScreen.preventAutoHideAsync().catch((error) =>
-  console.warn('Splash screen hold unavailable', error),
+void SplashScreen.preventAutoHideAsync().catch(() =>
+  console.warn('Splash screen hold unavailable'),
 );
 function useAppearance() {
   const state = useSyncExternalStore(
