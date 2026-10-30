@@ -53,3 +53,27 @@ Installed: Expo 57.0.31, React Native 0.86.3, React 19.2.3, safe-area-context 5.
 Known issues: npm audit retains 8 transitive advisories (5 low, 3 high) involving Expo tooling's deepmerge/zod chain after compatible `npm audit fix`; forced remediation proposes incompatible Expo 51 downgrade and was not applied. Resolve/reassess before release. Expo-selected ESLint 9 emits an upstream support warning; retain compatibility pending supported SDK upgrade. The Node contrast test emits a module-type detection warning but passes. No claim of production security readiness.
 
 Next: review Stage 2 and verify the screen on Android before Stage 3. Stage 3 has not begun.
+
+## SDK 58 verification — 2026-10-30
+
+Branch `codex/expo-sdk-58`, based on master f75c4f3. Installed Expo 58.0.21, React Native 0.88.1, React 19.3.0, TypeScript 6.0.3. Expo-selected @types/react 19.3.0, eslint-config-expo 58.0.4, expo-status-bar 58.0.4 and safe-area-context 5.10.1. No changes to application features.
+
+| Check | Result |
+| --- | --- |
+| `npm run typecheck` | Passed |
+| `npm run lint` | Passed |
+| `npm run format:check` | Initially failed on Expo-generated app.json formatting; targeted Prettier formatting fixed it; rerun passed |
+| `npm test` | 1 passed, 0 failed (AA contrast) |
+| `npx expo-doctor` | 20/20 passed |
+| `npx expo config --type public` | Passed, SDK 58.0.0 |
+| `npx expo export --platform android` | Passed, Android Hermes bundle exported; not an APK/device test |
+| Manifest/lockfile comparison and `npm ls --depth=0` | Dependency ranges agree; installed tree valid |
+| `npm audit` before and after | Both report 8 affected packages: 5 low, 3 high; audit is not clean |
+
+Unchanged root advisories: deepmerge prototype poisoning (GHSA-gcqx-w48m-w2h4) and zod oversized-collection memory exhaustion (GHSA-mrhx-c7xc-m3w5), propagated through Expo config/CLI tooling. No newly reported advisory compared with the immediate pre-upgrade baseline. These remain release risks; a passing bundle does not establish security. No forced remediation applied.
+
+Existing Node module-type detection warning in the contrast test and NO_COLOR/FORCE_COLOR warnings during bundling remain visible; they were not suppressed. Physical Android execution, layout and interaction verification remain pending the user's SDK 58 Expo Go test. No Stage 3 work or merge into master.
+
+## Stage 3 dashboard — 2026-10-30
+
+Stage 3 results: typecheck, lint, formatting, Expo Doctor 20/20, configuration validation and Android export pass. Five node tests pass: meal aggregation/empty totals; progress and over-target clamping; zero/invalid targets; invalid intake; AA text contrast. Initial JSX apostrophe lint error was corrected, then formatting reapplied. UTF-8 scan of app/src files finds no U+FFFD replacement characters; the old preview sentence was replaced with ASCII punctuation. npm install reports the existing eight advisories; no forced fix applied. Node module-type and bundler color warnings remain unsuppressed. Physical-device preview, TalkBack, font scaling, navigation/back behavior and visual layout remain manual checks, not verified results.

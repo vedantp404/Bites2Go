@@ -51,3 +51,22 @@ Next: review Stage 2 and verify the screen on Android before Stage 3. Stage 3 ha
 - [x] Mobile foundation and developer checks implemented and verified.
 - [ ] Android device launch, layout and interaction verification (tooling/device unavailable).
 - [ ] Review unresolved dependency advisories before release.
+
+## SDK 58 compatibility follow-up
+
+- [x] Create codex/expo-sdk-58 from clean master f75c4f3 and align dependencies through Expo.
+- [x] Verify types, lint, formatting, contrast test, config, Doctor and Android bundle export.
+- [x] Compare fresh audits before/after; unchanged 8 advisories remain documented in Test Plan.
+- [x] Update SDK versions and Android LAN preview instructions.
+- [ ] User verifies physical Android preview with SDK 58 Expo Go, layout, Add Food alert and reload.
+- [ ] Review upgrade branch before any merge; master unchanged. Stage 3 remains deferred.
+
+## Stage 3 implementation checklist
+
+- [x] Branch from verified clean SDK 58 commit 64e5f33.
+- [x] Home summary, macros and four meals with labeled demo data and empty states.
+- [x] Five Expo Router tabs; sample Diary and explicit unfinished sections.
+- [x] Pure preview totals/progress, five passing tests and developer/build checks.
+- [x] Fix preview wording and verify UTF-8 source without replacement characters.
+- [ ] Physical Android, TalkBack and large-text visual/navigation verification.
+- [ ] User review before Stage 4; no merge into master.

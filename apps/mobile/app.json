@@ -21,6 +21,8 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "platforms": ["android"]
+    "platforms": ["android"],
+    "plugins": ["expo-status-bar", "expo-router"],
+    "scheme": "bites2go"
   }
 }
