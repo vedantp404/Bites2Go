@@ -286,3 +286,109 @@ test('atomic saveAll: saves multi-item meals without partial entries or duplicat
   const finalLoaded = await repo.loadDate('2026-10-31');
   assert.equal(finalLoaded.length, 3);
 });
+
+test('mixed Indian meal: logs Roti, Dal, Basmati Rice, and Bhindi with exact portion scaling and atomicity', async () => {
+  const { repo } = createMockStorage();
+
+  const roti = createAIDiaryEntry({
+    id: 'thali-roti-1',
+    foodName: 'Whole Wheat Roti',
+    meal: 'Dinner',
+    date: '2026-10-31',
+    grams: 70, // 2 rotis
+    calories: 190,
+    protein: 6.2,
+    carbs: 38.5,
+    fat: 1.4,
+  });
+
+  const dal = createAIDiaryEntry({
+    id: 'thali-dal-1',
+    foodName: 'Yellow Dal Tadka',
+    meal: 'Dinner',
+    date: '2026-10-31',
+    grams: 180, // 1 katori
+    calories: 154,
+    protein: 9.3,
+    carbs: 21.2,
+    fat: 4.1,
+  });
+
+  const rice = createAIDiaryEntry({
+    id: 'thali-rice-1',
+    foodName: 'Steamed Basmati Rice',
+    meal: 'Dinner',
+    date: '2026-10-31',
+    grams: 150,
+    calories: 195,
+    protein: 4.1,
+    carbs: 43.2,
+    fat: 0.5,
+  });
+
+  const bhindi = createAIDiaryEntry({
+    id: 'thali-bhindi-1',
+    foodName: 'Bhindi Masala (Okra Sabzi)',
+    meal: 'Dinner',
+    date: '2026-10-31',
+    grams: 120,
+    calories: 112,
+    protein: 2.8,
+    carbs: 12.4,
+    fat: 6.2,
+  });
+
+  // Verify all 4 entries validate against diary snapshot integrity
+  assert.doesNotThrow(() => assertEntry(roti));
+  assert.doesNotThrow(() => assertEntry(dal));
+  assert.doesNotThrow(() => assertEntry(rice));
+  assert.doesNotThrow(() => assertEntry(bhindi));
+
+  // Save all 4 items to Dinner
+  await repo.saveAll([roti, dal, rice, bhindi]);
+
+  const loaded = await repo.loadDate('2026-10-31');
+  assert.equal(loaded.length, 4);
+
+  // Total dinner nutrition calculation
+  const totalCalories = loaded.reduce(
+    (sum, e) => sum + e.nutrients.calories,
+    0,
+  );
+  const totalProtein = loaded.reduce((sum, e) => sum + e.nutrients.protein, 0);
+  assert.equal(totalCalories, 651);
+  assert.equal(Math.round(totalProtein * 10) / 10, 22.4);
+});
+
+test('ambiguous dish alternative & portion editing: switching dish name and adjusting portion preserves assertEntry integrity', () => {
+  // Candidate initially detected as ambiguous "Paneer Butter Masala" with alternative "Tofu Tikka Masala"
+  const originalEntry = createAIDiaryEntry({
+    id: 'curry-1',
+    foodName: 'Paneer Butter Masala',
+    meal: 'Lunch',
+    date: '2026-10-31',
+    grams: 200,
+    calories: 320,
+    protein: 12,
+    carbs: 16,
+    fat: 24,
+  });
+
+  // User taps alternative chip to switch foodName to "Tofu Tikka Masala" and updates portion to 150g
+  const switchedAndEdited = editPortion(
+    {
+      ...originalEntry,
+      foodName: 'Tofu Tikka Masala',
+    },
+    150,
+    new Date().toISOString(),
+  );
+
+  assert.doesNotThrow(() => assertEntry(switchedAndEdited));
+  assert.equal(switchedAndEdited.foodName, 'Tofu Tikka Masala');
+  assert.equal(switchedAndEdited.grams, 150);
+  assert.equal(switchedAndEdited.nutrients.calories, 240);
+  assert.equal(switchedAndEdited.nutrients.protein, 9);
+  assert.equal(switchedAndEdited.nutrients.carbs, 12);
+  assert.equal(switchedAndEdited.nutrients.fat, 18);
+});

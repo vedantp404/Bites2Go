@@ -179,7 +179,7 @@ export function AIFoodScannerModal({
 
       setCandidates(editable);
       if (editable.length === 0) {
-        setError(
+        setMealSummary(
           result.summary ||
             'No food items recognized in this photo. Try another angle or log manually.',
         );
@@ -575,6 +575,39 @@ export function AIFoodScannerModal({
             </View>
           )}
 
+          {/* Empty State when photo has no recognized food */}
+          {!loading && imageUri && candidates.length === 0 && !error && (
+            <View
+              style={[
+                styles.emptyPickerCard,
+                {
+                  backgroundColor: t.colors.surface,
+                  borderColor: t.colors.border,
+                },
+              ]}
+            >
+              <Text style={[styles.pickerTitle, { color: t.colors.text }]}>
+                No Food Items Detected
+              </Text>
+              <Text style={[styles.pickerSubtitle, { color: t.colors.muted }]}>
+                We could not clearly distinguish food items in this photo. The
+                image may be blurry, under low lighting, or show an empty plate.
+              </Text>
+              <View style={styles.pickerBtnRow}>
+                <Action
+                  label="Retake Photo"
+                  onPress={() => pickImage(true)}
+                  variant="primary"
+                />
+                <Action
+                  label="Choose from Gallery"
+                  onPress={() => pickImage(false)}
+                  variant="secondary"
+                />
+              </View>
+            </View>
+          )}
+
           {/* Recognized Candidates List */}
           {candidates.length > 0 && !loading && (
             <View style={styles.candidatesSection}>
@@ -668,13 +701,57 @@ export function AIFoodScannerModal({
                       ) : null}
                     </View>
 
+                    {/* Ambiguity Alternatives Chips */}
+                    {item.uncertainty.alternatives &&
+                      item.uncertainty.alternatives.length > 0 && (
+                        <View style={styles.alternativesSection}>
+                          <Text
+                            style={[
+                              styles.alternativesLabel,
+                              { color: t.colors.muted },
+                            ]}
+                          >
+                            Suggested alternatives (tap to switch):
+                          </Text>
+                          <View style={styles.alternativesList}>
+                            {item.uncertainty.alternatives.map((alt) => (
+                              <Pressable
+                                key={alt}
+                                accessibilityRole="button"
+                                accessibilityLabel={`Switch dish name to ${alt}`}
+                                onPress={() =>
+                                  updateCandidateName(item.id, alt)
+                                }
+                                style={({ pressed }) => [
+                                  styles.altChip,
+                                  {
+                                    backgroundColor: t.colors.elevated,
+                                    borderColor: t.colors.border,
+                                  },
+                                  pressed && { opacity: 0.6 },
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    styles.altChipText,
+                                    { color: t.colors.primary },
+                                  ]}
+                                >
+                                  + {alt}
+                                </Text>
+                              </Pressable>
+                            ))}
+                          </View>
+                        </View>
+                      )}
+
                     {/* Portion Controls */}
                     <View style={styles.portionRow}>
                       <View style={styles.portionField}>
                         <Text
                           style={[styles.fieldLabel, { color: t.colors.muted }]}
                         >
-                          Grams (g)
+                          Weight (grams)
                         </Text>
                         <TextInput
                           style={[
@@ -700,7 +777,7 @@ export function AIFoodScannerModal({
                         <Text
                           style={[styles.fieldLabel, { color: t.colors.muted }]}
                         >
-                          Estimated Unit
+                          Serving Scale
                         </Text>
                         <Text
                           style={[styles.unitText, { color: t.colors.text }]}
@@ -709,6 +786,14 @@ export function AIFoodScannerModal({
                         </Text>
                       </View>
                     </View>
+
+                    {/* Approximate Notice */}
+                    <Text
+                      style={[styles.approxNotice, { color: t.colors.muted }]}
+                    >
+                      ~{item.estimated_grams}g ({item.estimated_quantity}{' '}
+                      {item.unit}) · Approximate visual estimate
+                    </Text>
 
                     {/* Macro Grid */}
                     <View style={styles.macroGrid}>
@@ -1056,6 +1141,29 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontStyle: 'italic',
   },
+  alternativesSection: {
+    gap: 6,
+    marginTop: 2,
+  },
+  alternativesLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  alternativesList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  altChip: {
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  altChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
   portionRow: {
     flexDirection: 'row',
     gap: 12,
@@ -1080,6 +1188,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     paddingVertical: 8,
     fontWeight: '500',
+  },
+  approxNotice: {
+    fontSize: 11,
+    fontStyle: 'italic',
+    marginTop: 2,
   },
   macroGrid: {
     flexDirection: 'row',

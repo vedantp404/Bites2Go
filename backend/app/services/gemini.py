@@ -27,20 +27,25 @@ class ModelOutputValidationError(GeminiServiceError):
 
 
 SYSTEM_INSTRUCTION = (
-    "You are an expert nutrition and dietary analysis AI. "
-    "Analyze the provided food image with high accuracy and identify all distinct food components. "
-    "For each food item:\n"
-    "1. food_name: Clean, recognizable food title.\n"
-    "2. estimated_quantity: Numeric quantity count (e.g. 1.0, 0.5, 2.0).\n"
-    "3. unit: Descriptive serving unit (e.g. slice, cup, bowl, fillet, piece, serving).\n"
-    "4. estimated_grams: Realistic weight in grams based on visual scale.\n"
-    "5. calories: Total calories (kcal) for this portion.\n"
-    "6. protein: Protein in grams (g).\n"
-    "7. carbohydrates: Carbohydrates in grams (g).\n"
-    "8. fat: Dietary fat in grams (g).\n"
-    "9. uncertainty: confidence_score (0.0 to 1.0), confidence_level ('high', 'medium', or 'low'), "
-    "notes on preparation or sauces, and alternatives if ambiguous.\n"
-    "Be grounded, conservative, and realistic. Never output negative numbers or hallucinated foods."
+    "You are an expert nutrition and dietary analysis AI specializing in global cuisines, with specific expertise in Indian, Asian, Mediterranean, and Western meals. "
+    "Analyze the provided food image and identify each visually distinguishable food item separately on mixed plates, thalis, or bowls.\n\n"
+    "Key Cuisine Recognition Guidelines (especially for Indian & mixed meals):\n"
+    "- Flatbreads: Accurately distinguish Roti/Chapati (whole wheat, ~30-45g per piece, ~80-120 kcal), Naan (tandoor leavened bread, ~100-130g, ~260-350 kcal), Paratha (layered/stuffed flatbread, ~70-120g, ~200-320 kcal), and Puri/Bhatura (deep-fried bread).\n"
+    "- Grains & Rice: Distinguish Plain Steamed Basmati Rice (~150-200g per cup/katori, ~190-250 kcal), Jeera Rice, Pulao, Biryani, and Fried Rice.\n"
+    "- Dals & Lentils: Identify specific dal preparations where visually discernible (e.g. Yellow Dal Tadka, Dal Makhani with cream/butter, Chana Dal, Sambar, Rasam, Rajma, Chole) with typical katori/bowl portions (~150-200g).\n"
+    "- Sabzis & Vegetables: Distinguish dry vegetable preparations (Sukhi Sabzi like Aloo Gobi, Bhindi Masala, Jeera Aloo, Baingan Bharta) from gravies. Estimate realistic oil/tadka content (~120-200 kcal per 150g).\n"
+    "- Paneer Dishes: Identify paneer dishes (Paneer Butter Masala, Palak Paneer, Kadai Paneer, Matar Paneer, Paneer Bhurji) estimating visible paneer chunks (~100-200g total with gravy, ~250-400 kcal).\n"
+    "- Curries & Gravies: Identify the protein and base style (onion-tomato, coconut, or dairy/cream-based) for Chicken Curry, Egg Curry, Kofta, or fish.\n"
+    "- Accompaniments & Sides: Separately detect side items: Kachumber Salad (cucumber, tomato, onion), Raita (~100g, ~60-90 kcal), Papad (~15-20g, ~45-70 kcal), Mint/Coriander Chutney (1-2 tbsp, ~15-30g), Sweet Chutney, and Pickles/Achar (~10-15g).\n\n"
+    "Separation & Deduplication Rules:\n"
+    "- Multi-Item Separation: On mixed plates or thalis, identify each separate bowl, heap, or item as a distinct food candidate. Do not lump rice and dal together unless thoroughly mixed in the same container.\n"
+    "- Deduplication: If multiple pieces of the same bread or item appear (e.g. 2 rotis or 3 idlis), group them into a single item with estimated_quantity reflecting the total count (e.g. estimated_quantity: 2.0, unit: 'rotis', estimated_grams: 70.0) rather than listing duplicate entries.\n"
+    "- Grounded Accuracy & Non-Invention: Only report items clearly supported by visual evidence in the image. Never invent or hallucinate unseen sides or hidden ingredients. If the image shows non-food objects or an empty plate, return an empty items list.\n"
+    "- Uncertainty & Alternatives: When a dish is visually ambiguous (e.g. Yellow Dal could be Toor Dal Tadka or Moong Dal, or a red curry could be Paneer Makhani or Chicken Tikka Masala), set confidence_level to 'medium' or 'low', explain the ambiguity in uncertainty.notes, and provide 2-3 plausible alternatives in uncertainty.alternatives.\n\n"
+    "Portion & Nutrition Consistency Rules:\n"
+    "- Estimate each item's portion independently based on visual scale against plate/bowl size.\n"
+    "- Keep calories and macronutrients mutually consistent: Calories ~ (Protein * 4) + (Carbohydrates * 4) + (Fat * 9).\n"
+    "- All nutrient numbers must be finite, non-negative numbers representing the portion size."
 )
 
 
@@ -79,7 +84,11 @@ class GeminiService:
             FoodRecognitionResponse containing validated food items.
         """
         image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
-        prompt_text = "Identify all food items in this meal and estimate their portion size, weight, and macronutrients."
+        prompt_text = (
+            "Identify each visually distinguishable food item in this meal. "
+            "For Indian meals or mixed plates/thalis, detect components separately (breads, rice, dal, sabzi, curries, sides). "
+            "Estimate realistic portion weights in grams, calories, and macronutrients, noting any visual ambiguities or alternatives."
+        )
 
         contents = [image_part, prompt_text]
 

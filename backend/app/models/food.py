@@ -141,3 +141,41 @@ class FoodRecognitionResponse(BaseModel):
         default_factory=list,
         description="Sanity or ambiguity warnings for the user",
     )
+
+    @model_validator(mode="after")
+    def deduplicate_items(self) -> "FoodRecognitionResponse":
+        """Merge or deduplicate identical food candidate names if model duplicates them."""
+        if not self.items or len(self.items) <= 1:
+            return self
+
+        seen: dict[str, FoodItemCandidate] = {}
+        for item in self.items:
+            key = item.food_name.strip().lower()
+            if key in seen:
+                existing = seen[key]
+                existing.estimated_quantity = round(
+                    existing.estimated_quantity + item.estimated_quantity, 2
+                )
+                existing.estimated_grams = round(
+                    existing.estimated_grams + item.estimated_grams, 1
+                )
+                existing.calories = round(existing.calories + item.calories, 1)
+                existing.protein = round(existing.protein + item.protein, 1)
+                existing.carbohydrates = round(
+                    existing.carbohydrates + item.carbohydrates, 1
+                )
+                existing.fat = round(existing.fat + item.fat, 1)
+
+                # Merge alternatives without duplicates
+                merged_alts = list(
+                    dict.fromkeys(
+                        existing.uncertainty.alternatives
+                        + item.uncertainty.alternatives
+                    )
+                )
+                existing.uncertainty.alternatives = merged_alts
+            else:
+                seen[key] = item
+
+        self.items = list(seen.values())
+        return self
