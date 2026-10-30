@@ -20,7 +20,7 @@ last_mapped_at: 2026-10-30
 ## Runtime
 
 **Environment:**
-- Node.js 20+ (utilizing `--experimental-strip-types` to execute TypeScript domain imports in tests directly without transpilation).
+- Node.js 22.13+ (utilizing `--experimental-strip-types` to execute TypeScript domain imports in tests directly without transpilation, matching Expo SDK 58 minimums).
 - React Native 0.88.1 running on the Hermes JavaScript engine.
 - Android OS target (configured with adaptive icon, splash screen, and system navigation bar settings in `apps/mobile/app.json`).
 
@@ -83,13 +83,13 @@ last_mapped_at: 2026-10-30
 ## Platform Requirements
 
 **Development:**
-- Node.js 20+ with npm.
+- Node.js 22.13+ with npm.
 - PowerShell 7+ or Windows PowerShell (for PostgreSQL script execution).
 - Python 3 (for security scan utility).
 - Android SDK / Android Virtual Device or physical Android phone.
 
 **Production:**
-- Standalone Android APK / AAB compiled via `npx expo export --platform android`.
+- Standalone Android APK / AAB built via signed EAS Build (`eas build --platform android`); `npx expo export --platform android` produces static JavaScript and asset bundles for export verification.
 - Supabase PostgreSQL (prepared backend migration, cloud sync is offline-by-default in mobile client).
 
 ---
