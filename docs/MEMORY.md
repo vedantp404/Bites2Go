@@ -64,3 +64,7 @@ Branch `codex/expo-sdk-58`, based on master f75c4f3. Installed Expo 58.0.21, Rea
 Unchanged root advisories: deepmerge prototype poisoning (GHSA-gcqx-w48m-w2h4) and zod oversized-collection memory exhaustion (GHSA-mrhx-c7xc-m3w5), propagated through Expo config/CLI tooling. No newly reported advisory compared with the immediate pre-upgrade baseline. These remain release risks; a passing bundle does not establish security. No forced remediation applied.
 
 Existing Node module-type detection warning in the contrast test and NO_COLOR/FORCE_COLOR warnings during bundling remain visible; they were not suppressed. Physical Android execution, layout and interaction verification remain pending the user's SDK 58 Expo Go test. No Stage 3 work or merge into master.
+
+## Stage 3 dashboard — 2026-10-30
+
+Current branch: codex/stage-3-dashboard, based on SDK 58 64e5f33. Stage 3 implementation is ready for review: Home dashboard, sample Diary and clearly unfinished Calendar/Progress/Profile, reusable UI, isolated demo fixtures and tested sums/progress. All five tests, types, lint, formatting, Doctor 20/20, config and Android export pass. UTF-8 replacement-character scan passes. Physical Android and accessibility interaction checks remain pending. No backend, persistent logging or Stage 4. Next: user reviews preview on phone; do not merge or start Stage 4 automatically.

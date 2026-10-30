@@ -50,3 +50,7 @@ User's installed Android Expo Go requires SDK 58. Upgrade on `codex/expo-sdk-58`
 Reviewed [upgrade guide](https://docs.expo.dev/workflow/upgrading-expo-sdk-walkthrough/), [SDK 58 walkthrough](https://expo.dev/blog/how-to-upgrade-to-sdk-58), [version reference](https://docs.expo.dev/versions/v58.0.0/) and [release notes](https://expo.dev/changelog/sdk-58). Relevant risks were stricter React Native types and removed APIs; the current screen uses none of the identified removed APIs and passed typecheck. Router/iOS/native-project migrations do not apply. The status-bar plugin was added by Expo alignment. No source compatibility changes were necessary.
 
 Retain and disclose the existing npm audit findings; the reported forced remedy downgrades Expo to 51 and conflicts with the task. No force fix, dependency overrides or warning suppression. Reassess upstream fixes before release.
+
+## Stage 3 dashboard — 2026-10-30
+
+Stage 3 authorized on codex/stage-3-dashboard from clean SDK 58 branch 64e5f33. Adopt the previously recommended Expo Router for five real tab destinations; avoid ad-hoc navigation state. Use labeled synthetic example meals for nonzero progress and two empty meal sections. Targets are demo values, not recommendations. Present incomplete destinations honestly. Current local date refreshes each minute and on foreground; no history/timezone persistence is implied. Keep strict typing and existing design tokens. No Stage 4 implementation.

@@ -115,3 +115,7 @@ Next: review Stage 2 and verify the screen on Android before Stage 3. Stage 3 ha
 ## Current mobile runtime: SDK 58
 
 The existing single-screen `apps/mobile` structure is unchanged. Expo 58.0.21 aligns React Native 0.88.1, React 19.3.0, expo-status-bar 58.0.4 and safe-area-context 5.10.1; TypeScript remains 6.0.3. Expo added the `expo-status-bar` config plugin. No generated native projects, navigation, backend or new feature dependencies were introduced. Strict TypeScript remains enabled without the legacy React Native type opt-out.
+
+## Stage 3 dashboard — 2026-10-30
+
+Stage 3 uses Expo Router 58.0.28 with file routes under apps/mobile/app, replacing the scaffold App.tsx/index.ts. React Native Screens 4.30.1, Expo Linking 58.0.15 and Constants 58.0.14 were aligned by Expo. Route files compose feature screens; reusable cards/actions/progress live in src/components/dashboard.tsx. Mock fixtures live in src/data/dashboardPreview.ts; pure sums and progress rules live in src/domain/dashboard.ts. This is preview arithmetic only, not the Stage 4 nutrition engine. Router owns navigation/safe-area context; screens reserve top/side insets and tabs reserve the bottom. No backend, storage, auth or AI added.

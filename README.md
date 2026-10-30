@@ -2,7 +2,7 @@
 
 An Android nutrition tracker designed around everyday Indian meals, reliable food data, and optional AI-assisted logging.
 
-**Status: Stage 2 mobile foundation implemented; Android device verification pending.** Product name is a working name based on the workspace folder. Stage 1 is committed as 458c3c1. Mobile dependencies are installed locally; no external services provisioned.
+**Status: Stage 3 dashboard preview implemented; Android device verification pending.** Product name is a working name based on the workspace folder. Stage 1 is committed as 458c3c1. Mobile dependencies are installed locally; no external services provisioned.
 
 ## Goals and scope
 
@@ -34,10 +34,13 @@ Actual mobile structure:
 
 ```text
 apps/mobile/
-  App.tsx                         # safe-area provider and screen
-  src/screens/WelcomeScreen.tsx   # empty diary and preview action
+  app/                            # Expo Router: five tab routes and layout
+  src/screens/                    # Home, Diary, unfinished-section screen
+  src/components/dashboard.tsx    # cards, actions, accessible nutrient bars
+  src/data/dashboardPreview.ts    # isolated synthetic meals and targets
+  src/domain/dashboard.ts         # deterministic totals and progress
   src/theme/tokens.ts             # reusable design system
-  tests/theme.test.mjs            # AA text contrast check
+  tests/                          # calculation, progress and contrast tests
   app.json, tsconfig.json, eslint.config.js
   package.json, package-lock.json
 ```
@@ -95,3 +98,11 @@ Read RULES and the relevant documentation, agree one bounded task, preserve unre
 On `codex/expo-sdk-58`: Expo 58.0.21, React Native 0.88.1, React 19.3.0 and TypeScript 6.0.3. The lockfile records the Expo-aligned dependency set. Master remains unchanged pending review.
 
 To preview on Android, stop old Metro servers, run the commands above from `apps/mobile`, connect your computer and phone to the same Wi-Fi, and scan the QR code with SDK 58 Expo Go. Allow Node through Windows Firewall for the private network if prompted. Do not use localhost mode for a separate phone. Android Studio is not required for Expo Go. Verify the screen, Add Food alert, scrolling at larger text sizes and reload; physical-device verification is still pending.
+
+## Stage 3 dashboard preview
+
+Branch `codex/stage-3-dashboard` builds on SDK 58 commit 64e5f33. Home displays local today, calorie target/consumed/remaining, macro progress and four meals. Diary reuses the preview meals. Calendar, Progress and Profile are explicitly unfinished. Expo Router supplies tab navigation; all food actions explain that logging is unavailable.
+
+Demo targets and meal totals are synthetic UI fixtures, not user records or nutrition advice. Breakfast/lunch contain labeled samples; Snacks/Dinner demonstrate empty states. No data is saved. SDK 58 remains installed. Five tests, typecheck, lint, formatting, Doctor (20/20), config and Android export pass. Physical-device, TalkBack and large-text layout checks remain pending.
+
+Run `npm start -- --clear --lan` in apps/mobile and scan in SDK 58 Expo Go on the same Wi-Fi. Test all five tabs, Android Back, each meal's Add Food alert, large-text scrolling and screen-reader progress announcements. Stage 4 has not started.

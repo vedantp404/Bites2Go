@@ -60,3 +60,13 @@ Next: review Stage 2 and verify the screen on Android before Stage 3. Stage 3 ha
 - [x] Update SDK versions and Android LAN preview instructions.
 - [ ] User verifies physical Android preview with SDK 58 Expo Go, layout, Add Food alert and reload.
 - [ ] Review upgrade branch before any merge; master unchanged. Stage 3 remains deferred.
+
+## Stage 3 implementation checklist
+
+- [x] Branch from verified clean SDK 58 commit 64e5f33.
+- [x] Home summary, macros and four meals with labeled demo data and empty states.
+- [x] Five Expo Router tabs; sample Diary and explicit unfinished sections.
+- [x] Pure preview totals/progress, five passing tests and developer/build checks.
+- [x] Fix preview wording and verify UTF-8 source without replacement characters.
+- [ ] Physical Android, TalkBack and large-text visual/navigation verification.
+- [ ] User review before Stage 4; no merge into master.

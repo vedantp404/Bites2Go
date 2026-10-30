@@ -73,3 +73,7 @@ Branch `codex/expo-sdk-58`, based on master f75c4f3. Installed Expo 58.0.21, Rea
 Unchanged root advisories: deepmerge prototype poisoning (GHSA-gcqx-w48m-w2h4) and zod oversized-collection memory exhaustion (GHSA-mrhx-c7xc-m3w5), propagated through Expo config/CLI tooling. No newly reported advisory compared with the immediate pre-upgrade baseline. These remain release risks; a passing bundle does not establish security. No forced remediation applied.
 
 Existing Node module-type detection warning in the contrast test and NO_COLOR/FORCE_COLOR warnings during bundling remain visible; they were not suppressed. Physical Android execution, layout and interaction verification remain pending the user's SDK 58 Expo Go test. No Stage 3 work or merge into master.
+
+## Stage 3 dashboard — 2026-10-30
+
+Stage 3 results: typecheck, lint, formatting, Expo Doctor 20/20, configuration validation and Android export pass. Five node tests pass: meal aggregation/empty totals; progress and over-target clamping; zero/invalid targets; invalid intake; AA text contrast. Initial JSX apostrophe lint error was corrected, then formatting reapplied. UTF-8 scan of app/src files finds no U+FFFD replacement characters; the old preview sentence was replaced with ASCII punctuation. npm install reports the existing eight advisories; no forced fix applied. Node module-type and bundler color warnings remain unsuppressed. Physical-device preview, TalkBack, font scaling, navigation/back behavior and visual layout remain manual checks, not verified results.
