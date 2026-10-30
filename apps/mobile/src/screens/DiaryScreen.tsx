@@ -11,7 +11,8 @@ export default function DiaryScreen() {
   const [selected, setSelected] = useState<string | null>(null);
   const date = selected ?? today;
   const diary = useDiary();
-  const entries = diary.entries?.filter((entry) => entry.date === date);
+  const entries =
+    diary.entriesByDate === null ? null : (diary.entriesByDate.get(date) ?? []);
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={ui.page}>
       <ScrollView contentContainerStyle={ui.content}>

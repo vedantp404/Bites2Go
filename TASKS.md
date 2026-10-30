@@ -1,5 +1,19 @@
 # Ordered roadmap
 
+## Current task: Stage 6 calendar and history
+
+Stage 5 save/restart/edit/delete was verified on Android by the user. This does not establish calendar or accessibility verification. Earlier stage sections below are historical; Stage 7 is not authorized.
+
+- [x] Verify clean synchronized master 5a9f96b and inspect dates, storage and navigation.
+- [x] Replace Calendar placeholder with Monday-first month navigation, selection, Today and actual-entry markers.
+- [x] Reuse historical diary summaries/meals/Add Food/edit/delete with selected-date preservation.
+- [x] Index loaded entries by date without schema migration, duplicate records or additional navigation reads.
+- [x] Verify 31 tests, types, lint, formatting, Doctor, config and Android export; disclose audit findings.
+- [x] Document date/query strategy and limitations.
+- [ ] User verifies Stage 6 on Android: calendar layout, selection, scrolling, Back, historical flows and accessibility.
+- [ ] User review before Stage 7; do not start it automatically.
+
+
 ## Current task: Stage 5 local persistent diary
 
 The explicit request supersedes older Stage 5 Auth/Supabase dependencies. Work is directly on master. Historical checklists below do not authorize further work.

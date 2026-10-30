@@ -1,4 +1,12 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { indexDiaryDates } from '../domain/calendar';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { PropsWithChildren } from 'react';
 import { AppState } from 'react-native';
 import { diaryRepository } from '../storage/localDiary';
@@ -6,6 +14,7 @@ import type { DiaryEntry } from '../domain/diary';
 import { localDateKey } from '../domain/diary';
 type DiaryState = {
   entries: DiaryEntry[] | null;
+  entriesByDate: ReadonlyMap<string, DiaryEntry[]> | null;
   error: string;
   reload: () => void;
   save: (entry: DiaryEntry) => Promise<void>;
@@ -19,6 +28,10 @@ export function DiaryProvider({ children }: PropsWithChildren) {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const revision = useRef(0);
+  const entriesByDate = useMemo(
+    () => (entries === null ? null : indexDiaryDates(entries)),
+    [entries],
+  );
   const reload = () => {
     const current = ++revision.current;
     void diaryRepository
@@ -52,6 +65,7 @@ export function DiaryProvider({ children }: PropsWithChildren) {
     <Context.Provider
       value={{
         entries,
+        entriesByDate,
         error,
         reload,
         message,

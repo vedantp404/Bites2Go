@@ -1,5 +1,14 @@
 # Project memory
 
+## Current handoff: Stage 6
+
+Started from clean synchronized master 5a9f96b. User confirms Stage 5 save/restart/edit/delete worked on Android. Implemented monthly Calendar and inline historical diary, Today and adjacent-day navigation, actual-entry dots/counts, selected outline, accessible date labels and date-index reuse. Home remains current-day-only. Existing SQLite v1 schema/storage operations and food snapshots are unchanged; no migration or new dependencies.
+
+31 tests, types, lint, formatting, Doctor 20/20, public config and Android export pass. Test Plan records initial type fixes and unchanged audit findings (5 low/3 high). User data was not accessed, copied or reset. Stage 6 physical-device layout/navigation/accessibility remains unverified. History is still loaded as a single document at startup/write; calendar navigation reuses a memoized index.
+
+Exact next step: user runs the Stage 6 Android checklist and reviews the result. Only after acceptance and explicit authorization, consider Stage 7 weight/goals/BMI under the roadmap. No Stage 7 code. Actual commit/push hashes are reported in completion output after verification.
+
+
 ## Current handoff: Stage 5 local diary
 
 Work started from clean synchronized master 412625c; direct-to-master policy remains. User explicitly approved local persistence instead of the earlier Auth/cloud roadmap. Implemented save/reload, meal selection, date navigation, real-entry-only Home/Diary totals, detached portion editing and confirmed deletion. Expo selected expo-sqlite 58.0.14 and expo-crypto 58.0.7; existing Expo/RN/React/TypeScript versions remain unchanged. Source nutrition and targets remain illustrative, not production guidance.

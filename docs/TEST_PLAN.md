@@ -1,5 +1,16 @@
 # Test strategy
 
+## Stage 6 verification
+
+31 automated tests pass (0 failed/skipped), including eight new calendar/history tests: month lengths/leap centuries; Monday-first padding/six-week months; month/year limits; selection versus browsing/Today; logged indicators and empty dates; historical save/edit/delete/reload isolation and no navigation storage reads; unknown/partial snapshot totals; local midnight and DST across Kolkata/Los Angeles subprocesses. Tests use existing injected storage and pure logic, not a device or rendered navigation automation.
+
+TypeScript, lint, formatting, Expo Doctor 20/20, public Expo SDK 58 config and Android Hermes export (1324 modules) pass. Initial TypeScript failures were the action union narrowing and React Native ScrollView ref type; both corrected. No scripts or warnings suppressed. Existing Node module-type and Metro color warnings remain.
+
+Fresh audit remains 8 affected packages (5 low, 3 high): deepmerge GHSA-gcqx-w48m-w2h4 and zod GHSA-mrhx-c7xc-m3w5 in Expo tooling. No dependency/lockfile changes or forced fixes.
+
+User reports Stage 5 save/restart/edit/delete verification, not Stage 6. Pending Android: browse February/leap year/December–January, confirm weekday alignment; distinguish today, selected and logged dots; select an empty date and a logged date; add to a historical meal, use Back/cancel, edit then delete its last entry, verify totals and marker removal; return Home (today only), then Calendar (retained selection); browse months without changing the selected diary; Today resets explicitly; close/reopen and confirm existing entries remain intact. Check narrow-screen horizontal grid scrolling, date targets, large fonts, TalkBack labels, auto-scroll to diary, and loading/error behavior. Future dates must explain disabled logging.
+
+
 ## Stage 5 verification
 
 Final code: TypeScript and lint pass; 23 Node tests pass (0 failed/skipped). Formatting, Expo Doctor 20/20, public SDK 58 configuration and Android Hermes export pass. Initial checks found a save handler nested in an effect and React ref/effect lint violations; these were corrected without suppressions. Existing Node module-type and Metro color warnings remain visible.

@@ -2,7 +2,7 @@
 
 An Android nutrition tracker designed around everyday Indian meals, reliable food data, and optional AI-assisted logging.
 
-**Status: Stage 5 local diary implemented; physical Android restart verification pending.** Product name is a working name based on the workspace folder. Stage 1 is committed as 458c3c1. Mobile dependencies are installed locally; no external services provisioned.
+**Status: Stage 6 calendar/history implemented; calendar Android checks pending. Stage 5 persistence was verified by the user.** Product name is a working name based on the workspace folder. Stage 1 is committed as 458c3c1. Mobile dependencies are installed locally; no external services provisioned.
 
 ## Goals and scope
 
@@ -122,6 +122,12 @@ Open SDK 58 Expo Go on the same Wi-Fi and scan the QR code. Add Food opens searc
 Storage: Expo SQLite 58.0.14 key-value API and Expo Crypto 58.0.7 UUIDs. All 12 food records remain illustrative; saved reference/portion snapshots preserve history. Sample dashboard meals are never counted. Targets are clearly labeled sample settings, not medical recommendations. No account, cloud sync, analytics or app uploads. Local data is not application-encrypted and can be lost when uninstalling/clearing app data; OS/Expo Go host backup policies apply. Invalid/unsupported diary data blocks writes without clearing it. No destructive automatic migration or recovery reset is provided.
 
 Run `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm test`, `npx expo-doctor`, `npx expo config --type public`, `npx expo export --platform android`, and `npm audit`. See Test Plan for actual results. **Still required on Android:** save, close/reopen, edit/cancel, delete/cancel, separate dates, duplicate taps, keyboard and accessibility. Prior Stage 4 verification does not establish native persistence.
+
+## Stage 6 calendar and history
+
+Open Calendar to browse months. Monday is the first weekday. Today has a text label, the selected day has an outline, and a dot indicates actual saved entries. Tap a date to show its diary below the grid. Meal cards show portions, calories and available macros; add/edit/delete reuse the existing persistent diary and preserve that date. Month arrows only browse; they do not change the selected diary. Previous/Next day changes selection and month; Today returns to the actual current day. Home always shows today. Future dates can be viewed but cannot be logged yet.
+
+No schema migration, duplicate database, new package or cloud service. Navigation reuses a memoized date index of the existing loaded diary. On narrow screens, swipe the calendar grid horizontally; date targets are not shrunk below 48 dp. Selection survives tab changes during the session; after restarting, selection defaults to today while entries persist. Follow the Stage 6 Test Plan on Android; automated checks do not establish device rendering or Back behavior.
 
 ## Development workflow
 

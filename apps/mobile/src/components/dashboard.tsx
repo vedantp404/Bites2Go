@@ -51,10 +51,20 @@ export function PreviewNotice() {
     </View>
   );
 }
-export function AddFood({ meal, date }: { meal?: string; date: string }) {
+export function AddFood({
+  meal,
+  date,
+  disabled = false,
+}: {
+  meal?: string;
+  date: string;
+  disabled?: boolean;
+}) {
   return (
     <Pressable
       accessibilityRole="button"
+      disabled={disabled}
+      accessibilityState={{ disabled }}
       accessibilityLabel={meal ? `Add food to ${meal}` : 'Add food'}
       onPress={() =>
         router.push({
@@ -67,7 +77,7 @@ export function AddFood({ meal, date }: { meal?: string; date: string }) {
         padding: t.spacing.md,
         borderRadius: 28,
         backgroundColor: t.colors.primary,
-        opacity: pressed ? 0.8 : 1,
+        opacity: disabled ? 0.5 : pressed ? 0.8 : 1,
         alignItems: 'center',
         justifyContent: 'center',
       })}

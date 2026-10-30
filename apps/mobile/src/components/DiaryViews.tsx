@@ -101,9 +101,11 @@ export function DaySummary({ entries }: { entries: DiaryEntry[] }) {
 export function DiaryMeals({
   entries,
   date,
+  allowAdding = true,
 }: {
   entries: DiaryEntry[];
   date: string;
+  allowAdding?: boolean;
 }) {
   return (
     <>
@@ -160,6 +162,11 @@ export function DiaryMeals({
                   {entry.grams} g /{' '}
                   {formatNutrient(entry.nutrients.calories, 'kcal')}
                 </Text>
+                <Text style={ui.body}>
+                  P {formatNutrient(entry.nutrients.protein, 'g')} / C{' '}
+                  {formatNutrient(entry.nutrients.carbs, 'g')} / F{' '}
+                  {formatNutrient(entry.nutrients.fat, 'g')}
+                </Text>
                 <Text style={ui.label}>
                   {entry.status === 'illustrative'
                     ? 'Illustrative nutrition'
@@ -168,7 +175,7 @@ export function DiaryMeals({
                 </Text>
               </Pressable>
             ))}
-            <AddFood meal={meal} date={date} />
+            <AddFood meal={meal} date={date} disabled={!allowAdding} />
           </Card>
         );
       })}

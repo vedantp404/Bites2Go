@@ -23,7 +23,8 @@ export default function DashboardScreen() {
   }, []);
   const diary = useDiary();
   const date = localDateKey(now);
-  const entries = diary.entries?.filter((entry) => entry.date === date);
+  const entries =
+    diary.entriesByDate === null ? null : (diary.entriesByDate.get(date) ?? []);
   return (
     <View style={ui.page}>
       <ScrollView>

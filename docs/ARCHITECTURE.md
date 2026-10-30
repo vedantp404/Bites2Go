@@ -1,5 +1,16 @@
 # Architecture proposal
 
+## Stage 6 calendar/history
+
+`domain/calendar.ts` validates local date/month keys, builds Monday-first padded month grids, steps months/selected days and holds independent visible-month/selected-day reducer state. It also builds an in-memory date index from already validated entries. `DiaryProvider` memoizes this index only when its entries snapshot changes. Home, Diary and Calendar use date buckets; daily totals reuse `diaryTotals`. Month markers check at most 42 cells, not the whole history on every navigation. The index stores references, not cloned or persisted entries.
+
+The existing SQLite v1 single-document schema, repository and write validation are unchanged. No migration, new database or dependency. Startup and writes still read the full document, an existing scalability limitation; SQL date queries require a future reviewed row-schema migration. This stage avoids additional full-history loads and repeated date-filter scans while preserving user data.
+
+Calendar renders the selected day's diary inline, with existing Add Food and entry-editor stack routes. Selecting a date scrolls to its diary. Month browsing does not change selection; adjacent-day controls update both selected date and visible month. Today explicitly returns both to the current device-local date. Tab state remains in memory; app restart initializes selection to today. Home always derives its own current date and never follows Calendar selection. Add Food captures the selected date and meal; edit/delete use saved record identity/date.
+
+Today text, a selected outline, and logged dots with accessible counts have distinct meanings; today alone is never logged. Loading/errors remain unknown rather than empty calendars. Dates without records show zero logged consumption; null/partial nutrient rules remain. Future dates are viewable, but Add Food is disabled with explanatory text per existing future-logging policy. Dates remain bounded to 1900–9999. Grid cells have 48 dp minimum width and 64 dp minimum height; the grid scrolls horizontally on narrow screens while the page scrolls vertically. No physical layout/performance benchmark is claimed.
+
+
 ## Current implementation: Stage 5 local diary
 
 This explicitly authorized local-only scope supersedes earlier Auth/backend Stage 5 plans. No cloud services exist. Earlier stage notes below are historical.

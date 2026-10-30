@@ -74,3 +74,9 @@ The explicit Stage 5 request supersedes the earlier cloud/Auth scope. No existin
 Store immutable food/reference/portion snapshots, source/status, meal, local YYYY-MM-DD and UTC audit timestamps. Edits use recorded reference nutrition. Pure totals preserve missingness. Calendar-component date keys and noon-based day stepping avoid UTC slicing and DST day-length arithmetic. Existing demo targets remain explicitly illustrative; sample meal fixtures never seed the diary. A provider separates screens from storage; future sync needs explicit conflict/version/privacy design. No backend, accounts, analytics or Stage 6.
 
 References: https://docs.expo.dev/versions/v58.0.0/sdk/sqlite/ and https://docs.expo.dev/versions/v58.0.0/sdk/crypto/.
+
+## Stage 6 calendar plan
+
+Reuse the validated Stage 5 SQLite document and provider; do not migrate or duplicate records. Build a memoized date index once per entries update. Home/Diary/Calendar select date buckets; calendar checks only the displayed month's cells. No per-month full-document rereads, second cache of persisted data, new library, or SQL schema migration. SQL row queries would require a broader migration of the single JSON document and are deferred until history size justifies it.
+
+Calendar renders a Monday-first month grid with independent visible month and selected diary date, today text, logged bullet/count semantics and selected outline. Its selected-day diary reuses existing summaries/meals/actions inline, so stack Back returns from Add Food/edit to the same calendar state. Month browsing alone never changes the selected date. Today explicitly selects the device-local date. Future dates can be browsed, but the existing PRD/Stage 5 future-logging restriction remains clearly labeled. Minimum 48 dp date targets use horizontal scrolling on narrow screens. No streaks, weight, accounts, cloud or Stage 7.
