@@ -1,0 +1,57 @@
+# Local credentials and environment; preserve the tracked example.
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+*.pem
+*.key
+*.keystore
+*.jks
+credentials.json
+google-services.json
+
+# JavaScript / Expo
+node_modules/
+.expo/
+dist/
+web-build/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Android / builds
+.gradle/
+build/
+local.properties
+*.apk
+*.aab
+
+# Local data / uploads / temporary outputs
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+uploads/
+tmp/
+*.tmp
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+
+# Keep source, lockfiles, migrations, docs, tests and synthetic fixtures tracked.
