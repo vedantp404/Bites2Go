@@ -1768,7 +1768,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'naan-butter',
-    name: 'Butter naan',
+    name: 'Butter Naan (Homestyle tawa glazed)',
     aliases: ['makkhan naan'],
     category: 'Bread',
     subcategory: 'Naan',
@@ -1792,7 +1792,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'naan-garlic',
-    name: 'Garlic naan',
+    name: 'Garlic Naan (Homestyle butter garlic)',
     aliases: ['lasooni naan'],
     category: 'Bread',
     subcategory: 'Naan',
@@ -1816,7 +1816,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'rumali-roti',
-    name: 'Rumali roti',
+    name: 'Rumali Roti (Soft tawa folded)',
     aliases: ['roomali roti', 'manda roti'],
     category: 'Bread',
     subcategory: 'Indian Flatbreads',
@@ -2915,7 +2915,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'paneer-butter-masala',
-    name: 'Paneer Butter Masala',
+    name: 'Paneer Butter Masala (Homestyle creamy gravy)',
     aliases: ['paneer makhani', 'butter paneer'],
     category: 'Curries',
     subcategory: 'Paneer Dishes',
@@ -2943,7 +2943,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'palak-paneer',
-    name: 'Palak Paneer',
+    name: 'Palak Paneer (Homestyle pureed spinach)',
     aliases: ['spinach paneer'],
     category: 'Curries',
     subcategory: 'Paneer Dishes',
@@ -2971,7 +2971,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'matar-paneer',
-    name: 'Matar Paneer',
+    name: 'Matar Paneer (Homestyle onion-tomato gravy)',
     aliases: ['peas paneer curry'],
     category: 'Curries',
     subcategory: 'Paneer Dishes',
@@ -2999,7 +2999,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'kadai-paneer',
-    name: 'Kadai Paneer',
+    name: 'Kadai Paneer (Homestyle ground coriander masala)',
     aliases: ['karahi paneer'],
     category: 'Curries',
     subcategory: 'Paneer Dishes',
@@ -3028,7 +3028,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'shahi-paneer',
-    name: 'Shahi Paneer',
+    name: 'Shahi Paneer (Royal white cashew gravy)',
     aliases: ['mughlai paneer'],
     category: 'Curries',
     subcategory: 'Paneer Dishes',
@@ -3817,7 +3817,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'uttapam-onion',
-    name: 'Onion Uttapam',
+    name: 'Onion Uttapam (Homestyle thick pancake)',
     aliases: ['uthappam', 'onion pancake'],
     category: 'Breakfast',
     subcategory: 'South Indian',
@@ -3842,7 +3842,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'uttapam-tomato',
-    name: 'Tomato Onion Uttapam',
+    name: 'Tomato Onion Uttapam (Homestyle diced tomato)',
     aliases: ['tomato uttapam'],
     category: 'Breakfast',
     subcategory: 'South Indian',
@@ -4270,7 +4270,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'dabeli',
-    name: 'Kutchi Dabeli',
+    name: 'Kutchi Dabeli (Standard bakery pav)',
     aliases: ['double roti', 'kutch dabeli'],
     category: 'Snacks',
     subcategory: 'Street Food',
@@ -4320,7 +4320,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'sev-puri',
-    name: 'Sev Puri',
+    name: 'Sev Puri (Traditional street style)',
     aliases: ['sev batata puri'],
     category: 'Snacks',
     subcategory: 'Chaat',
@@ -4345,7 +4345,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'pani-puri',
-    name: 'Pani Puri (Golgappa)',
+    name: 'Pani Puri / Golgappa (Semolina sooji puri)',
     aliases: ['golgappa', 'puchka', 'batashe'],
     category: 'Snacks',
     subcategory: 'Chaat',
@@ -8438,13 +8438,13 @@ export const foods: readonly Food[] = [
     preparation: '1 scoop whey protein blended with 250ml toned milk',
     referenceGrams: 100,
     nutrients: {
-      calories: 75,
-      protein: 5.6,
-      carbs: 4.2,
-      fat: 1.8,
+      calories: 82,
+      protein: 9.8,
+      carbs: 4.4,
+      fat: 2.8,
       fiber: 0,
       sugar: 4.0,
-      sodium: 60,
+      sodium: 95,
     },
     status: 'illustrative',
     source:
@@ -8772,7 +8772,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'gajar-ka-halwa',
-    name: 'Gajar ka Halwa (Carrot pudding)',
+    name: 'Gajar ka Halwa (Homestyle carrot pudding with khoya)',
     aliases: ['carrot halwa', 'gajrela'],
     category: 'Sweets',
     subcategory: 'Halwa',
@@ -8846,7 +8846,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'amrakhand',
-    name: 'Amrakhand (Mango shrikhand)',
+    name: 'Amrakhand (Mango shrikhand, traditional hung curd)',
     aliases: ['mango shrikhand'],
     category: 'Sweets',
     subcategory: 'Maharashtrian',
@@ -10133,7 +10133,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'shankarpali-sweet',
-    name: 'Sweet Shankarpali',
+    name: 'Sweet Shankarpali (Festive ghee biscuits)',
     aliases: ['shakarpara', 'sweet diamond cuts'],
     category: 'Sweets',
     subcategory: 'Diwali Snacks',
@@ -10714,7 +10714,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'ven-pongal',
-    name: 'Ven Pongal (Ghee Pongal)',
+    name: 'Ven Pongal (Temple style black pepper ghee)',
     aliases: ['khara pongal', 'ghee pongal', 'ven pongal'],
     category: 'Breakfast',
     subcategory: 'South Indian',
@@ -10739,7 +10739,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'sweet-pongal',
-    name: 'Sweet Pongal (Sakkarai Pongal)',
+    name: 'Sweet Pongal (Sakkarai pongal, jaggery & cardamom)',
     aliases: ['sakkarai pongal', 'chakkara pongal'],
     category: 'Sweets',
     subcategory: 'South Indian',
@@ -12824,7 +12824,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'crab-meat-cooked',
-    name: 'Steamed Blue Crab Meat',
+    name: 'Steamed Blue Crab Meat (Lump meat)',
     aliases: ['lump crab', 'steamed crab'],
     category: 'Meat',
     subcategory: 'Seafood',
@@ -13565,7 +13565,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'soup-sweet-corn-veg',
-    name: 'Sweet Corn Vegetable Soup',
+    name: 'Sweet Corn Vegetable Soup (Mild creamy broth)',
     aliases: ['sweet corn soup', 'corn soup'],
     category: 'Soups',
     subcategory: 'Soups',
@@ -14078,7 +14078,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'pico-de-gallo',
-    name: 'Pico de Gallo (Fresh Salsa)',
+    name: 'Pico de Gallo (Fresh Mexican salsa)',
     aliases: ['fresh salsa', 'salsa fresca'],
     category: 'Condiments',
     subcategory: 'Mexican',
@@ -14614,7 +14614,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'idiyappam',
-    name: 'Idiyappam (String hoppers)',
+    name: 'Idiyappam (Steamed rice noodle nests)',
     aliases: ['string hoppers', 'noolappam', 'sevai'],
     category: 'Breakfast',
     subcategory: 'South Indian',
@@ -14666,7 +14666,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'veg-stew-kerala',
-    name: 'Kerala Vegetable Stew',
+    name: 'Kerala Vegetable Stew (Mild coconut milk broth)',
     aliases: ['ishtew', 'coconut veg stew'],
     category: 'Curries',
     subcategory: 'South Indian',
@@ -14847,7 +14847,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'cornflakes-chivda',
-    name: 'Cornflakes Chivda',
+    name: 'Cornflakes Chivda (Fried sweet & spicy)',
     aliases: ['makai chivda'],
     category: 'Snacks',
     subcategory: 'Farsan',
@@ -18596,7 +18596,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'crab-meat-steamed',
-    name: 'Steamed blue crab meat',
+    name: 'Steamed Blue Crab Meat (Fresh shell-off)',
     aliases: ['crab meat', 'blue crab', 'steamed crab'],
     category: 'Meat',
     subcategory: 'Seafood',
@@ -19438,7 +19438,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'sweet-corn-veg-soup',
-    name: 'Sweet corn vegetable soup',
+    name: 'Sweet Corn Vegetable Soup (Indo-Chinese style)',
     aliases: ['veg corn soup', 'sweet corn veg'],
     category: 'Soups',
     subcategory: 'Indo-Chinese',
@@ -20464,7 +20464,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'salsa-fresca',
-    name: 'Pico de gallo fresh salsa',
+    name: 'Salsa Fresca (Chunky tomato salsa)',
     aliases: ['pico de gallo', 'fresh salsa', 'salsa'],
     category: 'Condiments',
     subcategory: 'Mexican',
@@ -20608,7 +20608,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'dabeli-kutch-mumbai',
-    name: 'Kutchi dabeli',
+    name: 'Kutchi Dabeli (Mumbai street style)',
     aliases: ['dabeli', 'kutchi dabeli', 'double roti'],
     category: 'Snacks',
     subcategory: 'Street Food',
@@ -20688,7 +20688,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'sev-puri-chaat',
-    name: 'Sev puri',
+    name: 'Sev Puri Chaat (Crispy flat puri)',
     aliases: ['sev puri', 'sev batata puri'],
     category: 'Snacks',
     subcategory: 'Street Food',
@@ -20739,7 +20739,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'pani-puri-golgappa',
-    name: 'Pani puri / Golgappa',
+    name: 'Pani Puri / Puchka (Atta wheat puri)',
     aliases: ['golgappa', 'puchka', 'pani ke batashe'],
     category: 'Snacks',
     subcategory: 'Street Food',
@@ -21037,7 +21037,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'amrakhand-mango-shrikhand',
-    name: 'Amrakhand (Mango shrikhand)',
+    name: 'Amrakhand (Alphonso mango shrikhand)',
     aliases: ['amrakhand', 'mango yogurt sweet'],
     category: 'Sweets',
     subcategory: 'Sweets',
@@ -21301,7 +21301,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'shankarpali-sweet-crisp',
-    name: 'Sweet shankarpali',
+    name: 'Sweet Shankarpali (Crisp tea-time snack)',
     aliases: ['shankarpali', 'shakarpara', 'sweet diamonds'],
     category: 'Snacks',
     subcategory: 'Traditional Snacks',
@@ -21357,7 +21357,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'chivda-cornflakes-spiced',
-    name: 'Cornflakes chivda',
+    name: 'Cornflakes Chivda (Roasted spiced peanuts & raisins)',
     aliases: ['cornflakes chivda', 'corn chivda'],
     category: 'Snacks',
     subcategory: 'Traditional Snacks',
@@ -21494,7 +21494,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'shahi-paneer-curry',
-    name: 'Shahi paneer',
+    name: 'Shahi Paneer (Cashew-tomato saffron gravy)',
     aliases: ['shahi paneer', 'royal paneer'],
     category: 'Curries',
     subcategory: 'North Indian',
@@ -21523,7 +21523,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'matar-paneer-curry',
-    name: 'Matar paneer',
+    name: 'Matar Paneer (Restaurant cumin-spiced gravy)',
     aliases: ['mutter paneer', 'matar paneer'],
     category: 'Curries',
     subcategory: 'North Indian',
@@ -21552,7 +21552,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'kadai-paneer-bellpepper',
-    name: 'Kadai paneer',
+    name: 'Kadai Paneer (Crisp bell pepper & onion kadai)',
     aliases: ['kadai paneer', 'karahi paneer'],
     category: 'Curries',
     subcategory: 'North Indian',
@@ -21578,7 +21578,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'palak-paneer-spinach',
-    name: 'Palak paneer',
+    name: 'Palak Paneer (Garlic tempered spinach gravy)',
     aliases: ['palak paneer', 'spinach paneer'],
     category: 'Curries',
     subcategory: 'North Indian',
@@ -21607,7 +21607,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'paneer-butter-masala-restaurant',
-    name: 'Paneer butter masala',
+    name: 'Paneer Butter Masala (Restaurant makhani gravy)',
     aliases: ['paneer makhani', 'paneer butter masala', 'butter paneer'],
     category: 'Curries',
     subcategory: 'North Indian',
@@ -21799,7 +21799,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'rumali-roti-thin',
-    name: 'Rumali roti',
+    name: 'Rumali Roti (Ulta tawa thin handkerchief style)',
     aliases: ['rumali roti', 'roomali roti', 'handkerchief bread'],
     category: 'Bread',
     subcategory: 'North Indian Breads',
@@ -21880,7 +21880,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'garlic-naan-tandoori',
-    name: 'Garlic naan',
+    name: 'Garlic Naan (Tandoori restaurant style)',
     aliases: ['garlic naan', 'tandoori garlic naan'],
     category: 'Bread',
     subcategory: 'North Indian Breads',
@@ -21906,7 +21906,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'butter-naan-layered',
-    name: 'Butter naan',
+    name: 'Butter Naan (Tandoori soft layered)',
     aliases: ['butter naan', 'naan'],
     category: 'Bread',
     subcategory: 'North Indian Breads',
@@ -21958,7 +21958,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'uttapam-onion-topped',
-    name: 'Onion uttapam',
+    name: 'Onion Uttapam (Crispy edge restaurant style)',
     aliases: ['onion uttapam', 'oothappam'],
     category: 'Breakfast',
     subcategory: 'South Indian Breakfast',
@@ -21984,7 +21984,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'uttapam-tomato-onion',
-    name: 'Tomato onion uttapam',
+    name: 'Tomato Onion Uttapam (South Indian tiffin style)',
     aliases: ['tomato uttapam', 'tomato onion oothappam'],
     category: 'Breakfast',
     subcategory: 'South Indian Breakfast',
@@ -22010,7 +22010,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'pongal-ven-ghee',
-    name: 'Ven pongal (Ghee pongal)',
+    name: 'Ven Pongal (Tiffin style moong dal ghee pongal)',
     aliases: ['ven pongal', 'khara pongal', 'ghee pongal'],
     category: 'Breakfast',
     subcategory: 'South Indian Breakfast',
@@ -22039,7 +22039,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'pongal-sakkarai-sweet',
-    name: 'Sweet pongal (Sakkarai pongal)',
+    name: 'Sweet Pongal (Sakkarai pongal, ghee & raisins)',
     aliases: ['sakkarai pongal', 'sweet pongal', 'chakkara pongal'],
     category: 'Sweets',
     subcategory: 'Sweets',
@@ -22391,7 +22391,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'vegetable-stew-kerala',
-    name: 'Kerala vegetable stew',
+    name: 'Kerala Vegetable Stew (Delicate whole spice coconut stew)',
     aliases: ['veg stew', 'kerala stew', 'ishtew'],
     category: 'Curries',
     subcategory: 'South Indian',
@@ -22444,7 +22444,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'idiyappam-string-hoppers',
-    name: 'Idiyappam (String hoppers)',
+    name: 'Idiyappam (Kerala string hoppers)',
     aliases: ['idiyappam', 'string hoppers', 'noolappam'],
     category: 'Breakfast',
     subcategory: 'South Indian Breakfast',
@@ -23200,7 +23200,7 @@ export const foods: readonly Food[] = [
   },
   {
     id: 'gajar-ka-halwa-carrot',
-    name: 'Gajar ka halwa (Carrot pudding)',
+    name: 'Gajar ka Halwa (Slow-cooked rich ghee carrot halwa)',
     aliases: ['gajar halwa', 'carrot halwa', 'gajrela'],
     category: 'Sweets',
     subcategory: 'Sweets',
