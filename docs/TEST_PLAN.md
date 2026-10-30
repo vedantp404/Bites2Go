@@ -1,5 +1,9 @@
 # Test strategy
 
+## Current Stage 4 status — 2026-10-30
+
+Stage 4 is the user-authorized **offline food-search and portion-preview foundation**, superseding the earlier Stage 4a/4b backend scope. Historical stage notes below are retained as history, not current instructions. No backend/authentication/persistence has been implemented. Stop before Stage 5.
+
 Stage 1 defines tests only. No application tests, lint, type checking or Android execution have run because no application or test runner exists. Documentation checks are recorded in Memory.
 
 ## Layers and gates
@@ -77,3 +81,25 @@ Existing Node module-type detection warning in the contrast test and NO_COLOR/FO
 ## Stage 3 dashboard — 2026-10-30
 
 Stage 3 results: typecheck, lint, formatting, Expo Doctor 20/20, configuration validation and Android export pass. Five node tests pass: meal aggregation/empty totals; progress and over-target clamping; zero/invalid targets; invalid intake; AA text contrast. Initial JSX apostrophe lint error was corrected, then formatting reapplied. UTF-8 scan of app/src files finds no U+FFFD replacement characters; the old preview sentence was replaced with ASCII punctuation. npm install reports the existing eight advisories; no forced fix applied. Node module-type and bundler color warnings remain unsuppressed. Physical-device preview, TalkBack, font scaling, navigation/back behavior and visual layout remain manual checks, not verified results.
+
+## Reference-inspired UI refinement
+
+User supplied a nutrition-app visual reference. Adapted Home with a forest-green fading header, centered identity/date, calorie progress ring, compact colored macro bars, pill action and rounded meal rows. Diary shares meal-card styling; tabs now have consistent SVG line icons. Demo labeling remains visible and calculations/features are unchanged. No invented nutrition score, history chart or food-search feature was added.
+
+Added Expo-compatible SVG/linear-gradient modules. Installation exposed an existing react-dom 19.3.1 peer mismatch with React 19.3.0; `expo install react-dom` aligned it to the SDK-compatible version without force/legacy flags. Initial refactor syntax and strict icon-color typing failures were fixed; types, lint, formatting, five tests, Doctor 20/20 and Android export passed. Existing eight audit advisories remain. Visual fidelity, physical Android rendering, large text and TalkBack remain unverified and require phone review.
+
+## Stage 4 results and manual acceptance
+
+Passed: `npm run typecheck`; `npm run lint`; `npm test` (10 passed, 0 failed, 0 skipped); `npx expo-doctor` (20/20); `npx expo config --type public` (SDK 58); `npx expo export --platform android` (1274 modules, Hermes bundle). Formatting initially flagged mobile AGENTS.md; corrected and rerun passed. Existing Node module-type and Metro color warnings remain visible. A file-writing attempt used a duplicated relative path and failed before writing; corrected paths were used. No failed application tests. Diff review caught documentation encoding changes from the Windows default codec; original Unicode characters were restored with explicit UTF-8.
+
+Five added tests cover exact/partial/alias/case/blank/no-match/deduplicated search; catalog identities/provenance/raw-cooked distinction; integer/fractional/boundary scaling and null/zero/display rounding; invalid/nonfinite/overflow/underflow inputs; meal allowlist and draft back/reselect/reset/confirm logic. These are pure Node tests, not rendered UI or Android automation.
+
+Fresh `npm audit`: exit 1, unchanged 8 affected packages (5 low, 3 high), deepmerge GHSA-gcqx-w48m-w2h4 and zod GHSA-mrhx-c7xc-m3w5 through Expo tooling. No packages/lockfile changed; no forced fix, overrides or warning suppression. Audit's forced remedy still proposes incompatible Expo 51.
+
+Pending physical Android: open from all four meal sections on Home and Diary, verify correct meal; generic Add Food must not invent a meal. Search rice/CHAPATI/dahi, blank and nonsense; clear query. Select cooked versus raw rice, compare reference and 200/12.5 g preview; enter blank/0/negative/invalid/very large values, verify confirmation disabled and unknown fiber. Confirm must say preview with unchanged dashboard totals. Detail Back (button and Android Back) retains query/grams and Review current selection; exit returns to originating tab. Test keyboard with portion input/confirm visible via scrolling, small screen, large fonts, TalkBack labels/focus and all five tabs. Airplane-mode local search should work after app bundle is loaded. No actual device/emulator verification performed.
+
+## Master integration validation
+
+TypeScript, lint, all 10 automated tests, Expo Doctor (20/20), public Expo configuration and Android Hermes export passed on the integrated application. Formatting initially failed because core.autocrlf=true converted checkout text to CRLF. Verified normalized content matched committed source; added .gitattributes for LF mobile text and normalized working files. Formatting rerun passed. No application logic or dependency versions changed beyond the existing feature commits.
+
+Fresh npm audit still exits 1 with 8 affected packages (5 low, 3 high): deepmerge GHSA-gcqx-w48m-w2h4 and zod GHSA-mrhx-c7xc-m3w5 through Expo tooling. No forced fixes applied. Existing Node module-type and Metro color warnings remain visible. User reports Stage 4 phone verification; agent did not run a device test. Commit/push outcomes are verified and reported in the completion message; no self-referential follow-up commit is required.

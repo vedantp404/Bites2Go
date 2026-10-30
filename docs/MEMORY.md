@@ -1,5 +1,16 @@
 # Project memory
 
+## Current workflow and integration
+
+Direct-to-master development is now the default under AGENTS and RULES; earlier branch-only/no-merge instructions are historical. The fetched remote master at 845b953 already contained SDK 58 (64e5f33) and the first dashboard (2c548e2). Integration preserves that merge and adds the dependent visual refinement (2e81e27) and local food search (b9f76f3) without cherry-picking or duplicating commits. The merge was conflict-free and its application tree matched the Stage 4 branch.
+
+The user reports manually verifying Stage 4 on an Android phone. This is user-reported acceptance, not a new agent-run device test; device/OS and individual accessibility scenarios were not supplied. No next development stage is authorized. Wait for the next explicit instruction.
+
+
+## Current Stage 4 status — 2026-10-30
+
+Stage 4 is the user-authorized **offline food-search and portion-preview foundation**, superseding the earlier Stage 4a/4b backend scope. Historical stage notes below are retained as history, not current instructions. No backend/authentication/persistence has been implemented. Stop before Stage 5.
+
 Updated: 2026-10-30, Asia/Calcutta. Stage 2 implemented; Android verification and user review pending. Current root: C:\Users\Asus\Music\Bites2Go. Current branch codex/expo-sdk-58 (SDK 58); master preserved at f75c4f3. Remote https://github.com/vedantp404/Bites2Go.git. Foundation commit 458c3c1. Read the Stage 2 section below for current results; preceding Stage 1 observations are historical.
 
 ## Verified workspace inspection
@@ -68,3 +79,21 @@ Existing Node module-type detection warning in the contrast test and NO_COLOR/FO
 ## Stage 3 dashboard — 2026-10-30
 
 Current branch: codex/stage-3-dashboard, based on SDK 58 64e5f33. Stage 3 implementation is ready for review: Home dashboard, sample Diary and clearly unfinished Calendar/Progress/Profile, reusable UI, isolated demo fixtures and tested sums/progress. All five tests, types, lint, formatting, Doctor 20/20, config and Android export pass. UTF-8 replacement-character scan passes. Physical Android and accessibility interaction checks remain pending. No backend, persistent logging or Stage 4. Next: user reviews preview on phone; do not merge or start Stage 4 automatically.
+
+## Reference-inspired UI refinement
+
+User supplied a nutrition-app visual reference. Adapted Home with a forest-green fading header, centered identity/date, calorie progress ring, compact colored macro bars, pill action and rounded meal rows. Diary shares meal-card styling; tabs now have consistent SVG line icons. Demo labeling remains visible and calculations/features are unchanged. No invented nutrition score, history chart or food-search feature was added.
+
+Added Expo-compatible SVG/linear-gradient modules. Installation exposed an existing react-dom 19.3.1 peer mismatch with React 19.3.0; `expo install react-dom` aligned it to the SDK-compatible version without force/legacy flags. Initial refactor syntax and strict icon-color typing failures were fixed; types, lint, formatting, five tests, Doctor 20/20 and Android export passed. Existing eight audit advisories remain. Visual fidelity, physical Android rendering, large text and TalkBack remain unverified and require phone review.
+
+## Stage 4 handoff
+
+Current branch codex/stage-4-food-search from clean codex/stage-3-dashboard 2e81e27, correct origin vedantp404/Bites2Go. Stage 4 implements local illustrative food search, retained meal/draft, detail nutrition and gram preview with honest temporary confirmation. Existing SDK 58, dashboard, ring, macros and tabs preserved. No dependency changes or backend/persistence. Ten tests pass; types, lint, Doctor 20/20, public config and Android export pass. Formatting correction and fresh audit details are in Test Plan. Existing eight audit findings remain.
+
+Exact next task: user reviews Stage 4 on Android using the Test Plan checklist. Do not begin Stage 5 or merge into master. After approval, resolve production food-data rights/coverage and agree persistence/auth-isolation scope before real diary logging. Drafts are memory-only; fixture nutrition is not authoritative. Physical visual/accessibility checks remain pending. Commit/push outcomes are reported in the completion message, not predicted here.
+
+## Master integration validation
+
+TypeScript, lint, all 10 automated tests, Expo Doctor (20/20), public Expo configuration and Android Hermes export passed on the integrated application. Formatting initially failed because core.autocrlf=true converted checkout text to CRLF. Verified normalized content matched committed source; added .gitattributes for LF mobile text and normalized working files. Formatting rerun passed. No application logic or dependency versions changed beyond the existing feature commits.
+
+Fresh npm audit still exits 1 with 8 affected packages (5 low, 3 high): deepmerge GHSA-gcqx-w48m-w2h4 and zod GHSA-mrhx-c7xc-m3w5 through Expo tooling. No forced fixes applied. Existing Node module-type and Metro color warnings remain visible. User reports Stage 4 phone verification; agent did not run a device test. Commit/push outcomes are verified and reported in the completion message; no self-referential follow-up commit is required.

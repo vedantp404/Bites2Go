@@ -1,5 +1,9 @@
 # Architecture proposal
 
+## Current Stage 4 status — 2026-10-30
+
+Stage 4 is the user-authorized **offline food-search and portion-preview foundation**, superseding the earlier Stage 4a/4b backend scope. Historical stage notes below are retained as history, not current instructions. No backend/authentication/persistence has been implemented. Stop before Stage 5.
+
 Stage 1 design; no code, schema or services exist. Confirmed constraints and provisional choices are separated in [Decisions](DECISIONS.md).
 
 ## Stack and module boundaries
@@ -119,3 +123,13 @@ The existing single-screen `apps/mobile` structure is unchanged. Expo 58.0.21 al
 ## Stage 3 dashboard — 2026-10-30
 
 Stage 3 uses Expo Router 58.0.28 with file routes under apps/mobile/app, replacing the scaffold App.tsx/index.ts. React Native Screens 4.30.1, Expo Linking 58.0.15 and Constants 58.0.14 were aligned by Expo. Route files compose feature screens; reusable cards/actions/progress live in src/components/dashboard.tsx. Mock fixtures live in src/data/dashboardPreview.ts; pure sums and progress rules live in src/domain/dashboard.ts. This is preview arithmetic only, not the Stage 4 nutrition engine. Router owns navigation/safe-area context; screens reserve top/side insets and tabs reserve the bottom. No backend, storage, auth or AI added.
+
+## Implemented Stage 4 boundaries
+
+`src/data/foods.ts` contains 12 authored synthetic fixtures. Each Food has a stable ID, aliases, category, preparation, referenceGrams=100, nullable calories/protein/carbs/fat/fiber, illustrative status and explicit source text. Values are examples, not sourced dietary advice; null remains unknown. No micronutrients, universal serving conversions or cooking conversions are inferred.
+
+`src/domain/food.ts` owns case-insensitive trimmed substring name/alias search (catalog order, deduplicated IDs), strict positive decimal gram parsing, finite nonnegative reference validation, scaling and display formatting. Calculations use source energy directly, keep unrounded numbers and reject nonfinite outputs/underflow. Whole kcal and one decimal gram are display rules only. Binary floating point is sufficient for this temporary sample preview; authoritative Decimal/NUMERIC persistence remains unimplemented.
+
+Root Stack wraps existing `(tabs)` without changing public tab paths. `food-search` owns a reducer-based local draft and search/detail views. Detail Back retains query, food, grams, meal and confirmation; selecting another food resets portion to 100 g. Exiting removes the temporary draft. Route meal parameters are allowlisted to four meals; generic Add Food has no meal. Confirm displays a preview only, with no dashboard mutation or storage. Local search is synchronous, so there is no simulated loading state. No-result, invalid portion and unavailable-food fallbacks are explicit. Inputs use keyboard avoidance and scrollable content; device behavior still requires testing.
+
+Navigation references: [Expo layouts](https://docs.expo.dev/router/basics/navigation-layouts/) and [React Native BackHandler](https://reactnative.dev/docs/backhandler).

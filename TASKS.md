@@ -1,5 +1,16 @@
 # Ordered roadmap
 
+## Current workflow and integration
+
+Direct-to-master development is now the default under AGENTS and RULES; earlier branch-only/no-merge instructions are historical. The fetched remote master at 845b953 already contained SDK 58 (64e5f33) and the first dashboard (2c548e2). Integration preserves that merge and adds the dependent visual refinement (2e81e27) and local food search (b9f76f3) without cherry-picking or duplicating commits. The merge was conflict-free and its application tree matched the Stage 4 branch.
+
+The user reports manually verifying Stage 4 on an Android phone. This is user-reported acceptance, not a new agent-run device test; device/OS and individual accessibility scenarios were not supplied. No next development stage is authorized. Wait for the next explicit instruction.
+
+
+## Current Stage 4 status — 2026-10-30
+
+Stage 4 is the user-authorized **offline food-search and portion-preview foundation**, superseding the earlier Stage 4a/4b backend scope. Historical stage notes below are retained as history, not current instructions. No backend/authentication/persistence has been implemented. Stop before Stage 5.
+
 Status as of 2026-10-30. Stage 2 is authorized; Stage 3 awaits review. A stage is complete only with documented evidence. Each stage can contain multiple small reviewed tasks; do not implement a stage's entire feature list in one generation.
 
 - [x] **Stage 1 — Foundation.** Inspect complete project workspace and Git/tools; preserve existing state; document product, architecture, design, tests, security, research, decisions, rules and GitHub process; review links/consistency. No app implementation, commits or pushes.
@@ -70,3 +81,18 @@ Next: review Stage 2 and verify the screen on Android before Stage 3. Stage 3 ha
 - [x] Fix preview wording and verify UTF-8 source without replacement characters.
 - [ ] Physical Android, TalkBack and large-text visual/navigation verification.
 - [ ] User review before Stage 4; no merge into master.
+
+## Stage 4 local foundation checklist
+
+- [x] Verify clean approved Stage 3 commit 2e81e27 and create codex/stage-4-food-search.
+- [x] Add 12 explicitly illustrative foods with provenance, preparation, per-100 g values and nullable fiber.
+- [x] Connect Add Food to local search/detail/portion preview; retain originating meal and draft within flow.
+- [x] Verify search/scaling/draft logic with 10 passing tests and types/lint/Doctor/config/Android export.
+- [x] Reconcile roadmap and document source/precision/persistence limitations.
+- [ ] Verify actual Android keyboard, Back, TalkBack, font scaling and visual layout.
+- [ ] User review before Stage 5. Production catalog licensing and backend/auth isolation remain prerequisites to persistent logging.
+
+- [x] Record user-reported Stage 4 Android verification.
+- [x] Integrate completed dashboard refinement and food search on master without duplicate commits.
+- [x] Establish permanent direct-to-master rules; no new feature branch or PR.
+- [x] Rerun integrated master checks: types, lint, formatting, 10 tests, Doctor, config and Android export; disclose unchanged audit findings.

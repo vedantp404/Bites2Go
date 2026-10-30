@@ -1,5 +1,18 @@
 # Git and GitHub workflow
 
+## Default Git workflow
+
+- Work directly on `master` by default. Before editing, inspect Git status, branch, remote and relevant history; preserve existing user changes and never include them unintentionally.
+- Implement only the explicitly requested stage or task. Do not start the next stage automatically.
+- Run relevant tests and quality checks, update `TASKS.md` and `docs/MEMORY.md` at the end of each stage, and review the final diff before committing.
+- Commit meaningful, completed changes with conventional commit messages. Push verified commits directly to `origin/master`, then verify the actual remote branch and commit hash with Git output.
+- Do not create a feature branch or pull request unless the user explicitly requests one or repository policy requires it. Respect branch protection; never bypass it.
+- Never force-push, rewrite shared history, or commit secrets, API keys, credentials, private data, generated build artifacts or unintended files.
+- If tests fail, a merge conflict occurs, or authentication/permissions prevent pushing, stop and report the problem accurately. Preserve changes; never claim success without confirming command output.
+- Do not create meaningless commits, backdate work or split changes merely to manipulate the GitHub contribution graph.
+
+Current repository: `vedantp404/Bites2Go`, default branch `master`. Earlier setup observations below are historical.
+
 ## Observed Stage 1 state
 
 Git 2.55.0.windows.3 is installed. Workspace is the repository root; current unborn branch is `master`; no HEAD commit exists. Initial working tree had no project files or user changes. No remotes are configured. Git author name and email are configured; their association with a GitHub account is unverified. GitHub CLI is unavailable on PATH, so `gh auth status` could not execute. Browser, connector or Git credential authentication was not tested. A local `.git` directory is not evidence of a GitHub repository.
@@ -20,7 +33,7 @@ No commands above have changed the repository in Stage 1.
 
 Inspect status → read relevant docs/code → implement a bounded task → run applicable tests/lint/type checks → review for secrets and unrelated edits → update docs → review diff → stage explicit related files → meaningful commit → safe authorized push → verify remote result → report evidence and update Memory. Missing tools/auth/remotes leave changes local; report the exact blocker. Never commit pre-existing user changes automatically. Never force-push, backdate work, rewrite shared history or manufacture contributions.
 
-Use the default branch for initial setup; larger work uses `codex/dashboard`, `codex/food-database` or similarly descriptive branches, with PRs explaining behavior and validation. A branch per trivial edit is unnecessary. Conventional prefixes: `docs`, `chore`, `feat`, `test`, `fix`, `refactor`, `security`. Keep independent changes separate, but do not split mechanically to increase contribution counts.
+Use `master` for both setup and stage work by default. Feature branches and PRs are exceptions only when explicitly requested or required by repository policy. Conventional prefixes: `docs`, `chore`, `feat`, `test`, `fix`, `refactor`, `security`. Keep independent changes separate, but do not split mechanically to increase contribution counts.
 
 GitHub contribution credit requires eligible author email, repository and branch conditions; feature-branch commits generally contribute when merged into the default branch. See [GitHub's contribution criteria](https://docs.github.com/en/account-and-profile/reference/profile-contributions-reference). Public visibility alone does not guarantee attribution.
 

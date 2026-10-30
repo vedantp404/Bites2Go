@@ -54,3 +54,15 @@ Retain and disclose the existing npm audit findings; the reported forced remedy 
 ## Stage 3 dashboard — 2026-10-30
 
 Stage 3 authorized on codex/stage-3-dashboard from clean SDK 58 branch 64e5f33. Adopt the previously recommended Expo Router for five real tab destinations; avoid ad-hoc navigation state. Use labeled synthetic example meals for nonzero progress and two empty meal sections. Targets are demo values, not recommendations. Present incomplete destinations honestly. Current local date refreshes each minute and on foreground; no history/timezone persistence is implied. Keep strict typing and existing design tokens. No Stage 4 implementation.
+
+## Reference-inspired UI refinement
+
+User supplied a nutrition-app visual reference. Adapted Home with a forest-green fading header, centered identity/date, calorie progress ring, compact colored macro bars, pill action and rounded meal rows. Diary shares meal-card styling; tabs now have consistent SVG line icons. Demo labeling remains visible and calculations/features are unchanged. No invented nutrition score, history chart or food-search feature was added.
+
+Added Expo-compatible SVG/linear-gradient modules. Installation exposed an existing react-dom 19.3.1 peer mismatch with React 19.3.0; `expo install react-dom` aligned it to the SDK-compatible version without force/legacy flags. Initial refactor syntax and strict icon-color typing failures were fixed; types, lint, formatting, five tests, Doctor 20/20 and Android export passed. Existing eight audit advisories remain. Visual fidelity, physical Android rendering, large text and TalkBack remain unverified and require phone review.
+
+## Stage 4 scope and implementation plan
+
+The explicit Stage 4 request supersedes D16 and the old Stage 4a/4b backend roadmap: implement offline food search and portion previews only. No source catalog exists. Use 12 authored illustrative fixtures, each with sample provenance; no external composition dataset is imported or represented as verified. Production source rights/coverage remain unresolved.
+
+Wrap existing tabs in an Expo Router Stack; one food-search route owns search/detail draft state and preserves query, grams and meal context when returning from detail. Exiting the flow discards the temporary draft. Retain native Android Back behavior within that flow. Use existing tokens/components and dependencies. Pure TypeScript functions handle search, validation and scaling; Node tests cover them. Local preview uses unrounded JavaScript numbers with finite-result validation, not the future Decimal persistence contract. No saved nutrition or dashboard totals change.

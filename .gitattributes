@@ -1,0 +1,2 @@
+# Keep formatter-managed mobile text consistent on Windows checkouts.
+apps/mobile/** text=auto eol=lf

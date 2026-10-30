@@ -1,5 +1,17 @@
 # Development rules
 
+## Default Git workflow
+
+- Work directly on `master` by default. Before editing, inspect Git status, branch, remote and relevant history; preserve existing user changes and never include them unintentionally.
+- Implement only the explicitly requested stage or task. Do not start the next stage automatically.
+- Run relevant tests and quality checks, update `TASKS.md` and `docs/MEMORY.md` at the end of each stage, and review the final diff before committing.
+- Commit meaningful, completed changes with conventional commit messages. Push verified commits directly to `origin/master`, then verify the actual remote branch and commit hash with Git output.
+- Do not create a feature branch or pull request unless the user explicitly requests one or repository policy requires it. Respect branch protection; never bypass it.
+- Never force-push, rewrite shared history, or commit secrets, API keys, credentials, private data, generated build artifacts or unintended files.
+- If tests fail, a merge conflict occurs, or authentication/permissions prevent pushing, stop and report the problem accurately. Preserve changes; never claim success without confirming command output.
+- Do not create meaningless commits, backdate work or split changes merely to manipulate the GitHub contribution graph.
+
+
 1. Read relevant project documentation and current Memory before each task.
 2. Inspect existing code, callers, tests and Git status before modifying it.
 3. Plan substantial changes and record material decisions before implementation.
@@ -21,4 +33,4 @@
 
 Loop: **READ → UNDERSTAND → PLAN → IMPLEMENT → TEST → REVIEW → FIX → COMMIT → PUSH → DOCUMENT**. Update docs before committing as needed; record actual commit/push outcomes afterward without manufacturing a follow-up commit solely to record its own hash.
 
-Stage 1 exception: documentation and reversible foundation files only; no automatic commits, pushes, dependency installation, app initialization, or external resources. Stop and await approval before Stage 2. Later stages do not authorize spending or destructive actions merely by appearing in the roadmap.
+Historical Stage 1 exception (superseded for current Git workflow): documentation and reversible foundation files only; no automatic commits, pushes, dependency installation, app initialization, or external resources. Stop and await approval before Stage 2. Later stages do not authorize spending or destructive actions merely by appearing in the roadmap.
