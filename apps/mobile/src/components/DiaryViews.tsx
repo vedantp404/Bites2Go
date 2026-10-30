@@ -1,15 +1,17 @@
+import { FoodImage } from './FoodImage';
 import { Text, View, Pressable } from 'react-native';
 import { router } from 'expo-router';
-import { AddFood, Card, NutrientProgress, ui } from './dashboard';
+import { AddFood, Card, NutrientProgress, useUI } from './dashboard';
 import { Action } from './FoodControls';
 import { CalorieRing, AppIcon } from './NutritionVisuals';
 import { useDiary } from '../state/DiaryProvider';
 import { diaryTotals } from '../domain/diary';
 import type { DiaryEntry } from '../domain/diary';
 import { formatNutrient, meals } from '../domain/food';
-import { theme as t } from '../theme/tokens';
+
 import { previewTargets } from '../data/dashboardPreview';
 export function DiaryStatus() {
+  const { ui } = useUI();
   const diary = useDiary();
   if (diary.entries !== null)
     return diary.message ? (
@@ -32,6 +34,7 @@ export function DiaryStatus() {
   );
 }
 export function DaySummary({ entries }: { entries: DiaryEntry[] }) {
+  const { ui, t } = useUI();
   const total = diaryTotals(entries);
   return (
     <Card>
@@ -76,9 +79,9 @@ export function DaySummary({ entries }: { entries: DiaryEntry[] }) {
             compact
             color={
               key === 'carbs'
-                ? '#A65A13'
+                ? t.colors.carbs
                 : key === 'fat'
-                  ? '#8B6516'
+                  ? t.colors.fat
                   : t.colors.primary
             }
             label={
@@ -107,6 +110,7 @@ export function DiaryMeals({
   date: string;
   allowAdding?: boolean;
 }) {
+  const { ui, t } = useUI();
   return (
     <>
       {meals.map((meal) => {
@@ -157,7 +161,18 @@ export function DiaryMeals({
                   })
                 }
               >
-                <Text style={ui.heading}>{entry.foodName}</Text>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: t.spacing.md,
+                  }}
+                >
+                  <FoodImage foodId={entry.foodId} />
+                  <Text style={[ui.heading, { flex: 1 }]}>
+                    {entry.foodName}
+                  </Text>
+                </View>
                 <Text style={ui.body}>
                   {entry.grams} g /{' '}
                   {formatNutrient(entry.nutrients.calories, 'kcal')}

@@ -1,6 +1,6 @@
 import { ScrollView, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Card, ui } from '../components/dashboard';
+import { Card, useUI } from '../components/dashboard';
 export default function ComingSoonScreen({
   title,
   description,
@@ -8,6 +8,7 @@ export default function ComingSoonScreen({
   title: string;
   description: string;
 }) {
+  const { ui } = useUI();
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={ui.page}>
       <ScrollView contentContainerStyle={ui.content}>

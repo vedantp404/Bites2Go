@@ -1,7 +1,8 @@
 import { AppIcon } from '../../src/components/NutritionVisuals';
 import { Tabs } from 'expo-router';
-import { theme } from '../../src/theme/tokens';
+import { useTheme } from '../../src/theme/ThemeProvider';
 export default function Layout() {
+  const { theme } = useTheme();
   return (
     <>
       <Tabs
@@ -9,7 +10,10 @@ export default function Layout() {
           headerShown: false,
           tabBarActiveTintColor: theme.colors.primary,
           tabBarInactiveTintColor: theme.colors.muted,
-          tabBarStyle: { backgroundColor: theme.colors.surface },
+          tabBarStyle: {
+            backgroundColor: theme.colors.surface,
+            borderTopColor: theme.colors.border,
+          },
           tabBarLabelStyle: { fontSize: 12 },
           tabBarIcon: ({ focused, size }) => (
             <AppIcon

@@ -1,17 +1,35 @@
+import { useMemo } from 'react';
+import type { Theme } from '../theme/tokens';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { FoodNutrients } from '../domain/food';
 import { formatNutrient } from '../domain/food';
-import { ui } from './dashboard';
-import { theme as t } from '../theme/tokens';
+import { useUI } from './dashboard';
+
 export function Action({
   label,
   onPress,
   disabled = false,
+  variant = 'primary',
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
+  variant?: 'primary' | 'secondary' | 'danger';
 }) {
+  const styles = useFoodStyles();
+  const { t } = useUI();
+  const background =
+    variant === 'primary'
+      ? t.colors.primary
+      : variant === 'danger'
+        ? t.colors.highlight
+        : t.colors.elevated;
+  const foreground =
+    variant === 'primary'
+      ? t.colors.onPrimary
+      : variant === 'danger'
+        ? t.colors.error
+        : t.colors.text;
   return (
     <Pressable
       accessibilityRole="button"
@@ -20,10 +38,11 @@ export function Action({
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,
+        { backgroundColor: background },
         { opacity: disabled ? 0.5 : pressed ? 0.8 : 1 },
       ]}
     >
-      <Text style={styles.buttonText}>{label}</Text>
+      <Text style={[styles.buttonText, { color: foreground }]}>{label}</Text>
     </Pressable>
   );
 }
@@ -35,6 +54,7 @@ const labels = {
   fiber: 'Fiber',
 } as const;
 export function Nutrition({ values }: { values: FoodNutrients }) {
+  const { ui, t } = useUI();
   return (
     <View style={{ gap: t.spacing.sm }}>
       {(Object.keys(labels) as (keyof FoodNutrients)[]).map((key) => (
@@ -48,34 +68,40 @@ export function Nutrition({ values }: { values: FoodNutrients }) {
     </View>
   );
 }
-export const styles = StyleSheet.create({
-  input: {
-    ...t.typography.body,
-    color: t.colors.text,
-    backgroundColor: t.colors.surface,
-    minHeight: t.sizing.touchTarget,
-    borderWidth: 1,
-    borderColor: t.colors.border,
-    borderRadius: t.radii.control,
-    padding: t.spacing.md,
-  },
-  back: {
-    minHeight: t.sizing.touchTarget,
-    justifyContent: 'center',
-    alignSelf: 'flex-start',
-    paddingHorizontal: t.spacing.sm,
-  },
-  button: {
-    minHeight: t.sizing.touchTarget,
-    padding: t.spacing.md,
-    borderRadius: 28,
-    backgroundColor: t.colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonText: {
-    ...t.typography.body,
-    color: t.colors.surface,
-    fontWeight: '600',
-  },
-});
+const makeStyles = (t: Theme) =>
+  StyleSheet.create({
+    input: {
+      ...t.typography.body,
+      color: t.colors.text,
+      backgroundColor: t.colors.input,
+      minHeight: t.sizing.touchTarget,
+      borderWidth: 1,
+      borderColor: t.colors.border,
+      borderRadius: t.radii.control,
+      padding: t.spacing.md,
+    },
+    back: {
+      minHeight: t.sizing.touchTarget,
+      justifyContent: 'center',
+      alignSelf: 'flex-start',
+      paddingHorizontal: t.spacing.sm,
+    },
+    button: {
+      minHeight: t.sizing.touchTarget,
+      padding: t.spacing.md,
+      borderRadius: 28,
+      backgroundColor: t.colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    buttonText: {
+      ...t.typography.body,
+      color: t.colors.onPrimary,
+      fontWeight: '600',
+    },
+  });
+
+export function useFoodStyles() {
+  const { t } = useUI();
+  return useMemo(() => makeStyles(t), [t]);
+}

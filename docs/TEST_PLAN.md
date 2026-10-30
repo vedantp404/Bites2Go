@@ -1,5 +1,22 @@
 # Test strategy
 
+## Visual redesign validation and Android acceptance
+
+Automated validation covers 37 tests: existing diary/calendar/nutrition regressions plus preference default, persisted Light/Dark/System across a new store, immediate subscriber updates before write completion, concurrent-write prevention, read/write failures/retry, invalid preferences, system-mode resolution, semantic-token parity, both palettes' normal-text contrast and missing/null/failed food-image selection. These are unit tests, not mounted React/native UI tests.
+
+Typecheck, lint, formatting, Expo Doctor (20/20), public config and Android export passed, including final native config introspection after splash configuration. The nullable historical food-ID type error was fixed by supporting null in the shared fallback; no type suppression. Existing Node module-type and Metro NO_COLOR/FORCE_COLOR warnings remain visible. The unchanged audit has 8 affected packages (5 low, 3 high): deepmerge GHSA-gcqx-w48m-w2h4 and zod GHSA-mrhx-c7xc-m3w5 propagate through Expo tooling; no forced fix.
+
+Pending manual Android checklist (no device run claimed):
+
+1. Launch on SDK 58 Expo Go, then in a rebuilt native client when available. Confirm first-load UI has no wrong-theme flash; Expo Go owns its launch screen. Open every tab in Light and Dark, checking contrast, status/navigation buttons, safe areas and keyboard/inputs.
+2. In Profile choose Light/Dark/System. Check immediate updates, selected radio and effective-mode label. Fully close/reopen and verify persistence. In System, toggle Android dark mode foreground/background; explicit choices must stay fixed.
+3. Search/category-filter sample foods, confirm thumbnails match Details and saved Diary entries; test a food without a photo. Photos are illustrative, not logged meals. Check narrow screens and large text; imagery must not hide controls.
+4. Save a past-date food, edit its portion, cancel and confirm deletion; check themed confirmation, hardware Back and TalkBack modal focus. Verify restart retains diary data and theme independently.
+5. Browse leap/month boundaries, Today and logged-day markers in both modes. Ensure future Add Food remains disabled. Verify totals and unknown nutrients match pre-redesign behavior.
+6. Check button navigation and gesture navigation separately. Expo Go may retain its native contrast settings; standalone config sets enforceContrast false. Android 15 emulator has a documented navigation-bar limitation; use a physical device for final acceptance.
+
+No physical-device visual, persistence or accessibility verification was performed for this milestone.
+
 ## Stage 6 verification
 
 31 automated tests pass (0 failed/skipped), including eight new calendar/history tests: month lengths/leap centuries; Monday-first padding/six-week months; month/year limits; selection versus browsing/Today; logged indicators and empty dates; historical save/edit/delete/reload isolation and no navigation storage reads; unknown/partial snapshot totals; local midnight and DST across Kolkata/Los Angeles subprocesses. Tests use existing injected storage and pure logic, not a device or rendered navigation automation.

@@ -1,5 +1,20 @@
 # Bites2Go
 
+## Visual redesign and appearance
+
+The app now uses the Vibrant Food App direction: warm light surfaces, charcoal dark surfaces, green actions, restrained orange accents, rounded cards, local food photography and consistent navigation.
+
+- Home: daily nutrition ring, macro bars, food inspiration and saved meals.
+- Search/details: category chips, thumbnails, prominent food images and unchanged portion confirmation.
+- Diary/calendar: themed meal groups, historical food images, date markers and a themed delete confirmation.
+- Profile: Appearance → Light, Dark or System (default), with the effective mode displayed. Changes apply immediately and persist locally. Progress remains explicitly unfinished.
+
+Appearance uses the separate SQLite key `bites2go.appearance.v1`; diary schema and nutrient snapshots are unchanged. The app waits for preference loading before mounting its screens. Persistence failures are reported in Profile with a retry by selecting the mode again.
+
+Two CC0 photos (apple/banana, about 228 KB total) are bundled for offline use; other foods use a reusable placeholder. See [image credits](apps/mobile/assets/food/README.md). Food values remain illustrative and photos do not represent exact portions.
+
+Run `cd apps/mobile` then `npm start -- --clear`, and scan with SDK 58 Expo Go on Android. Native configuration changes apply to rebuilt standalone/development clients; Expo Go controls its own launch screen and system-bar configuration. Physical Android acceptance is pending; see [Test Plan](docs/TEST_PLAN.md). Stage 7 is not implemented.
+
 An Android nutrition tracker designed around everyday Indian meals, reliable food data, and optional AI-assisted logging.
 
 **Status: Stage 6 calendar/history implemented; calendar Android checks pending. Stage 5 persistence was verified by the user.** Product name is a working name based on the workspace folder. Stage 1 is committed as 458c3c1. Mobile dependencies are installed locally; no external services provisioned.

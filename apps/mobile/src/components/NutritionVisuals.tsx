@@ -1,16 +1,17 @@
 import Svg, { Circle, Path } from 'react-native-svg';
 import { Text, View } from 'react-native';
-import { theme as t } from '../theme/tokens';
+import { useTheme } from '../theme/ThemeProvider';
 import { progress } from '../domain/dashboard';
 export function AppIcon({
   name,
-  color = t.colors.primary,
+  color,
   size = 24,
 }: {
   name: string;
   color?: string;
   size?: number;
 }) {
+  const { theme: t } = useTheme();
   const paths: Record<string, string> = {
     index: 'M3 10L12 3L21 10M5 9V21H10V14H14V21H19V9',
     diary:
@@ -26,7 +27,7 @@ export function AppIcon({
       <Path
         d={paths[name] ?? paths.leaf}
         fill="none"
-        stroke={color}
+        stroke={color ?? t.colors.primary}
         strokeWidth={1.7}
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -43,6 +44,7 @@ export function CalorieRing({
   target: number;
   partial?: boolean;
 }) {
+  const { theme: t } = useTheme();
   const value = progress(consumed ?? 0, target);
   const incomplete = consumed === null || partial;
   const circumference = 2 * Math.PI * 68;
@@ -80,7 +82,7 @@ export function CalorieRing({
           r={68}
           fill="none"
           stroke={t.colors.border}
-          strokeWidth={3}
+          strokeWidth={8}
         />
         <Circle
           cx={80}
@@ -88,7 +90,7 @@ export function CalorieRing({
           r={68}
           fill="none"
           stroke={t.colors.primary}
-          strokeWidth={4}
+          strokeWidth={8}
           strokeDasharray={`${circumference} ${circumference}`}
           strokeDashoffset={
             circumference * (1 - (incomplete ? 0 : value.fill) / 100)

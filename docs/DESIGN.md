@@ -1,5 +1,15 @@
 # Design system and screen plan
 
+## Implemented visual direction: Vibrant Food App
+
+This section supersedes the historical Stage 1 palette below. `src/theme/tokens.ts` owns both complete semantic palettes; screens subscribe through `useTheme` / `useUI` rather than importing a static theme. Light uses warm #FAF7F0, white surfaces, #176044 green and #A64321 accents; Dark uses #151C18 / #202B24 charcoal, #9DE3B1 green and #FFB58F accents. Use `onPrimary` for button text, never `surface`. Semantic tokens include elevated surfaces, selected/input/disabled states, success/warning/error, hero and macro colors.
+
+Typography remains system-native, with stronger heading weight, 24 px card corners and 48 px minimum controls. Food thumbnails are 72 px; detail/inspiration photos are 180 px tall with cover cropping. Accent colors are reserved for categories, fallback tiles and charts. Labels accompany progress and calendar markers. No fake logged entries or nutrition scores were introduced.
+
+Appearance lives in Profile and defaults to System; explicit modes override the app palette only, while System observes OS changes. All screens, tab navigation, inputs and the delete dialog use theme tokens. Status/navigation icon styles follow the effective palette. Keep native launch-screen backgrounds aligned with the token palette when editing app.json.
+
+Local CC0 photo provenance and thumbnail sizes are recorded in `apps/mobile/assets/food/README.md`. Stable food IDs map to image keys independently of food data and historical snapshots; missing/null IDs and image errors use a coherent leaf placeholder. Android layout, large text, screen reader and actual system-bar acceptance remain manual checks.
+
 Stage 1 specification, not implemented UI. Aim for a calm consumer food diary with readable values and one clear primary action per screen.
 
 ## Tokens

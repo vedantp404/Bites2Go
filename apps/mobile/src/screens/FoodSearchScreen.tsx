@@ -1,6 +1,7 @@
+import { FoodImage } from '../components/FoodImage';
 import { useCallback, useReducer, useRef, useState } from 'react';
 import { randomUUID } from 'expo-crypto';
-import { Action, Nutrition, styles } from '../components/FoodControls';
+import { Action, Nutrition, useFoodStyles } from '../components/FoodControls';
 import { useDiary } from '../state/DiaryProvider';
 import { createEntry, localDateKey, validDateKey } from '../domain/diary';
 import type { DiaryEntry } from '../domain/diary';
@@ -17,7 +18,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Card, ui } from '../components/dashboard';
+import { Card, useUI } from '../components/dashboard';
 import { foods } from '../data/foods';
 import {
   meals,
@@ -29,8 +30,10 @@ import {
   searchFoods,
 } from '../domain/food';
 import type { FoodNutrients } from '../domain/food';
-import { theme as t } from '../theme/tokens';
+
 export default function FoodSearchScreen() {
+  const styles = useFoodStyles();
+  const { ui, t } = useUI();
   const { meal, date: routeDate } = useLocalSearchParams<{
     meal?: string | string[];
     date?: string | string[];
@@ -49,8 +52,12 @@ export default function FoodSearchScreen() {
   const pending = useRef<DiaryEntry | null>(null);
   const [saveError, setSaveError] = useState('');
   const [draft, dispatch] = useReducer(foodDraftReducer, meal, createDraft);
+  const [category, setCategory] = useState<string | null>(null);
+  const categories = [...new Set(foods.map((food) => food.category))];
   const selected = foods.find((food) => food.id === draft.foodId);
-  const matches = searchFoods(foods, draft.query);
+  const matches = searchFoods(foods, draft.query).filter(
+    (food) => category === null || food.category === category,
+  );
   const back = useCallback(() => {
     if (saving.current) return;
     Keyboard.dismiss();
@@ -170,6 +177,7 @@ export default function FoodSearchScreen() {
             selected ? (
               <>
                 <Card>
+                  <FoodImage foodId={selected.id} prominent />
                   <Text accessibilityRole="header" style={ui.heading}>
                     {selected.name}
                   </Text>
@@ -215,6 +223,7 @@ export default function FoodSearchScreen() {
                   </View>
                   <Text style={ui.body}>Amount in grams</Text>
                   <TextInput
+                    selectionColor={t.colors.primary}
                     editable={!busy && !attempted}
                     accessibilityLabel="Portion in grams"
                     accessibilityHint="Enter a positive decimal amount"
@@ -288,8 +297,45 @@ export default function FoodSearchScreen() {
             )
           ) : (
             <>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: t.spacing.sm }}
+              >
+                {[null, ...categories].map((item) => (
+                  <Pressable
+                    key={item ?? 'all'}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: category === item }}
+                    onPress={() => setCategory(item)}
+                    style={{
+                      minHeight: 48,
+                      paddingHorizontal: 20,
+                      justifyContent: 'center',
+                      borderRadius: 24,
+                      backgroundColor:
+                        category === item
+                          ? t.colors.primary
+                          : t.colors.elevated,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        ...t.typography.label,
+                        color:
+                          category === item
+                            ? t.colors.onPrimary
+                            : t.colors.text,
+                      }}
+                    >
+                      {item ?? 'All foods'}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
               <Text style={ui.body}>Search by food name or alias</Text>
               <TextInput
+                selectionColor={t.colors.primary}
                 accessibilityLabel="Search foods"
                 placeholder="Try rice, chapati or dahi"
                 placeholderTextColor={t.colors.muted}
@@ -325,14 +371,14 @@ export default function FoodSearchScreen() {
               <Text accessibilityLiveRegion="polite" style={ui.label}>
                 {draft.query.trim()
                   ? `${matches.length} matching sample foods`
-                  : 'Browse all sample foods'}
+                  : `${matches.length} sample foods${category ? ` / ${category}` : ''}`}
               </Text>
               {matches.length === 0 ? (
                 <Card>
                   <Text style={ui.heading}>No foods found</Text>
                   <Text style={ui.body}>
-                    Try a shorter name or another alias. This development
-                    catalog contains only 12 foods.
+                    Try All foods, a shorter name or another alias. This
+                    development catalog contains only 12 foods.
                   </Text>
                 </Card>
               ) : (
@@ -347,7 +393,16 @@ export default function FoodSearchScreen() {
                       { opacity: pressed ? 0.8 : 1 },
                     ]}
                   >
-                    <Text style={ui.heading}>{food.name}</Text>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        gap: t.spacing.md,
+                        alignItems: 'center',
+                      }}
+                    >
+                      <FoodImage foodId={food.id} />
+                      <Text style={[ui.heading, { flex: 1 }]}>{food.name}</Text>
+                    </View>
                     <Text style={ui.label}>
                       {food.preparation} /{' '}
                       {formatNutrient(food.nutrients.calories, 'kcal')} per 100

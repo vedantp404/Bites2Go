@@ -1,8 +1,9 @@
+import type { Theme } from '../theme/tokens';
 import type { ComponentRef } from 'react';
 import { useMemo, useReducer, useRef } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Card, PreviewNotice, ui } from '../components/dashboard';
+import { Card, PreviewNotice, useUI } from '../components/dashboard';
 import { Action } from '../components/FoodControls';
 import { DaySummary, DiaryMeals, DiaryStatus } from '../components/DiaryViews';
 import { useDiary, useToday } from '../state/DiaryProvider';
@@ -13,9 +14,11 @@ import {
   monthCells,
   monthTitle,
 } from '../domain/calendar';
-import { theme as t } from '../theme/tokens';
+
 const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 export default function CalendarScreen() {
+  const { ui, t } = useUI();
+  const styles = useMemo(() => makeStyles(t), [t]);
   const today = useToday();
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const diaryTop = useRef(0);
@@ -52,16 +55,19 @@ export default function CalendarScreen() {
           </Text>
           <View style={ui.row}>
             <Action
+              variant="secondary"
               label="Previous month"
               disabled={state.month === '1900-01'}
               onPress={() => dispatch({ type: 'month', offset: -1 })}
             />
             <Action
+              variant="secondary"
               label="Next month"
               disabled={state.month === '9999-12'}
               onPress={() => dispatch({ type: 'month', offset: 1 })}
             />
             <Action
+              variant="secondary"
               label="Today"
               onPress={() => dispatch({ type: 'today', date: today })}
             />
@@ -116,7 +122,7 @@ export default function CalendarScreen() {
                             borderColor:
                               date === state.selected
                                 ? t.colors.primary
-                                : 'transparent',
+                                : t.colors.transparent,
                             backgroundColor:
                               date === state.selected
                                 ? t.colors.accent
@@ -178,11 +184,13 @@ export default function CalendarScreen() {
         </Text>
         <View style={ui.row}>
           <Action
+            variant="secondary"
             label="Previous day"
             disabled={state.selected === '1900-01-01'}
             onPress={() => dispatch({ type: 'day', offset: -1 })}
           />
           <Action
+            variant="secondary"
             label="Next day"
             disabled={state.selected === '9999-12-31'}
             onPress={() => dispatch({ type: 'day', offset: 1 })}
@@ -210,16 +218,17 @@ export default function CalendarScreen() {
     </SafeAreaView>
   );
 }
-const styles = StyleSheet.create({
-  week: { flexDirection: 'row' },
-  cell: { flex: 1, minWidth: 48 },
-  day: {
-    minHeight: 64,
-    borderWidth: 2,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 6,
-  },
-  marker: { ...t.typography.label, color: t.colors.primary, fontSize: 12 },
-});
+const makeStyles = (t: Theme) =>
+  StyleSheet.create({
+    week: { flexDirection: 'row' },
+    cell: { flex: 1, minWidth: 48 },
+    day: {
+      minHeight: 64,
+      borderWidth: 2,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 6,
+    },
+    marker: { ...t.typography.label, color: t.colors.primary, fontSize: 12 },
+  });

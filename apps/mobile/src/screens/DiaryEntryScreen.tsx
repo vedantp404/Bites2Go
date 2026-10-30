@@ -1,7 +1,9 @@
+import { FoodImage } from '../components/FoodImage';
 import { useCallback, useRef, useState } from 'react';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
-  Alert,
+  Modal,
+  View,
   BackHandler,
   Keyboard,
   KeyboardAvoidingView,
@@ -11,8 +13,8 @@ import {
   TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Action, Nutrition, styles } from '../components/FoodControls';
-import { Card, ui } from '../components/dashboard';
+import { Action, Nutrition, useFoodStyles } from '../components/FoodControls';
+import { Card, useUI } from '../components/dashboard';
 import { DiaryStatus } from '../components/DiaryViews';
 import { useDiary } from '../state/DiaryProvider';
 import { editPortion } from '../domain/diary';
@@ -23,6 +25,7 @@ const back = () => {
   else router.replace('/diary');
 };
 export default function DiaryEntryScreen() {
+  const { ui } = useUI();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const diary = useDiary();
   const entry = diary.entries?.find((e) => e.id === id);
@@ -39,6 +42,9 @@ export default function DiaryEntryScreen() {
   return <EntryEditor key={entry.id} original={entry} />;
 }
 function EntryEditor({ original }: { original: DiaryEntry }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const styles = useFoodStyles();
+  const { ui, t } = useUI();
   const [entry] = useState(original);
   const [portion, setPortion] = useState(String(entry.grams));
   const [busy, setBusy] = useState(false);
@@ -106,11 +112,17 @@ function EntryEditor({ original }: { original: DiaryEntry }) {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={ui.content}
         >
-          <Action label="Cancel / Back" disabled={busy} onPress={back} />
+          <Action
+            variant="secondary"
+            label="Cancel / Back"
+            disabled={busy}
+            onPress={back}
+          />
           <Text accessibilityRole="header" style={ui.title}>
             Review entry
           </Text>
           <Card>
+            <FoodImage foodId={entry.foodId} prominent />
             <Text style={ui.heading}>{entry.foodName}</Text>
             <Text style={ui.label}>
               {entry.date} / {entry.meal}
@@ -128,6 +140,7 @@ function EntryEditor({ original }: { original: DiaryEntry }) {
             <Text style={ui.heading}>Edit portion</Text>
             <Text style={ui.body}>Grams</Text>
             <TextInput
+              selectionColor={t.colors.primary}
               style={styles.input}
               accessibilityLabel="Edit portion in grams"
               keyboardType="decimal-pad"
@@ -165,26 +178,58 @@ function EntryEditor({ original }: { original: DiaryEntry }) {
                 failedAction === 'delete' ? 'Retry deletion' : 'Delete entry'
               }
               disabled={busy || failedAction === 'edit'}
-              onPress={() =>
-                Alert.alert(
-                  'Delete diary entry?',
-                  `Remove ${entry.foodName} from ${entry.meal} on ${entry.date}?`,
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Delete',
-                      style: 'destructive',
-                      onPress: () => {
-                        void commit(true);
-                      },
-                    },
-                  ],
-                )
-              }
+              variant="danger"
+              onPress={() => setConfirmDelete(true)}
             />
           </Card>
         </ScrollView>
       </KeyboardAvoidingView>
+      <Modal
+        visible={confirmDelete}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!busy) setConfirmDelete(false);
+        }}
+      >
+        <SafeAreaView
+          style={{
+            flex: 1,
+            backgroundColor: t.colors.overlay,
+            justifyContent: 'center',
+          }}
+        >
+          <ScrollView
+            contentContainerStyle={{
+              flexGrow: 1,
+              justifyContent: 'center',
+              padding: t.spacing.lg,
+            }}
+          >
+            <View accessibilityViewIsModal style={ui.card}>
+              <Text accessibilityRole="header" style={ui.heading}>
+                Delete diary entry?
+              </Text>
+              <Text style={ui.body}>
+                Remove {entry.foodName} from {entry.meal} on {entry.date}?
+              </Text>
+              <Action
+                label="Cancel"
+                variant="secondary"
+                onPress={() => setConfirmDelete(false)}
+              />
+              <Action
+                label="Delete"
+                variant="danger"
+                onPress={() => {
+                  setConfirmDelete(false);
+                  void commit(true);
+                }}
+              />
+            </View>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }

@@ -1,5 +1,16 @@
 # Ordered roadmap
 
+## Current task: visual redesign and appearance
+
+- [x] Verify clean master at Stage 6 commit 1f61e752422f2c13b251d05ff24326caaa360d44.
+- [x] Implement Vibrant Food App styling across Home, Search/details, Diary, Calendar, Profile and shared navigation/dialogs.
+- [x] Add persistent Light/Dark/System preference, default System, with immediate updates and visible storage errors.
+- [x] Add stable-ID local CC0 apple/banana photos and shared missing-image fallback without modifying food values or diary schema.
+- [x] Verify 37 unit tests, TypeScript, lint, formatting, Doctor 20/20, public config and Android export during implementation.
+- [x] Document design, storage, photo licensing, tests and unchanged audit advisories.
+- [ ] Android visual/accessibility, restart, System-switch and regression acceptance by the user.
+- [ ] User review; do not begin Stage 7.
+
 ## Current task: Stage 6 calendar and history
 
 Stage 5 save/restart/edit/delete was verified on Android by the user. This does not establish calendar or accessibility verification. Earlier stage sections below are historical; Stage 7 is not authorized.

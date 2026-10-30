@@ -1,5 +1,15 @@
 # Decision register
 
+## Visual redesign and theme milestone
+
+- Adopt Option B (Vibrant Food App) without changing food values, diary schema, local date rules or stage scope.
+- Default to System, with Light/Dark overrides saved separately in existing SQLite. Apply selection before awaiting persistence; report failures honestly and allow retry.
+- Centralize complete semantic palettes and subscribe all UI consumers. Keep native status/navigation chrome aligned and hold splash during preference loading.
+- Add only Expo-compatible native modules required for automatic Android appearance, navigation icons and startup splash. Avoid new image or persistence libraries.
+- Bundle two verified CC0 food photos; map by stable ID and retain polished placeholders for other foods. Provenance lives beside the assets.
+- Use a themed delete confirmation instead of an OS-themed alert, keeping cancellation and storage semantics intact.
+- Automated and export verification is not Android device acceptance. Stage 7 remains out of scope.
+
 Recorded 2026-10-30. “Confirmed” means supplied project constraints or direct observations; “recommended” is provisional architecture awaiting review, not an implementation claim.
 
 | ID / status | Decision | Alternatives, reason and revisit point |

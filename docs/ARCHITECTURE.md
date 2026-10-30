@@ -1,5 +1,15 @@
 # Architecture proposal
 
+## Appearance and image presentation
+
+`src/theme/appearance.ts` is a pure, testable preference store with synchronous subscriber notification and asynchronous persistence. It validates the three allowed values, defaults to System, serializes selection by disabling concurrent writes, and exposes read/write errors. Failed writes retain the selected session appearance and offer explicit retry without claiming persistence. Invalid stored values are preserved until the user selects a replacement.
+
+`ThemeProvider` connects the store to existing expo-sqlite/kv-store and React Native useColorScheme, then selects shared light/dark semantic tokens. Key `bites2go.appearance.v1` contains one preference string; the existing `bites2go.diary.v1` document, schema, snapshots, date keys and repository are untouched. Root screens mount after loading; Expo splash is released after the themed root lays out. React Navigation, StatusBar and Android NavigationBar subscribe to the effective mode. No global OS appearance override is used, so System continues observing changes.
+
+Expo selected expo-system-ui 58.0.7 for Android automatic appearance and expo-navigation-bar 58.0.4 for system-button icon styles. expo-splash-screen provides the native startup hold; versions are pinned by the lockfile. These native capabilities were absent from the original stack. No image/storage/navigation framework was added.
+
+`FoodImage` uses bundled Image assets and a stable-ID registry, shares photo choice across Search, Details, Home and Diary, and falls back for unknown/null IDs or load errors. Photos are optional presentation data, never written into snapshots. Category chips filter the existing deterministic search results. The custom delete Modal preserves explicit confirmation/cancellation and the existing serialized deletion operation.
+
 ## Stage 6 calendar/history
 
 `domain/calendar.ts` validates local date/month keys, builds Monday-first padded month grids, steps months/selected days and holds independent visible-month/selected-day reducer state. It also builds an in-memory date index from already validated entries. `DiaryProvider` memoizes this index only when its entries snapshot changes. Home, Diary and Calendar use date buckets; daily totals reuse `diaryTotals`. Month markers check at most 42 cells, not the whole history on every navigation. The index stores references, not cloned or persisted entries.

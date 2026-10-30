@@ -1,5 +1,15 @@
 # Project memory
 
+## Current handoff: visual redesign and themes
+
+Started from clean master at verified Stage 6 commit 1f61e752422f2c13b251d05ff24326caaa360d44. Implemented the Vibrant Food App direction and Light/Dark/System throughout the app, with Profile appearance controls. Existing diary schema, snapshots, nutrient values, CRUD repository, date logic and future-date restriction are preserved. Progress remains unfinished; no Stage 7 work.
+
+Preference defaults to System and uses separate SQLite key `bites2go.appearance.v1`. The pure store updates subscribers immediately, preserves failed-write session selection, exposes retryable errors, and never resets diary data. Root waits for theme read before mounting. Expo native modules support automatic Android appearance, system buttons and splash hold; a rebuilt native client is required to exercise config-plugin changes outside Expo Go.
+
+Two local CC0 photographs (apple and banana) total about 228 KB with source/license records beside assets. Image matching uses stable IDs, not names; unknown/historical null IDs and failed loads render placeholders.
+
+37 tests, TypeScript, lint, formatting, Doctor 20/20, public config and Android export passed, including native config introspection after splash configuration. Audit remains 5 low/3 high in Expo tooling, without forced upgrades. No device testing claimed. User must review visual/large-text/TalkBack behavior, theme persistence/system switching, native startup/system bars, and diary/calendar regression flows. Stop here before Stage 7. Final commit and verified remote hash are reported after push, not via a self-referential documentation commit.
+
 ## Current handoff: Stage 6
 
 Started from clean synchronized master 5a9f96b. User confirms Stage 5 save/restart/edit/delete worked on Android. Implemented monthly Calendar and inline historical diary, Today and adjacent-day navigation, actual-entry dots/counts, selected outline, accessible date labels and date-index reuse. Home remains current-day-only. Existing SQLite v1 schema/storage operations and food snapshots are unchanged; no migration or new dependencies.

@@ -1,40 +1,49 @@
 import { router } from 'expo-router';
-import type { PropsWithChildren } from 'react';
+import { useMemo, type PropsWithChildren } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { progress } from '../domain/dashboard';
-import { theme as t } from '../theme/tokens';
-export const ui = StyleSheet.create({
-  page: { flex: 1, backgroundColor: t.colors.background },
-  content: {
-    padding: t.spacing.md,
-    gap: t.spacing.lg,
-    width: '100%',
-    maxWidth: t.sizing.contentMax,
-    alignSelf: 'center',
-  },
-  title: { ...t.typography.title, color: t.colors.text },
-  heading: { ...t.typography.heading, color: t.colors.text },
-  body: { ...t.typography.body, color: t.colors.muted },
-  label: { ...t.typography.label, color: t.colors.primary },
-  card: {
-    padding: t.spacing.md,
-    gap: t.spacing.md,
-    backgroundColor: t.colors.surface,
-    borderRadius: t.radii.card,
-    borderWidth: 1,
-    borderColor: t.colors.border,
-  },
-  row: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: t.spacing.md,
-    justifyContent: 'space-between',
-  },
-});
+import type { Theme } from '../theme/tokens';
+import { useTheme } from '../theme/ThemeProvider';
+const makeUI = (t: Theme) =>
+  StyleSheet.create({
+    page: { flex: 1, backgroundColor: t.colors.background },
+    content: {
+      padding: t.spacing.md,
+      gap: t.spacing.lg,
+      width: '100%',
+      maxWidth: t.sizing.contentMax,
+      alignSelf: 'center',
+    },
+    title: { ...t.typography.title, color: t.colors.text },
+    heading: { ...t.typography.heading, color: t.colors.text },
+    body: { ...t.typography.body, color: t.colors.muted },
+    label: { ...t.typography.label, color: t.colors.primary },
+    card: {
+      padding: t.spacing.md,
+      gap: t.spacing.md,
+      backgroundColor: t.colors.surface,
+      borderRadius: t.radii.card,
+      borderWidth: 1,
+      borderColor: t.colors.border,
+    },
+    row: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: t.spacing.md,
+      justifyContent: 'space-between',
+    },
+  });
+export function useUI() {
+  const { theme: t } = useTheme();
+  const ui = useMemo(() => makeUI(t), [t]);
+  return { ui, t };
+}
 export function Card({ children }: PropsWithChildren) {
+  const { ui } = useUI();
   return <View style={ui.card}>{children}</View>;
 }
 export function PreviewNotice() {
+  const { ui, t } = useUI();
   return (
     <View
       style={{
@@ -60,6 +69,7 @@ export function AddFood({
   date: string;
   disabled?: boolean;
 }) {
+  const { t } = useUI();
   return (
     <Pressable
       accessibilityRole="button"
@@ -76,8 +86,12 @@ export function AddFood({
         minHeight: t.sizing.touchTarget,
         padding: t.spacing.md,
         borderRadius: 28,
-        backgroundColor: t.colors.primary,
-        opacity: disabled ? 0.5 : pressed ? 0.8 : 1,
+        backgroundColor: disabled
+          ? t.colors.elevated
+          : meal
+            ? t.colors.selected
+            : t.colors.primary,
+        opacity: pressed ? 0.8 : 1,
         alignItems: 'center',
         justifyContent: 'center',
       })}
@@ -85,7 +99,11 @@ export function AddFood({
       <Text
         style={{
           ...t.typography.body,
-          color: t.colors.surface,
+          color: disabled
+            ? t.colors.disabled
+            : meal
+              ? t.colors.primary
+              : t.colors.onPrimary,
           fontWeight: '600',
         }}
       >
@@ -99,7 +117,7 @@ export function NutrientProgress({
   consumed,
   target,
   unit,
-  color = t.colors.primary,
+  color,
   compact = false,
   partial = false,
 }: {
@@ -111,6 +129,7 @@ export function NutrientProgress({
   compact?: boolean;
   partial?: boolean;
 }) {
+  const { ui, t } = useUI();
   const value = progress(consumed ?? 0, target);
   const incomplete = partial || consumed === null;
   const amount = consumed === null ? 'Unknown' : consumed.toFixed(1);
@@ -153,7 +172,7 @@ export function NutrientProgress({
           style={{
             height: '100%',
             width: `${incomplete ? 0 : value.fill}%`,
-            backgroundColor: color,
+            backgroundColor: color ?? t.colors.primary,
           }}
         />
       </View>
