@@ -5,7 +5,7 @@ import { useLibrary } from '../state/LibraryProvider';
 import type { Library } from '../domain/library';
 import { setFavourite, foodOrigin } from '../domain/library';
 import type { Food } from '../domain/food';
-import { foods } from '../data/foods';
+import { unifiedFoods } from '../data/unifiedFoods';
 import { Card, useUI } from './dashboard';
 import { Action } from './FoodControls';
 export function LibraryStatus() {
@@ -124,7 +124,7 @@ export function FavouriteButton({
     setError('');
     try {
       pending.current ??= {
-        next: setFavourite(library.data, food.id, !favourite, foods),
+        next: setFavourite(library.data, food.id, !favourite, unifiedFoods),
         original: library.data,
       };
       setAttempted(true);

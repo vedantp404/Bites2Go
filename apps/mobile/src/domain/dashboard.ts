@@ -61,7 +61,10 @@ export function calculateNutrientProgress(
     consumed < 0
   ) {
     return {
-      consumed: consumed !== null && Number.isFinite(consumed) && consumed >= 0 ? consumed : 0,
+      consumed:
+        consumed !== null && Number.isFinite(consumed) && consumed >= 0
+          ? consumed
+          : 0,
       target: target !== null && Number.isFinite(target) ? target : null,
       remaining: null,
       exceeded: 0,

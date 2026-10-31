@@ -1,5 +1,21 @@
 # Ordered roadmap
 
+## Kaggle Dataset Integration (`adilshamim8/daily-food-and-nutrition-dataset`) — implemented
+
+- [x] Inspected Kaggle dataset v2: 651 raw records (1 header + 651 data rows), 12 columns, fixed 6 anomalous lines with unquoted commas.
+- [x] Verified dataset provenance & license: authored by Adil Shamim (`adilshamim8`), synthetic simulation dataset, strictly marked `status: 'illustrative'` across all imported items.
+- [x] Built deterministic preprocessing and validation pipeline (`scripts/import_kaggle_dataset.py`) converting records to referenceGrams=100 with physical macronutrient density and energy density bounds.
+- [x] Quarantined Line 486 (`Corn Nuts (1 oz)`) violating physical macronutrient bounds (102.1g macros per 100g).
+- [x] Merged 58 redundant internal duplicate rows within Kaggle dataset, yielding 592 unique items.
+- [x] Cross-catalogue deduplication against 894 built-in foods: 75 certain merges (preserving stable original IDs like apple, banana, almonds), 40 distinct varieties/preparations kept separate (e.g. 2% milk vs whole milk), 35 ambiguous matches with >35% calorie variance kept separate.
+- [x] Generated `apps/mobile/src/data/kaggleFoods.ts` (517 new items with `kaggle:` prefix) and `apps/mobile/src/data/unifiedFoods.ts` (1411 items total).
+- [x] Implemented dataset-first search ranking in `src/domain/food.ts`: Tier 1 Kaggle (+0.4 bonus), Tier 2 Built-in (+0.2 bonus), Tier 3 Custom/Recipes (+0.0 bonus).
+- [x] Updated `FoodSearchScreen.tsx`, `RecipeScreen.tsx`, and `LibraryControls.tsx` to search `unifiedFoods` while maintaining memoized `SearchHeader` to avoid keyboard blur regression.
+- [x] Created comprehensive unit test suite (`apps/mobile/tests/kaggleSearch.test.mjs`) covering all 10 validation requirements; all 149 mobile tests pass.
+- [x] Documented full metrics, methodology, and provenance in `docs/KAGGLE_IMPORT_REPORT.md`.
+
+
+
 ## Expanded Food Catalogue & Food Images — implemented
 
 - [x] Substantially expanded built-in food database to 894 items across Indian staples, regional Maharashtrian dishes, dals, sabzis, South Indian breakfast, street food, snacks, sweets, international fruits, vegetables, proteins, dairy, grains, fast food, beverages, and ingredients.

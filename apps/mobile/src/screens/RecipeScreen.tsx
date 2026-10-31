@@ -11,7 +11,7 @@ import {
   LibraryStatus,
   useLibraryForm,
 } from '../components/LibraryControls';
-import { foods } from '../data/foods';
+import { unifiedFoods } from '../data/unifiedFoods';
 import {
   libraryFoods,
   ingredientFromFood,
@@ -65,7 +65,7 @@ function Editor({ initial, item }: { initial: Library; item?: Recipe }) {
   const [confirm, setConfirm] = useState(false);
   const form = useLibraryForm(original);
   const { ui, t } = useUI();
-  const available = libraryFoods(original, foods).filter(
+  const available = libraryFoods(original, unifiedFoods).filter(
     (f) => !f.id.startsWith('recipe:'),
   );
   function build(): Recipe {

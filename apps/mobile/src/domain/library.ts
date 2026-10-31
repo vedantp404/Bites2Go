@@ -394,5 +394,7 @@ export function foodOrigin(food: Food): string {
     ? 'User-created estimate'
     : food.id.startsWith('recipe:')
       ? 'Recipe / snapshot estimates'
-      : 'Built-in illustrative food';
+      : food.id.startsWith('kaggle:') || food.sourceId?.startsWith('kaggle:')
+        ? 'Kaggle dataset illustrative food'
+        : 'Built-in illustrative food';
 }

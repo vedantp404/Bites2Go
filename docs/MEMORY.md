@@ -1,5 +1,17 @@
 # Project memory
 
+## Current handoff: Kaggle Dataset Integration (`adilshamim8/daily-food-and-nutrition-dataset`)
+
+Integrated the Kaggle daily food and nutrition dataset (v2) by Adil Shamim into Bites2Go's food search system without corrupting nutrition models or breaking existing search performance:
+- Schema & Provenance: The dataset contains 651 raw records with synthetic dietary records. All imported records are strictly assigned `status: 'illustrative'` (never verified) with explicit source attribution to Adil Shamim v2.
+- Preprocessing Pipeline (`scripts/import_kaggle_dataset.py`): Normalizes portions to per-100g reference values, enforces physical laws (macronutrient density <= 100.5g/100g, calorie density <= 900 kcal/100g), quarantines physically impossible items (Line 486 Corn Nuts, 102.1g/100g), and merges 58 internal duplicates to produce 592 unique items.
+- Conservative Deduplication: 75 certain matches with existing built-in foods were merged preserving original stable IDs (`apple`, `banana`, `almonds`, `rice-brown-cooked`), 40 meaningfully different varieties were kept separate (e.g. 2% milk vs whole milk, steamed vs roasted), and 35 ambiguous matches with >35% calorie variance were kept separate.
+- Catalogue Integration: Exported 517 new foods prefixed with `kaggle:` into `kaggleFoods.ts`, creating a 1411-food `unifiedFoods.ts` catalogue. Built-in `foods.ts` invariant remains at 894 items, preserving all baseline test fixtures.
+- Dataset-First Ranking: `searchFoods` in `food.ts` applies tier bonuses (Tier 1 Kaggle +0.4, Tier 2 Built-in +0.2, Tier 3 Custom/Recipe +0.0), guaranteeing that Kaggle items rank first for equal relevance matches while built-in and custom foods remain discoverable.
+- Stability & Quality: Preserved module-scope memoized `SearchHeader` in `FoodSearchScreen.tsx` preventing Android keyboard focus blur. All 149 mobile tests pass (including 10 new tests in `kaggleSearch.test.mjs`).
+
+
+
 ## Current handoff: Expanded Food Catalogue & Food Images
 
 Expanded the built-in food catalogue to 894 unique, production-grade food entries covering diverse Indian staples, regional Maharashtrian cuisine, South Indian breakfast, dals, sabzis, street food, snacks, traditional mithai, international fruits, vegetables, healthy fitness foods, proteins, dairy, grains, fast food, and beverages. Baseline items 0-11 were strictly preserved to guarantee zero regressions for existing library, diary, and calendar test suites.

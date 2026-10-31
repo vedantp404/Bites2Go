@@ -101,8 +101,18 @@ export function searchFoods(foods: readonly Food[], query: string): Food[] {
     }
 
     if (score > 0) {
+      // Dataset-first ranking:
+      // Tier 1: Kaggle imported catalogue (+0.4)
+      // Tier 2: Built-in catalogue (+0.2)
+      // Tier 3: User-created custom foods and recipes (+0.0)
+      const tierBonus =
+        food.id.startsWith('kaggle:') || food.sourceId?.startsWith('kaggle:')
+          ? 0.4
+          : food.id.startsWith('custom:') || food.id.startsWith('recipe:')
+            ? 0.0
+            : 0.2;
       seen.add(food.id);
-      scored.push({ food, score });
+      scored.push({ food, score: score + tierBonus });
     }
   }
 

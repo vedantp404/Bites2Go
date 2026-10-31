@@ -42,7 +42,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, useUI } from '../components/dashboard';
-import { foods } from '../data/foods';
+import { unifiedFoods } from '../data/unifiedFoods';
 import {
   meals,
   createDraft,
@@ -257,7 +257,7 @@ export default function FoodSearchScreen() {
         .mode,
   );
   const available = useMemo(
-    () => libraryFoods(library.data ?? emptyLibrary(), foods),
+    () => libraryFoods(library.data ?? emptyLibrary(), unifiedFoods),
     [library.data],
   );
   const [busy, setBusy] = useState(false);
@@ -296,7 +296,7 @@ export default function FoodSearchScreen() {
   const matches = useMemo(() => {
     const list = browseFoods(
       library.data ?? emptyLibrary(),
-      foods,
+      unifiedFoods,
       diary.entries ?? [],
       filter,
       draft.query,
