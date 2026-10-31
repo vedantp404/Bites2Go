@@ -1,5 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { Link } from 'expo-router';
+import { Link, useLocalSearchParams } from 'expo-router';
 import { ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AddFood, PreviewNotice, useUI, Card } from '../components/dashboard';
@@ -8,7 +8,10 @@ import { DaySummary, DiaryMeals, DiaryStatus } from '../components/DiaryViews';
 import { useDiary, useToday } from '../state/DiaryProvider';
 export default function DashboardScreen() {
   const { ui, t } = useUI();
-  const date = useToday();
+  const today = useToday();
+  const params = useLocalSearchParams<{ date?: string }>();
+  const date =
+    params.date && typeof params.date === 'string' ? params.date : today;
   const diary = useDiary();
   const entries =
     diary.entriesByDate === null ? null : (diary.entriesByDate.get(date) ?? []);
@@ -46,7 +49,7 @@ export default function DashboardScreen() {
         {entries ? (
           <>
             <DaySummary entries={entries} date={date} />
-            <AddFood date={date} />
+            {entries.length > 0 ? <AddFood date={date} /> : null}
           </>
         ) : null}
         <Card>

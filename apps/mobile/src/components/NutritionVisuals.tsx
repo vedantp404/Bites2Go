@@ -1,7 +1,7 @@
 import Svg, { Circle, Path } from 'react-native-svg';
 import { Text, View } from 'react-native';
 import { useTheme } from '../theme/ThemeProvider';
-import { nutrientProgress } from '../domain/health';
+import { calculateNutrientProgress } from '../domain/dashboard';
 export function AppIcon({
   name,
   color,
@@ -50,81 +50,141 @@ export function CalorieRing({
   consumed,
   target,
   partial = false,
+  size = 160,
 }: {
   consumed: number | null;
   target: number | null;
   partial?: boolean;
+  size?: number;
 }) {
   const { theme: t } = useTheme();
-  const value = nutrientProgress(consumed, target, partial);
-  const incomplete = consumed === null || partial;
-  const circumference = 2 * Math.PI * 68;
+  const state = calculateNutrientProgress(consumed, target, partial, 'kcal');
+  const incomplete = state.isPartial;
+  const strokeWidth = Math.round(size * 0.055) + 2; // e.g. 10 for 160
+  const center = size / 2;
+  const radius = center - strokeWidth - 2;
+  const circumference = 2 * Math.PI * radius;
+
+  const accessibleText = incomplete
+    ? 'Calories incomplete; remaining is unknown'
+    : !state.isTargetSet
+      ? 'Calorie target not set'
+      : state.isExceeded
+        ? `Calories: ${Math.round(state.consumed)} consumed, ${target} target, ${Math.round(state.exceeded)} exceeded (${state.formattedPercent})`
+        : `Calories: ${Math.round(state.consumed)} consumed, ${target} target, ${Math.round(state.remaining ?? 0)} remaining (${state.formattedPercent})`;
+
   return (
     <View
       accessible
       accessibilityRole="progressbar"
-      accessibilityLabel={
-        incomplete
-          ? 'Calories incomplete; remaining is unknown'
-          : value.remaining === null
-            ? 'Calorie target not set'
-            : `Calories: ${consumed?.toFixed(0)} consumed, ${target} target, ${value.remaining?.toFixed(0)} remaining`
-      }
+      accessibilityLabel={accessibleText}
       accessibilityValue={
-        incomplete || value.remaining === null
+        incomplete || !state.isTargetSet
           ? { text: incomplete ? 'Unknown remaining' : 'Target not set' }
-          : { min: 0, max: 100, now: value.fill }
+          : { min: 0, max: 100, now: state.fill, text: state.formattedPercent }
       }
       style={{
         alignItems: 'center',
         justifyContent: 'center',
-        width: 160,
-        minHeight: 160,
+        width: size,
+        minHeight: size,
       }}
     >
       <Svg
-        width={160}
-        height={160}
-        viewBox="0 0 160 160"
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
         style={{ position: 'absolute' }}
         accessible={false}
       >
         <Circle
-          cx={80}
-          cy={80}
-          r={68}
+          cx={center}
+          cy={center}
+          r={radius}
           fill="none"
           stroke={t.colors.border}
-          strokeWidth={8}
+          strokeWidth={strokeWidth}
         />
         <Circle
-          cx={80}
-          cy={80}
-          r={68}
+          cx={center}
+          cy={center}
+          r={radius}
           fill="none"
-          stroke={t.colors.primary}
-          strokeWidth={8}
+          stroke={
+            state.isExceeded
+              ? t.colors.warning
+              : state.fill === 100
+                ? t.colors.success
+                : t.colors.primary
+          }
+          strokeWidth={strokeWidth}
           strokeDasharray={`${circumference} ${circumference}`}
           strokeDashoffset={
-            circumference * (1 - (incomplete ? 0 : value.fill) / 100)
+            circumference * (1 - (incomplete ? 0 : state.fill) / 100)
           }
           strokeLinecap="round"
           rotation={-90}
-          origin="80,80"
+          origin={`${center},${center}`}
         />
       </Svg>
-      <Text style={{ ...t.typography.title, color: t.colors.text }}>
-        {incomplete
-          ? 'Unknown'
-          : value.remaining === null
-            ? 'Not set'
-            : Math.abs(value.remaining).toFixed(0)}
-      </Text>
-      <Text style={{ ...t.typography.label, color: t.colors.muted }}>
-        {value.remaining !== null && value.remaining < 0
-          ? 'kcal over target'
-          : 'kcal remaining'}
-      </Text>
+      <View style={{ alignItems: 'center', justifyContent: 'center', gap: 2 }}>
+        <Text
+          style={{
+            ...t.typography.title,
+            color: state.isExceeded ? t.colors.warning : t.colors.text,
+            fontSize: size >= 160 ? 28 : 22,
+            lineHeight: size >= 160 ? 32 : 26,
+            fontWeight: '700',
+          }}
+        >
+          {incomplete
+            ? 'Unknown'
+            : !state.isTargetSet
+              ? 'Not set'
+              : state.isExceeded
+                ? `+${Math.round(state.exceeded)}`
+                : Math.round(state.remaining ?? 0)}
+        </Text>
+        <Text
+          style={{
+            ...t.typography.label,
+            color: state.isExceeded ? t.colors.warning : t.colors.muted,
+            fontSize: 12,
+            lineHeight: 16,
+          }}
+        >
+          {incomplete
+            ? 'subtotal'
+            : !state.isTargetSet
+              ? 'daily target'
+              : state.isExceeded
+                ? 'kcal exceeded'
+                : 'kcal remaining'}
+        </Text>
+        {state.isTargetSet && !incomplete ? (
+          <View
+            style={{
+              marginTop: 2,
+              paddingHorizontal: 8,
+              paddingVertical: 2,
+              borderRadius: 10,
+              backgroundColor: state.isExceeded
+                ? t.colors.highlight
+                : t.colors.accent,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 11,
+                fontWeight: '600',
+                color: state.isExceeded ? t.colors.secondary : t.colors.primary,
+              }}
+            >
+              {state.formattedPercent}
+            </Text>
+          </View>
+        ) : null}
+      </View>
     </View>
   );
 }

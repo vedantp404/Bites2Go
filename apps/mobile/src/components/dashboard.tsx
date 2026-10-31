@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { useMemo, type PropsWithChildren } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { nutrientProgress } from '../domain/health';
+import { calculateNutrientProgress } from '../domain/dashboard';
 import type { Theme } from '../theme/tokens';
 import { useTheme } from '../theme/ThemeProvider';
 const makeUI = (t: Theme) =>
@@ -131,56 +131,106 @@ export function NutrientProgress({
   partial?: boolean;
 }) {
   const { ui, t } = useUI();
-  const value = nutrientProgress(consumed, target, partial);
-  const incomplete = partial || consumed === null;
+  const state = calculateNutrientProgress(consumed, target, partial, unit);
+  const incomplete = state.isPartial;
   const amount = consumed === null ? 'Unknown' : consumed.toFixed(1);
-  const description = `${label}: ${amount}${incomplete ? ' (incomplete data)' : ''} of ${target ?? 'unset'} ${unit}${incomplete ? ', percentage unavailable' : value.percent === null ? ', target not set' : `, ${Math.round(value.percent)} percent`}`;
+  const barColor = color ?? t.colors.primary;
+
+  const description = `${label}: ${amount}${incomplete ? ' (incomplete data)' : ''} of ${target ?? 'unset'} ${unit}${incomplete ? ', percentage unavailable' : state.percent === null ? ', target not set' : `, ${Math.round(state.percent)} percent`}${state.isExceeded ? `, ${state.exceeded.toFixed(1)} ${unit} exceeded` : state.remaining !== null ? `, ${state.remaining.toFixed(1)} ${unit} remaining` : ''}`;
+
   return (
     <View
       accessible
       accessibilityRole="progressbar"
       accessibilityLabel={description}
       accessibilityValue={
-        incomplete || value.percent === null
+        incomplete || state.percent === null
           ? {
               text: incomplete ? 'Incomplete nutrition data' : 'Target not set',
             }
-          : { min: 0, max: 100, now: value.fill, text: description }
+          : { min: 0, max: 100, now: state.fill, text: description }
       }
       style={{
-        gap: t.spacing.sm,
+        gap: t.spacing.xs,
         flex: compact ? 1 : undefined,
-        minWidth: compact ? 84 : undefined,
+        minWidth: compact ? 92 : undefined,
       }}
     >
-      <View style={compact ? { gap: 4 } : ui.row}>
-        <Text style={ui.label}>{label}</Text>
-        <Text style={ui.body}>
-          {amount} consumed
-          {incomplete ? ' (incomplete)' : ''} / {target ?? 'Not set'} {unit}{' '}
-          target{target === 0 ? ' (disabled)' : ''}
-        </Text>
-      </View>
-      <Text style={ui.body}>
-        {value.remaining === null
-          ? 'Remaining unavailable'
-          : `${Math.abs(value.remaining).toFixed(1)} ${unit} ${value.remaining < 0 ? 'over target' : 'remaining'}`}
-      </Text>
       <View
         style={{
-          height: 5,
-          borderRadius: 5,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <View
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: 4,
+              backgroundColor: barColor,
+            }}
+          />
+          <Text style={ui.label}>{label}</Text>
+        </View>
+        <Text
+          style={{
+            ...t.typography.label,
+            fontSize: 12,
+            fontWeight: '600',
+            color: state.isExceeded ? t.colors.warning : t.colors.muted,
+          }}
+        >
+          {incomplete ? '--' : state.formattedPercent}
+        </Text>
+      </View>
+
+      <View
+        style={{
+          height: 7,
+          borderRadius: 4,
           backgroundColor: t.colors.accent,
           overflow: 'hidden',
+          marginVertical: 2,
         }}
       >
         <View
           style={{
             height: '100%',
-            width: `${incomplete ? 0 : value.fill}%`,
-            backgroundColor: color ?? t.colors.primary,
+            width: `${incomplete ? 0 : state.fill}%`,
+            backgroundColor: state.isExceeded ? t.colors.warning : barColor,
+            borderRadius: 4,
           }}
         />
+      </View>
+
+      <View style={compact ? { gap: 2 } : ui.row}>
+        <Text
+          style={{
+            ...t.typography.body,
+            fontSize: 13,
+            lineHeight: 18,
+            color: t.colors.text,
+          }}
+        >
+          {amount} {unit}
+          <Text style={{ color: t.colors.muted, fontSize: 12 }}>
+            {' '}
+            / {target ? `${target} ${unit}` : 'Not set'}
+          </Text>
+        </Text>
+        <Text
+          style={{
+            ...t.typography.body,
+            fontSize: 12,
+            lineHeight: 16,
+            color: state.isExceeded ? t.colors.warning : t.colors.muted,
+            fontWeight: state.isExceeded ? '600' : '400',
+          }}
+        >
+          {state.statusText}
+        </Text>
       </View>
     </View>
   );
