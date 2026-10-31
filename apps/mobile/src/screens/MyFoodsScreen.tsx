@@ -1,3 +1,4 @@
+import { useCallback, useMemo } from 'react';
 import { Text } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Card, useUI } from '../components/dashboard';
@@ -14,11 +15,18 @@ export default function MyFoodsScreen() {
   const params = useLocalSearchParams<{ date?: string; meal?: string }>();
   const date = validDateKey(params.date) ? params.date : localDateKey();
   const meal = mealContext(params.meal);
-  const log = (foodId: string) =>
-    router.push({
-      pathname: '/food-search',
-      params: { foodId, date, ...(meal ? { meal } : {}) },
-    });
+  const log = useCallback(
+    (foodId: string) =>
+      router.push({
+        pathname: '/food-search',
+        params: { foodId, date, ...(meal ? { meal } : {}) },
+      }),
+    [date, meal],
+  );
+  const customFoods = useMemo(
+    () => data?.customFoods.map(customAsFood) ?? [],
+    [data?.customFoods],
+  );
   return (
     <HealthPage title="My Meals & Recipes">
       <Action
@@ -108,7 +116,7 @@ export default function MyFoodsScreen() {
             Missing an ingredient? Add its serving weight and nutrition from
             your own food label here, then use it in a meal.
           </Text>
-          {data.customFoods.map(customAsFood).map((food) => (
+          {customFoods.map((food) => (
             <Card key={food.id}>
               <FoodChoice food={food} onPress={() => log(food.id)} />
               <Action

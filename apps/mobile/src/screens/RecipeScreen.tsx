@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Text } from 'react-native';
 import { randomUUID } from 'expo-crypto';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -65,8 +65,36 @@ function Editor({ initial, item }: { initial: Library; item?: Recipe }) {
   const [confirm, setConfirm] = useState(false);
   const form = useLibraryForm(original);
   const { ui, t } = useUI();
-  const available = libraryFoods(original, unifiedFoods).filter(
-    (f) => !f.id.startsWith('recipe:'),
+  const available = useMemo(
+    () =>
+      libraryFoods(original, unifiedFoods).filter(
+        (f) => !f.id.startsWith('recipe:'),
+      ),
+    [original],
+  );
+  const allMatches = useMemo(
+    () => (searching ? searchFoods(available, query) : []),
+    [searching, available, query],
+  );
+  const visibleMatches = useMemo(() => allMatches.slice(0, 30), [allMatches]);
+  const ingredientFoodIds = useMemo(
+    () => new Set(ingredients.map((i) => i.foodId)),
+    [ingredients],
+  );
+
+  const handleAddIngredient = useCallback(
+    (foodId: string) => {
+      setIngredients((prev) => [
+        ...prev,
+        {
+          ...ingredientFromFood(foodId, available, 100),
+          amount: '100',
+        },
+      ]);
+      setSearching(false);
+      setQuery('');
+    },
+    [available],
   );
   function build(): Recipe {
     return {
@@ -168,49 +196,29 @@ function Editor({ initial, item }: { initial: Library; item?: Recipe }) {
               onChangeText={setQuery}
               disabled={form.disabled}
             />
-            {(() => {
-              const allMatches = searchFoods(available, query);
-              const visibleMatches = allMatches.slice(0, 30);
-              if (allMatches.length === 0) {
-                return (
-                  <Text style={ui.body}>
-                    No matching ingredients. Create a custom food in My foods
-                    first if needed.
+            {searching && visibleMatches.length === 0 ? (
+              <Text style={ui.body}>
+                No matching ingredients. Create a custom food in My foods first
+                if needed.
+              </Text>
+            ) : (
+              <>
+                {visibleMatches.map((food) => (
+                  <FoodChoice
+                    key={food.id}
+                    food={food}
+                    disabled={form.disabled || ingredientFoodIds.has(food.id)}
+                    onPress={() => handleAddIngredient(food.id)}
+                  />
+                ))}
+                {allMatches.length > 30 ? (
+                  <Text style={ui.label}>
+                    Showing top 30 matches of {allMatches.length}. Type to
+                    refine.
                   </Text>
-                );
-              }
-              return (
-                <>
-                  {visibleMatches.map((food) => (
-                    <FoodChoice
-                      key={food.id}
-                      food={food}
-                      disabled={
-                        form.disabled ||
-                        ingredients.some((i) => i.foodId === food.id)
-                      }
-                      onPress={() => {
-                        setIngredients([
-                          ...ingredients,
-                          {
-                            ...ingredientFromFood(food.id, available, 100),
-                            amount: '100',
-                          },
-                        ]);
-                        setSearching(false);
-                        setQuery('');
-                      }}
-                    />
-                  ))}
-                  {allMatches.length > 30 ? (
-                    <Text style={ui.label}>
-                      Showing top 30 matches of {allMatches.length}. Type to
-                      refine.
-                    </Text>
-                  ) : null}
-                </>
-              );
-            })()}
+                ) : null}
+              </>
+            )}
           </>
         ) : null}
       </Card>

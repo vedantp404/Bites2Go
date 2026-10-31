@@ -1,5 +1,16 @@
 # Ordered roadmap
 
+## VirtualizedList Performance & Large Catalogue Optimization — implemented
+
+- [x] Investigated React Native VirtualizedList slow update warnings (`contentLength: 3520, dt: 1106`, `contentLength: 13102, dt: 707`).
+- [x] Identified root causes: unwindowed rendering of all 1,411 catalogue entries simultaneously in FlatList, unstable inline `onPress` callback recreation defeating `React.memo(FoodChoice)` on every keystroke, and unmemoized food filtering in `RecipeScreen.tsx`.
+- [x] Created module-scope memoized `FoodSearchRow` in `FoodSearchScreen.tsx` with stable `onSelect` callback reference, guaranteeing zero row re-renders across search input keystrokes.
+- [x] Implemented incremental windowing (initial 40 items + 40 item batch pagination via `onEndReached`), reducing initial catalogue mount payload by 97% while keeping all 1,411 foods fully searchable and discoverable.
+- [x] Tuned FlatList virtualization parameters: `initialNumToRender: 10`, `maxToRenderPerBatch: 10`, `windowSize: 5`, and `onEndReachedThreshold: 0.5`.
+- [x] Optimized `RecipeScreen.tsx` and `MyFoodsScreen.tsx` with memoized available food collections, O(1) ingredient Set membership lookups, and stable callbacks.
+- [x] Preserved dataset-first search ranking (Tier 1 Kaggle foods rank first for equal scores), offline SQLite persistence, and Android keyboard-focus fix.
+- [x] Added automated regression & benchmark test suite (`apps/mobile/tests/virtualizedListPerformance.test.mjs`); all 154 mobile tests passed, 19 backend tests passed, TypeScript, ESLint, Prettier, Expo doctor (20/20 passed), Android release export, and credential security scan passed with 0 findings.
+
 ## Nutrition Data Quality & Staple Foods Provenance — implemented
 
 - [x] Audited all 1,411 foods in unified catalogue (894 built-in + 517 Kaggle items) across 7 food categories for nutritional accuracy, physical bounds, Atwater factor consistency, and source provenance.

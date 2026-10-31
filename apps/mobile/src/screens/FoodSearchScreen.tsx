@@ -229,6 +229,28 @@ export const SearchHeader = memo(function SearchHeader({
   );
 });
 
+const BASE_CATEGORIES: string[] = Array.from(
+  new Set(unifiedFoods.map((f) => f.category)),
+);
+const INITIAL_PAGE_SIZE = 40;
+const PAGE_INCREMENT = 40;
+
+export interface FoodSearchRowProps {
+  food: Food;
+  onSelect: (id: string) => void;
+}
+
+export const FoodSearchRow = memo(function FoodSearchRow({
+  food,
+  onSelect,
+}: FoodSearchRowProps) {
+  const handlePress = useCallback(() => {
+    onSelect(food.id);
+  }, [food.id, onSelect]);
+
+  return <FoodChoice food={food} onPress={handlePress} />;
+});
+
 export default function FoodSearchScreen() {
   const styles = useFoodStyles();
   const { ui, t } = useUI();
@@ -285,10 +307,16 @@ export default function FoodSearchScreen() {
     return () => clearTimeout(timer);
   }, [queryInput, draft.query]);
 
-  const categories = useMemo(
-    () => [...new Set(available.map((food) => food.category))],
-    [available],
-  );
+  const categories = useMemo(() => {
+    if (!library.data?.customFoods.length && !library.data?.recipes.length) {
+      return BASE_CATEGORIES;
+    }
+    const set = new Set(BASE_CATEGORIES);
+    for (const food of available) {
+      if (food.category) set.add(food.category);
+    }
+    return Array.from(set);
+  }, [available, library.data]);
   const selected = useMemo(
     () => available.find((food) => food.id === draft.foodId),
     [available, draft.foodId],
@@ -305,6 +333,28 @@ export default function FoodSearchScreen() {
       ? list
       : list.filter((food) => food.category === category);
   }, [library.data, diary.entries, filter, draft.query, category]);
+
+  const [displayLimit, setDisplayLimit] = useState(INITIAL_PAGE_SIZE);
+  const [prevSearchKey, setPrevSearchKey] = useState('');
+
+  // Reset pagination synchronously when search parameters change (no cascading render)
+  const searchKey = `${draft.query}|${category ?? ''}|${filter}`;
+  if (prevSearchKey !== searchKey) {
+    setPrevSearchKey(searchKey);
+    setDisplayLimit(INITIAL_PAGE_SIZE);
+  }
+
+  const displayedFoods = useMemo(() => {
+    if (matches.length <= INITIAL_PAGE_SIZE) return matches;
+    return matches.slice(0, displayLimit);
+  }, [matches, displayLimit]);
+
+  const handleEndReached = useCallback(() => {
+    setDisplayLimit((prev) => {
+      if (prev >= matches.length) return prev;
+      return Math.min(prev + PAGE_INCREMENT, matches.length);
+    });
+  }, [matches.length]);
 
   const back = useCallback(() => {
     if (saving.current) return;
@@ -341,14 +391,19 @@ export default function FoodSearchScreen() {
         'This portion cannot be calculated. Enter a positive amount within the supported numeric range.';
     }
   }
-  const select = useCallback(
-    (id: string) => {
-      Keyboard.dismiss();
-      if (draft.foodId !== id) setQuantityMode(defaultFoodPortion(id).mode);
-      dispatch({ type: 'select', id });
-    },
-    [draft.foodId],
-  );
+
+  const draftFoodIdRef = useRef(draft.foodId);
+  useEffect(() => {
+    draftFoodIdRef.current = draft.foodId;
+  }, [draft.foodId]);
+
+  const select = useCallback((id: string) => {
+    Keyboard.dismiss();
+    if (draftFoodIdRef.current !== id) {
+      setQuantityMode(defaultFoodPortion(id).mode);
+    }
+    dispatch({ type: 'select', id });
+  }, []);
 
   const handleClearQuery = useCallback(() => {
     setQueryInput('');
@@ -376,7 +431,7 @@ export default function FoodSearchScreen() {
 
   const renderItem = useCallback(
     ({ item }: { item: Food }) => (
-      <FoodChoice food={item} onPress={() => select(item.id)} />
+      <FoodSearchRow food={item} onSelect={select} />
     ),
     [select],
   );
@@ -693,12 +748,14 @@ export default function FoodSearchScreen() {
         ) : (
           <FlatList
             key="search"
-            data={matches}
+            data={displayedFoods}
             keyExtractor={keyExtractor}
             renderItem={renderItem}
-            initialNumToRender={12}
-            maxToRenderPerBatch={15}
+            initialNumToRender={10}
+            maxToRenderPerBatch={10}
             windowSize={5}
+            onEndReached={handleEndReached}
+            onEndReachedThreshold={0.5}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
             contentContainerStyle={[ui.content, { gap: t.spacing.sm }]}
@@ -737,10 +794,20 @@ export default function FoodSearchScreen() {
               </Card>
             }
             ListFooterComponent={
-              <Text style={[ui.body, { paddingVertical: t.spacing.md }]}>
-                Leaving food search clears this temporary selection. Search
-                works offline. Only confirmed entries are saved.
-              </Text>
+              <View
+                style={{ paddingVertical: t.spacing.md, gap: t.spacing.xs }}
+              >
+                {displayedFoods.length < matches.length ? (
+                  <Text style={[ui.label, { textAlign: 'center' }]}>
+                    Showing top {displayedFoods.length} of {matches.length}{' '}
+                    foods. Scroll to load more.
+                  </Text>
+                ) : null}
+                <Text style={ui.body}>
+                  Leaving food search clears this temporary selection. Search
+                  works offline. Only confirmed entries are saved.
+                </Text>
+              </View>
             }
           />
         )}

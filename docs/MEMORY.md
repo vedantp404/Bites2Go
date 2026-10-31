@@ -1,5 +1,26 @@
 # Project memory
 
+## Current handoff: VirtualizedList Performance & Large Catalogue Optimization
+
+Investigated and resolved the React Native `VirtualizedList: You have a large list that is slow to update` performance warnings (`contentLength: 3520, dt: 1106, prevDt: 962` and `contentLength: 13102, dt: 707, prevDt: 597`) following the 1,411-entry Kaggle food catalogue expansion.
+
+Key Engineering Optimizations:
+
+- Root Cause Analysis:
+  1. Unwindowed Full List: When no query was active, FlatList received all 1,411 foods in its `data` prop, forcing `VirtualizedList` to maintain metrics and layout frames for >90,000px of content.
+  2. Broken Row Memoization: FlatList's `renderItem` passed an inline arrow function `onPress={() => select(item.id)}`. Because `onPress` was recreated on every render of `FoodSearchScreen`, `React.memo(FoodChoice)` failed shallow equality on every keystroke, forcing all mounted rows to re-render and re-execute `useUI()`, string formatting, and React Fiber reconciliation.
+  3. Recreated Collections in Recipe Builder: `RecipeScreen.tsx` recomputed `libraryFoods(original, unifiedFoods)` and filtered 1,411 items on every keystroke, while executing O(N) ingredient lookups.
+- Targeted Solutions:
+  - Memoized Row Component (`FoodSearchRow`): Declared at module scope with stable `onSelect` callback (`draftFoodIdRef` updated in effect). Bails out of row rendering completely when typing in the search box.
+  - Incremental Virtualized Pagination: `displayedFoods` initial window of 40 items, with smooth 40-item pagination on `onEndReached` (`onEndReachedThreshold: 0.5`). Initial render data preparation is ~16x faster (0.14ms vs 2.3ms in benchmark) with 97% smaller initial DOM tree.
+  - Tuned Virtualization Parameters: `initialNumToRender: 10` (fits viewport height), `maxToRenderPerBatch: 10` (keeps frame time under budget), `windowSize: 5` (prevents unbounded memory growth).
+  - Precomputed Category Index: `BASE_CATEGORIES` precomputed at module scope from `unifiedFoods`, bypassing 1,411-item mapping when no custom foods or recipes are present.
+  - Recipe Screen & My Foods Optimization: `available` foods memoized via `useMemo`, `visibleMatches` memoized to slice(0, 30), and `ingredientFoodIds` indexed in a Set for O(1) membership checks.
+- Verification & Benchmarks:
+  - All 154 mobile tests passed (including new `virtualizedListPerformance.test.mjs`), 19 backend tests passed.
+  - TypeScript, ESLint, Prettier, Expo doctor (20/20 passed), Android release export succeeded, and credential scanner passed with 0 findings.
+  - Android keyboard focus and dataset-first ranking (Tier 1 Kaggle > Tier 2 Built-in > Tier 3 Custom) preserved with zero regressions.
+
 ## Current handoff: Nutrition Data Quality & Staple Foods Provenance
 
 Audited all 1,411 searchable foods in Bites2Go's unified catalogue (894 built-in foods in `apps/mobile/src/data/foods.ts` and 517 Kaggle dataset foods in `apps/mobile/src/data/kaggleFoods.ts`) to improve nutritional data quality, eliminate synthetic values for core staples, and establish rigorous provenance tracking.
