@@ -42,6 +42,16 @@
             "backgroundColor": "#151C18"
           }
         }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow Bites2Go to access microphone for voice food logging.",
+          "speechRecognitionPermission": "Allow Bites2Go to use speech recognition to log your meals.",
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox"
+          ]
+        }
       ]
     ],
     "scheme": "bites2go"

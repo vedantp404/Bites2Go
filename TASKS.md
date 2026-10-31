@@ -1,5 +1,19 @@
 # Ordered roadmap
 
+## Voice-Based Food Logging — implemented
+
+- [x] Implemented production-quality voice food logging pipeline supporting spoken natural language meal descriptions.
+- [x] Configured native speech-to-text with `expo-speech-recognition@58.0.1` compatible with Expo SDK 58 and Android permissions (`RECORD_AUDIO`, `androidSpeechServicePackages`).
+- [x] Built FastAPI backend endpoint `POST /api/v1/parse-voice-meal` using Google GenAI SDK with structured schema validation (`VoiceMealParseResponse` and `ParsedVoiceFoodItem`).
+- [x] Engineered comprehensive prompt interpretation: multi-item dish separation (e.g. rotis, dal, sabzi, coffee), colloquial measures (bowls, handfuls, slices, cups), in-flight speech self-corrections ("one roti, actually make that two"), preparation methods, and raw vs cooked weights.
+- [x] Integrated client matching against the 1,411-food unified catalogue, preserving dataset-first priority (Kaggle tier 1 > Built-in tier 2 > Custom tier 3) and nutrition provenance metadata.
+- [x] Created accessible, high-contrast modal (`VoiceFoodLoggingModal.tsx`) with clear states: idle, listening with live volume meter, editable transcript text area, processing indicator, and candidate review screen.
+- [x] Added candidate editing: portion adjustments with live Atwater-consistent macro recalculation, alternative catalogue food selection, toggle between verified catalogue data and Gemini AI estimate, and manual item addition/deletion.
+- [x] Ensured atomic diary persistence to SQLite via `diary.saveAll(entries)` with rollback on write failures.
+- [x] Integrated "Log Meal with Voice" entry point into `FoodSearchScreen.tsx` (`SearchHeader`).
+- [x] Created comprehensive test suites: backend pytest suite expanded from 19 to 28 tests; mobile test suite expanded from 154 to 161 tests covering natural language interpretation, catalogue matching, portion scaling, and atomic error recovery.
+- [x] Passed 100% of quality gates: 161 mobile unit tests pass, 28 backend tests pass, TypeScript compiles with 0 errors, ESLint passes with 0 warnings/errors, Prettier format check passes, Expo Doctor passes 20/20 checks, Metro Android release export succeeds (1,376 modules), and security scan passes with 0 pattern findings.
+
 ## VirtualizedList Performance & Large Catalogue Optimization — implemented
 
 - [x] Investigated React Native VirtualizedList slow update warnings (`contentLength: 3520, dt: 1106`, `contentLength: 13102, dt: 707`).

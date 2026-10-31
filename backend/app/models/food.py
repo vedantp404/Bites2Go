@@ -179,3 +179,174 @@ class FoodRecognitionResponse(BaseModel):
 
         self.items = list(seen.values())
         return self
+
+
+class ParsedVoiceFoodItem(BaseModel):
+    """A food item extracted from natural language voice transcription."""
+
+    food_description: str = Field(
+        ...,
+        min_length=1,
+        max_length=150,
+        description="Descriptive name of the food item parsed from speech (e.g. Scrambled eggs, Roti with ghee, Yellow dal tadka)",
+    )
+    quantity: float = Field(
+        default=1.0,
+        ge=0.01,
+        le=500.0,
+        description="Numerical portion or count (e.g. 2.0, 1.0, 0.5)",
+    )
+    unit: str = Field(
+        default="serving",
+        min_length=1,
+        max_length=50,
+        description="Serving unit description (e.g. roti, bowl, cup, slice, tbsp, piece, gram, serving)",
+    )
+    preparation: Optional[str] = Field(
+        default=None,
+        max_length=120,
+        description="Preparation method or modifiers (e.g. cooked with ghee, fried, boiled, raw, unsweetened)",
+    )
+    state: Literal["raw", "cooked", "unspecified"] = Field(
+        default="unspecified",
+        description="State of the ingredient/food: raw or cooked weight",
+    )
+    estimated_grams: float = Field(
+        ...,
+        ge=0.1,
+        le=5000.0,
+        description="Realistic total weight in grams for the specified quantity",
+    )
+    calories: float = Field(
+        ...,
+        ge=0.0,
+        le=10000.0,
+        description="Estimated energy in kilocalories for this portion",
+    )
+    protein: float = Field(
+        ...,
+        ge=0.0,
+        le=1000.0,
+        description="Estimated protein in grams",
+    )
+    carbohydrates: float = Field(
+        ...,
+        ge=0.0,
+        le=1000.0,
+        description="Estimated carbohydrates in grams",
+    )
+    fat: float = Field(
+        ...,
+        ge=0.0,
+        le=1000.0,
+        description="Estimated dietary fat in grams",
+    )
+    confidence: float = Field(
+        default=0.85,
+        ge=0.0,
+        le=1.0,
+        description="Confidence score for this parsed item",
+    )
+    confidence_level: Literal["high", "medium", "low"] = Field(
+        default="high",
+        description="High (>0.8), Medium (0.5-0.8), or Low (<0.5)",
+    )
+    alternatives: list[str] = Field(
+        default_factory=list,
+        description="Plausible food alternatives if item description was ambiguous",
+    )
+    notes: Optional[str] = Field(
+        default=None,
+        description="Assumptions or ambiguity notes",
+    )
+
+    @field_validator("food_description")
+    @classmethod
+    def clean_food_description(cls, v: str) -> str:
+        cleaned = v.strip()
+        if not cleaned:
+            raise ValueError("food_description cannot be empty or whitespace only")
+        return cleaned
+
+    @field_validator("unit")
+    @classmethod
+    def clean_unit(cls, v: str) -> str:
+        cleaned = v.strip()
+        if not cleaned:
+            return "serving"
+        return cleaned
+
+    @model_validator(mode="after")
+    def validate_macronutrient_consistency(self) -> "ParsedVoiceFoodItem":
+        """Verify that macros are consistent with calories."""
+        macro_calories = (self.protein * 4.0) + (self.carbohydrates * 4.0) + (self.fat * 9.0)
+        if self.calories > 0 and macro_calories > max(self.calories * 2.5, self.calories + 300):
+            self.calories = round(macro_calories, 1)
+
+        self.quantity = round(self.quantity, 2)
+        self.estimated_grams = round(self.estimated_grams, 1)
+        self.calories = round(self.calories, 1)
+        self.protein = round(self.protein, 1)
+        self.carbohydrates = round(self.carbohydrates, 1)
+        self.fat = round(self.fat, 1)
+        self.confidence = round(self.confidence, 2)
+        return self
+
+
+class VoiceMealParseRequest(BaseModel):
+    """Payload sent by mobile client containing voice transcript."""
+
+    transcript: str = Field(
+        ...,
+        min_length=1,
+        max_length=2000,
+        description="Raw or user-edited voice transcript of the food description",
+    )
+    meal_context: Optional[str] = Field(
+        default=None,
+        max_length=50,
+        description="Optional meal context like Breakfast, Lunch, Dinner, Snacks",
+    )
+    logged_date: Optional[str] = Field(
+        default=None,
+        max_length=20,
+        description="Optional ISO date string for logging context",
+    )
+
+    @field_validator("transcript")
+    @classmethod
+    def clean_transcript(cls, v: str) -> str:
+        cleaned = v.strip()
+        if not cleaned:
+            raise ValueError("transcript cannot be empty or whitespace only")
+        return cleaned
+
+
+class VoiceMealParseResponse(BaseModel):
+    """Structured response with parsed food items from speech."""
+
+    success: bool = Field(
+        default=True,
+        description="Whether voice parsing was successful",
+    )
+    transcript: str = Field(
+        ...,
+        description="Echoed input transcript",
+    )
+    summary: str = Field(
+        default="",
+        description="Brief summary of the interpreted meal",
+    )
+    items: list[ParsedVoiceFoodItem] = Field(
+        default_factory=list,
+        description="Parsed food items with quantities and estimated nutrition",
+    )
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Noteworthy warnings (e.g. self-correction detected, high calorie density, ambiguous item)",
+    )
+    clarifying_questions: list[str] = Field(
+        default_factory=list,
+        description="Suggestions or questions to resolve ambiguities",
+    )
+

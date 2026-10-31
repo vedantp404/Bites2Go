@@ -1,5 +1,33 @@
 # Project memory
 
+## Current handoff: Voice-Based Food Logging
+
+Implemented a production-quality, accessible voice food logging feature combining on-device speech-to-text, Gemini natural language meal interpretation, food catalogue matching against the 1,411-food unified database, and atomic SQLite persistence.
+
+Key Engineering Highlights:
+- Speech Recognition & Audio Pipeline:
+  - Integrated `expo-speech-recognition@58.0.1` compatible with Expo SDK 58 and React Native 0.88.1 with zero external runtime dependencies.
+  - Configured Android permissions (`RECORD_AUDIO`, `androidSpeechServicePackages` with Google Speech Services).
+  - Provided graceful fallback when speech recognizer is unavailable or permissions are denied, allowing direct typing or editing of meal transcripts.
+  - Live audio volume meter and listening/processing/review visual states.
+- FastAPI Backend & Gemini Pipeline:
+  - Implemented `POST /api/v1/parse-voice-meal` in `backend/app/routers/food.py`.
+  - Pydantic models `VoiceMealParseRequest`, `ParsedVoiceFoodItem`, and `VoiceMealParseResponse` with strict macro sanity checking ($4P + 4C + 9F \approx \text{kcal}$).
+  - Designed specialized system prompt handling multi-item dishes, colloquial quantities (bowls, cups, handfuls, slices), in-flight speech corrections ("one roti, actually make that two rotis with ghee"), and raw vs cooked weights.
+- Food Catalogue Matching & Provenance:
+  - Client matching service `apps/mobile/src/services/voiceFoodLogging.ts` matches parsed descriptions to `unifiedFoods` while strictly preserving dataset-first priority (Tier 1 Kaggle > Tier 2 Built-in > Tier 3 Custom).
+  - Allows user to toggle between verified catalogue nutrition data and Gemini AI estimates per item.
+  - Live Atwater-consistent macro scaling when adjusting portion sizes in grams.
+- User Experience & Accessibility:
+  - Polished modal `VoiceFoodLoggingModal.tsx` following Bites2Go design tokens, light/dark themes, and accessible touch targets (>= 44x44 dp).
+  - Added "Log Meal with Voice" action to `FoodSearchScreen.tsx` (`SearchHeader`).
+- Persistence & Integrity:
+  - Atomic writes to local SQLite diary via `diary.saveAll(entries)`. Either all items commit or none do.
+- Verification & Test Coverage:
+  - Mobile tests expanded to 161 passed (new `apps/mobile/tests/voiceFoodLogging.test.mjs`).
+  - Backend tests expanded to 28 passed (`backend/tests/test_food_recognition.py`).
+  - TypeScript, ESLint, Prettier, Expo Doctor (20/20 passed), Android release export, and security scanner (0 findings) all passed 100%.
+
 ## Current handoff: VirtualizedList Performance & Large Catalogue Optimization
 
 Investigated and resolved the React Native `VirtualizedList: You have a large list that is slow to update` performance warnings (`contentLength: 3520, dt: 1106, prevDt: 962` and `contentLength: 13102, dt: 707, prevDt: 597`) following the 1,411-entry Kaggle food catalogue expansion.

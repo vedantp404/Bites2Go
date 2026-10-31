@@ -6,7 +6,11 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 
 from app.config import ConfigurationError
-from app.models.food import FoodRecognitionResponse
+from app.models.food import (
+    FoodRecognitionResponse,
+    VoiceMealParseRequest,
+    VoiceMealParseResponse,
+)
 from app.services.gemini import (
     GeminiService,
     GeminiServiceError,
@@ -171,4 +175,63 @@ async def recognize_food_base64(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred during food recognition.",
         ) from exc
+
+
+@router.post(
+    "/parse-voice-meal",
+    response_model=VoiceMealParseResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Parse spoken food description into structured items and nutritional estimates",
+)
+async def parse_voice_meal(
+    payload: VoiceMealParseRequest,
+    gemini_service: GeminiService = Depends(get_gemini_service),
+) -> VoiceMealParseResponse:
+    """Analyze a spoken food description transcript and return validated food components.
+
+    - Decomposes multi-item utterances (e.g. '2 rotis and a bowl of dal').
+    - Translates colloquial measures (bowls, handfuls, slices) into realistic gram estimates.
+    - Resolves in-flight corrections (e.g. 'one roti, actually make that two').
+    - Distinguishes raw vs cooked state.
+    """
+    cleaned_transcript = payload.transcript.strip()
+    if not cleaned_transcript:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Transcript cannot be empty or whitespace only.",
+        )
+
+    try:
+        response = gemini_service.parse_voice_meal(
+            transcript=cleaned_transcript,
+            meal_context=payload.meal_context,
+        )
+        return response
+
+    except ConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    except RateLimitError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+        ) from exc
+    except ModelOutputValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="AI model returned an unparseable or malformed food parsing response.",
+        ) from exc
+    except GeminiServiceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The AI voice parsing service encountered an error. Please try again.",
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred during voice food parsing.",
+        ) from exc
+
 

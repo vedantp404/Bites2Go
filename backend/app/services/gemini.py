@@ -8,7 +8,7 @@ from google.genai import errors, types
 from pydantic import ValidationError
 
 from app.config import get_settings
-from app.models.food import FoodRecognitionResponse
+from app.models.food import FoodRecognitionResponse, VoiceMealParseResponse
 
 
 class GeminiServiceError(RuntimeError):
@@ -46,6 +46,35 @@ SYSTEM_INSTRUCTION = (
     "- Estimate each item's portion independently based on visual scale against plate/bowl size.\n"
     "- Keep calories and macronutrients mutually consistent: Calories ~ (Protein * 4) + (Carbohydrates * 4) + (Fat * 9).\n"
     "- All nutrient numbers must be finite, non-negative numbers representing the portion size."
+)
+
+VOICE_PARSER_SYSTEM_INSTRUCTION = (
+    "You are an expert dietary and nutritional AI parser specializing in converting spoken meal descriptions into structured, itemized foods.\n\n"
+    "Core Capabilities & Rules:\n"
+    "1. Multi-Item Separation:\n"
+    "   - Split complex utterances into discrete, individually countable food items (e.g. 'two scrambled eggs, a slice of sourdough toast with butter, and a black coffee' -> 3 items: Scrambled eggs, Sourdough toast with butter, Black coffee).\n"
+    "   - For Indian meals (e.g. 'two rotis, a bowl of dal tadka, and some kachumber salad' or '100g paneer bhurji and a paratha'), break down into distinct items: Roti, Dal Tadka, Kachumber Salad, etc.\n\n"
+    "2. In-Flight Corrections & Modifications:\n"
+    "   - Accurately parse speech corrections and revisions (e.g. 'one roti, actually make that two rotis' -> 2 rotis; 'an apple, wait no, two oranges' -> 2 oranges; 'chai with sugar, actually without sugar' -> chai without sugar).\n"
+    "   - Add an entry to 'warnings' when a self-correction was detected and applied.\n\n"
+    "3. Colloquial Quantities & Realistic Weights:\n"
+    "   - Translate informal speech measures to realistic weights in grams:\n"
+    "     * 'a bowl of oatmeal / dal' -> ~150-200g (1 bowl)\n"
+    "     * 'a handful of almonds' -> ~28-30g (1 handful)\n"
+    "     * 'a cup of chai' -> ~150ml/g (1 cup)\n"
+    "     * 'a slice of toast' -> ~30-40g (1 slice)\n"
+    "     * 'a tablespoon of peanut butter / ghee' -> ~15g (1 tbsp)\n"
+    "     * 'two medium apples' -> ~360g (~180g each, 2 pieces)\n"
+    "     * 'half a chicken breast' -> ~85-100g (0.5 piece)\n"
+    "     * 'two rotis/chapatis' -> ~60-70g (2 pieces, ~30-35g each)\n\n"
+    "4. State & Preparation Method:\n"
+    "   - Mark state as 'raw' or 'cooked' when relevant (e.g. '100g raw chicken breast' -> state: 'raw', ~120 kcal vs '100g cooked chicken breast' -> state: 'cooked', ~165 kcal; '50g raw oats' -> state: 'raw' vs 'a bowl of cooked oatmeal' -> state: 'cooked').\n"
+    "   - Note preparation details (fried, grilled, boiled, with ghee, skim milk, unsweetened).\n\n"
+    "5. Nutritional Consistency & Plausibility:\n"
+    "   - Ensure Calories ~ (Protein * 4) + (Carbohydrates * 4) + (Fat * 9) within standard margin.\n"
+    "   - All macro and calorie values must be non-negative numbers representing the portion size.\n\n"
+    "6. Ambiguity & Clarification:\n"
+    "   - If an item is vague (e.g. 'some pasta' or 'curry'), assign a reasonable default, note the assumption in notes, set confidence_level to 'medium' or 'low', provide plausible alternatives in 'alternatives', and optionally add a clarifying question in 'clarifying_questions'."
 )
 
 
@@ -151,6 +180,93 @@ class GeminiService:
                     if "items" not in data and "candidates" in data:
                         data["items"] = data.pop("candidates")
                     return FoodRecognitionResponse.model_validate(data)
+            except Exception:
+                pass
+            raise ModelOutputValidationError(
+                f"Model response failed validation schema: {str(val_err)}"
+            ) from val_err
+        except Exception as exc:
+            raise ModelOutputValidationError(
+                f"Failed to decode model JSON output: {str(exc)}"
+            ) from exc
+
+    def parse_voice_meal(
+        self,
+        transcript: str,
+        meal_context: Optional[str] = None,
+    ) -> VoiceMealParseResponse:
+        """Parse spoken food description and return structured items and nutrition.
+
+        Args:
+            transcript: Cleaned voice transcript text.
+            meal_context: Optional meal context (Breakfast, Lunch, Dinner, Snacks).
+
+        Returns:
+            VoiceMealParseResponse containing itemized foods and nutritional estimates.
+        """
+        prompt_text = f"Spoken food transcript: {transcript.strip()}"
+        if meal_context:
+            prompt_text += f"\nMeal context: {meal_context.strip()}"
+
+        contents = [prompt_text]
+        timeout_ms = int(self._settings.gemini_timeout_seconds * 1000)
+        config = types.GenerateContentConfig(
+            system_instruction=VOICE_PARSER_SYSTEM_INSTRUCTION,
+            response_mime_type="application/json",
+            response_schema=VoiceMealParseResponse,
+            temperature=0.2,
+            http_options=types.HttpOptions(timeout=timeout_ms),
+        )
+
+        try:
+            response = self.client.models.generate_content(
+                model=self._model,
+                contents=contents,
+                config=config,
+            )
+        except (TimeoutError, httpx.TimeoutException) as exc:
+            raise GeminiServiceError(
+                "AI voice parsing request timed out. Please try again."
+            ) from exc
+        except errors.APIError as exc:
+            code = getattr(exc, "code", None)
+            if code == 429:
+                raise RateLimitError(
+                    "Gemini API rate limit or quota exceeded. Please wait a moment and try again."
+                ) from exc
+            raise GeminiServiceError(
+                "Gemini service was unable to process the spoken description. Please try again later."
+            ) from exc
+        except Exception as exc:
+            if isinstance(exc, GeminiServiceError):
+                raise
+            raise GeminiServiceError(
+                "Unexpected error communicating with AI voice recognition service."
+            ) from exc
+
+        if not response or not response.text:
+            raise ModelOutputValidationError("The AI service returned an empty response.")
+
+        raw_text = response.text.strip()
+        if raw_text.startswith("```json"):
+            raw_text = raw_text[7:]
+        if raw_text.startswith("```"):
+            raw_text = raw_text[3:]
+        if raw_text.endswith("```"):
+            raw_text = raw_text[:-3]
+        raw_text = raw_text.strip()
+
+        try:
+            parsed_data = VoiceMealParseResponse.model_validate_json(raw_text)
+            parsed_data.transcript = transcript.strip()
+            return parsed_data
+        except ValidationError as val_err:
+            try:
+                data = json.loads(raw_text)
+                if isinstance(data, dict):
+                    if "transcript" not in data:
+                        data["transcript"] = transcript.strip()
+                    return VoiceMealParseResponse.model_validate(data)
             except Exception:
                 pass
             raise ModelOutputValidationError(

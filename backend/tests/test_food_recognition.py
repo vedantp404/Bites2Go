@@ -6,10 +6,17 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import ConfigurationError
-from app.models.food import FoodRecognitionResponse
+from app.models.food import (
+    FoodItemCandidate,
+    FoodRecognitionResponse,
+    ParsedVoiceFoodItem,
+    UncertaintyInfo,
+    VoiceMealParseResponse,
+)
 from app.routers.food import get_gemini_service
 from app.services.gemini import (
     GeminiService,
+    GeminiServiceError,
     ModelOutputValidationError,
     RateLimitError,
 )
@@ -379,5 +386,232 @@ def test_deduplicate_identical_food_candidates() -> None:
     assert merged.fat == 2.0
     assert "Chapati" in merged.uncertainty.alternatives
     assert "Phulka" in merged.uncertainty.alternatives
+
+
+def test_parse_voice_meal_success(
+    client: TestClient,
+    mock_voice_meal_response: VoiceMealParseResponse,
+) -> None:
+    """Verify standard voice transcript parsing succeeds with mocked Gemini service."""
+    mock_service = MagicMock(spec=GeminiService)
+    mock_service.parse_voice_meal.return_value = mock_voice_meal_response
+
+    client.app.dependency_overrides[get_gemini_service] = lambda: mock_service
+    try:
+        response = client.post(
+            "/api/v1/parse-voice-meal",
+            json={
+                "transcript": "two scrambled eggs, a slice of whole wheat toast with butter, and a cup of black coffee",
+                "meal_context": "Breakfast",
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert len(data["items"]) == 3
+        assert data["items"][0]["food_description"] == "Scrambled Eggs"
+        assert data["items"][0]["quantity"] == 2.0
+        assert data["items"][0]["calories"] == 140.0
+        assert data["items"][1]["food_description"] == "Whole Wheat Toast with Butter"
+        assert data["items"][2]["food_description"] == "Black Coffee"
+        mock_service.parse_voice_meal.assert_called_once_with(
+            transcript="two scrambled eggs, a slice of whole wheat toast with butter, and a cup of black coffee",
+            meal_context="Breakfast",
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+
+def test_parse_voice_meal_indian_meal_and_corrections(
+    client: TestClient,
+) -> None:
+    """Verify voice parsing with self-corrections and Indian foods."""
+    indian_voice_response = VoiceMealParseResponse(
+        success=True,
+        transcript="one roti, actually make that two rotis with ghee, and a bowl of yellow dal tadka",
+        summary="Indian lunch with 2 rotis with ghee and dal tadka.",
+        items=[
+            ParsedVoiceFoodItem(
+                food_description="Roti with Ghee",
+                quantity=2.0,
+                unit="pieces",
+                preparation="whole wheat flatbread brushed with ghee",
+                state="cooked",
+                estimated_grams=70.0,
+                calories=210.0,
+                protein=6.0,
+                carbohydrates=36.0,
+                fat=5.0,
+                confidence=0.92,
+                confidence_level="high",
+                alternatives=["Chapati", "Phulka"],
+                notes="2 rotis (~30g each) + 1 tsp ghee",
+            ),
+            ParsedVoiceFoodItem(
+                food_description="Yellow Dal Tadka",
+                quantity=1.0,
+                unit="bowl",
+                preparation="cooked yellow toor dal with cumin tadka",
+                state="cooked",
+                estimated_grams=180.0,
+                calories=160.0,
+                protein=8.5,
+                carbohydrates=22.0,
+                fat=4.5,
+                confidence=0.88,
+                confidence_level="high",
+                alternatives=["Moong Dal", "Chana Dal"],
+                notes="Standard katori portion (~180g)",
+            ),
+        ],
+        warnings=["Applied self-correction: updated quantity of rotis from 1 to 2."],
+        clarifying_questions=[],
+    )
+
+    mock_service = MagicMock(spec=GeminiService)
+    mock_service.parse_voice_meal.return_value = indian_voice_response
+
+    client.app.dependency_overrides[get_gemini_service] = lambda: mock_service
+    try:
+        response = client.post(
+            "/api/v1/parse-voice-meal",
+            json={
+                "transcript": "one roti, actually make that two rotis with ghee, and a bowl of yellow dal tadka",
+                "meal_context": "Lunch",
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert len(data["items"]) == 2
+        assert data["items"][0]["quantity"] == 2.0
+        assert "warnings" in data
+        assert len(data["warnings"]) == 1
+        assert "correction" in data["warnings"][0].lower()
+    finally:
+        client.app.dependency_overrides.clear()
+
+
+def test_parse_voice_meal_raw_vs_cooked_weights() -> None:
+    """Verify raw vs cooked distinction in ParsedVoiceFoodItem."""
+    raw_item = ParsedVoiceFoodItem(
+        food_description="Raw Chicken Breast",
+        quantity=100.0,
+        unit="gram",
+        preparation="uncooked, boneless skinless",
+        state="raw",
+        estimated_grams=100.0,
+        calories=120.0,
+        protein=26.0,
+        carbohydrates=0.0,
+        fat=1.5,
+        confidence=0.95,
+        confidence_level="high",
+    )
+    cooked_item = ParsedVoiceFoodItem(
+        food_description="Cooked Chicken Breast",
+        quantity=100.0,
+        unit="gram",
+        preparation="grilled, cooked",
+        state="cooked",
+        estimated_grams=100.0,
+        calories=165.0,
+        protein=31.0,
+        carbohydrates=0.0,
+        fat=3.6,
+        confidence=0.95,
+        confidence_level="high",
+    )
+    assert raw_item.state == "raw"
+    assert cooked_item.state == "cooked"
+    assert raw_item.calories < cooked_item.calories
+
+
+def test_parse_voice_meal_empty_transcript_bad_request(client: TestClient) -> None:
+    """Verify 400 or 422 Bad Request on empty or whitespace-only transcript."""
+    response = client.post(
+        "/api/v1/parse-voice-meal",
+        json={"transcript": "   "},
+    )
+    assert response.status_code in (400, 422)
+
+
+def test_parse_voice_meal_missing_transcript_bad_request(client: TestClient) -> None:
+    """Verify 422 Unprocessable Entity when transcript field is omitted."""
+    response = client.post(
+        "/api/v1/parse-voice-meal",
+        json={"meal_context": "Dinner"},
+    )
+    assert response.status_code == 422
+
+
+def test_parse_voice_meal_rate_limit(client: TestClient) -> None:
+    """Verify 429 Too Many Requests when Gemini rate limit is hit."""
+    mock_service = MagicMock(spec=GeminiService)
+    mock_service.parse_voice_meal.side_effect = RateLimitError("Rate limit exceeded")
+
+    client.app.dependency_overrides[get_gemini_service] = lambda: mock_service
+    try:
+        response = client.post(
+            "/api/v1/parse-voice-meal",
+            json={"transcript": "a bowl of cereal"},
+        )
+        assert response.status_code == 429
+        assert "rate limit" in response.json()["detail"].lower()
+    finally:
+        client.app.dependency_overrides.clear()
+
+
+def test_parse_voice_meal_malformed_output_bad_gateway(client: TestClient) -> None:
+    """Verify 502 Bad Gateway when Gemini returns unparseable or malformed output."""
+    mock_service = MagicMock(spec=GeminiService)
+    mock_service.parse_voice_meal.side_effect = ModelOutputValidationError("Invalid json")
+
+    client.app.dependency_overrides[get_gemini_service] = lambda: mock_service
+    try:
+        response = client.post(
+            "/api/v1/parse-voice-meal",
+            json={"transcript": "a cup of green tea"},
+        )
+        assert response.status_code == 502
+    finally:
+        client.app.dependency_overrides.clear()
+
+
+def test_parse_voice_meal_service_unconfigured(client: TestClient) -> None:
+    """Verify 503 Service Unavailable when Gemini API key is missing."""
+    mock_service = MagicMock(spec=GeminiService)
+    mock_service.parse_voice_meal.side_effect = ConfigurationError("Missing GEMINI_API_KEY")
+
+    client.app.dependency_overrides[get_gemini_service] = lambda: mock_service
+    try:
+        response = client.post(
+            "/api/v1/parse-voice-meal",
+            json={"transcript": "an orange"},
+        )
+        assert response.status_code == 503
+        assert "gemini_api_key" in response.json()["detail"].lower()
+    finally:
+        client.app.dependency_overrides.clear()
+
+
+def test_parsed_voice_food_item_macro_clamping() -> None:
+    """Verify that macros exceeding reported calories adjust calories consistently."""
+    # 30g protein (120 kcal) + 40g carbs (160 kcal) + 20g fat (180 kcal) = 460 kcal
+    # If model reports 50 kcal, validator adjusts calories to ~460 kcal
+    item = ParsedVoiceFoodItem(
+        food_description="High Protein Shake",
+        quantity=1.0,
+        unit="bottle",
+        estimated_grams=300.0,
+        calories=50.0,
+        protein=30.0,
+        carbohydrates=40.0,
+        fat=20.0,
+        confidence=0.9,
+        confidence_level="high",
+    )
+    assert item.calories >= 460.0
+
 
 

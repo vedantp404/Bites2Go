@@ -17,7 +17,9 @@ from app.main import app
 from app.models.food import (
     FoodItemCandidate,
     FoodRecognitionResponse,
+    ParsedVoiceFoodItem,
     UncertaintyInfo,
+    VoiceMealParseResponse,
 )
 
 
@@ -87,5 +89,67 @@ def mock_food_response() -> FoodRecognitionResponse:
             ),
         ],
         warnings=[],
+    )
+
+
+@pytest.fixture
+def mock_voice_meal_response() -> VoiceMealParseResponse:
+    """Sample valid structured voice meal parsing response."""
+    return VoiceMealParseResponse(
+        success=True,
+        transcript="two scrambled eggs, a slice of whole wheat toast with butter, and a cup of black coffee",
+        summary="Breakfast comprising scrambled eggs, buttered toast, and black coffee.",
+        items=[
+            ParsedVoiceFoodItem(
+                food_description="Scrambled Eggs",
+                quantity=2.0,
+                unit="eggs",
+                preparation="scrambled",
+                state="cooked",
+                estimated_grams=100.0,
+                calories=140.0,
+                protein=12.0,
+                carbohydrates=1.5,
+                fat=9.5,
+                confidence=0.95,
+                confidence_level="high",
+                alternatives=["Omelette", "Fried Eggs"],
+                notes="Standard whole egg preparation",
+            ),
+            ParsedVoiceFoodItem(
+                food_description="Whole Wheat Toast with Butter",
+                quantity=1.0,
+                unit="slice",
+                preparation="toasted with butter",
+                state="cooked",
+                estimated_grams=40.0,
+                calories=110.0,
+                protein=3.5,
+                carbohydrates=14.0,
+                fat=4.5,
+                confidence=0.90,
+                confidence_level="high",
+                alternatives=["White toast with butter"],
+                notes="Assumed 1 slice bread (~30g) + 1 tsp butter (~5g)",
+            ),
+            ParsedVoiceFoodItem(
+                food_description="Black Coffee",
+                quantity=1.0,
+                unit="cup",
+                preparation="brewed, no sugar",
+                state="cooked",
+                estimated_grams=240.0,
+                calories=2.0,
+                protein=0.3,
+                carbohydrates=0.2,
+                fat=0.0,
+                confidence=0.98,
+                confidence_level="high",
+                alternatives=["Americano"],
+                notes="Unsweetened black coffee",
+            ),
+        ],
+        warnings=[],
+        clarifying_questions=[],
     )
 

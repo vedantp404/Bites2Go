@@ -24,6 +24,7 @@ import {
 import { randomUUID } from 'expo-crypto';
 import { Action, Nutrition, useFoodStyles } from '../components/FoodControls';
 import { AIFoodScannerModal } from '../components/AIFoodScannerModal';
+import { VoiceFoodLoggingModal } from '../components/VoiceFoodLoggingModal';
 import { useDiary } from '../state/DiaryProvider';
 import { createEntry, localDateKey, validDateKey } from '../domain/diary';
 import type { DiaryEntry } from '../domain/diary';
@@ -72,6 +73,7 @@ export type SearchHeaderProps = {
   matchesCount: number;
   draftQuery: string;
   diaryEntriesUnavailable: boolean;
+  onOpenVoiceLogging: () => void;
   onOpenAiScanner: () => void;
   onOpenMyFoods: () => void;
 };
@@ -95,6 +97,7 @@ export const SearchHeader = memo(function SearchHeader({
   matchesCount,
   draftQuery,
   diaryEntriesUnavailable,
+  onOpenVoiceLogging,
   onOpenAiScanner,
   onOpenMyFoods,
 }: SearchHeaderProps) {
@@ -105,6 +108,11 @@ export const SearchHeader = memo(function SearchHeader({
         guidance. Entries are saved only on this device after confirmation.
       </Text>
       <LibraryStatus />
+      <Action
+        variant="primary"
+        label="Log Meal with Voice"
+        onPress={onOpenVoiceLogging}
+      />
       <Action
         variant="primary"
         label="Scan Meal with Gemini AI"
@@ -296,6 +304,7 @@ export default function FoodSearchScreen() {
   const [queryInput, setQueryInput] = useState(draft.query);
   const [category, setCategory] = useState<string | null>(null);
   const [aiScannerOpen, setAiScannerOpen] = useState(false);
+  const [voiceModalOpen, setVoiceModalOpen] = useState(false);
 
   // Debounce search query input to prevent UI thread lockups during typing
   useEffect(() => {
@@ -417,6 +426,10 @@ export default function FoodSearchScreen() {
 
   const handleOpenAiScanner = useCallback(() => {
     setAiScannerOpen(true);
+  }, []);
+
+  const handleOpenVoiceLogging = useCallback(() => {
+    setVoiceModalOpen(true);
   }, []);
 
   const handleOpenMyFoods = useCallback(() => {
@@ -779,6 +792,7 @@ export default function FoodSearchScreen() {
                 matchesCount={matches.length}
                 draftQuery={draft.query}
                 diaryEntriesUnavailable={diary.entries === null}
+                onOpenVoiceLogging={handleOpenVoiceLogging}
                 onOpenAiScanner={handleOpenAiScanner}
                 onOpenMyFoods={handleOpenMyFoods}
               />
@@ -812,6 +826,16 @@ export default function FoodSearchScreen() {
           />
         )}
       </KeyboardAvoidingView>
+      <VoiceFoodLoggingModal
+        visible={voiceModalOpen}
+        meal={draft.meal || 'Lunch'}
+        date={date}
+        onClose={() => setVoiceModalOpen(false)}
+        onSuccess={() => {
+          setVoiceModalOpen(false);
+          router.back();
+        }}
+      />
       <AIFoodScannerModal
         visible={aiScannerOpen}
         meal={draft.meal || 'Lunch'}
