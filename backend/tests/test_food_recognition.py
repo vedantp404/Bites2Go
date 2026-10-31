@@ -1,9 +1,12 @@
 """Tests for /api/v1/recognize-food with mocked Gemini service."""
 
 import base64
+import json
 from unittest.mock import MagicMock
+import httpx
 import pytest
 from fastapi.testclient import TestClient
+from google.genai import errors
 
 from app.config import ConfigurationError
 from app.models.food import (
@@ -17,8 +20,11 @@ from app.routers.food import get_gemini_service
 from app.services.gemini import (
     GeminiService,
     GeminiServiceError,
+    GeminiTimeoutError,
+    GeminiUnavailableError,
     ModelOutputValidationError,
     RateLimitError,
+    is_transient_gemini_error,
 )
 
 
@@ -612,6 +618,454 @@ def test_parsed_voice_food_item_macro_clamping() -> None:
         confidence_level="high",
     )
     assert item.calories >= 460.0
+
+
+# ============================================================================
+# Automatic Retry & Transient Failure Tests
+# ============================================================================
+
+
+def test_is_transient_gemini_error_classification() -> None:
+    """Verify that is_transient_gemini_error accurately identifies transient vs permanent failures."""
+    # Transient API errors
+    e504 = errors.ServerError(504, {"error": {"code": 504, "message": "Gateway Timeout"}})
+    e503 = errors.ServerError(503, {"error": {"code": 503, "message": "Service Unavailable"}})
+    e502 = errors.ServerError(502, {"error": {"code": 502, "message": "Bad Gateway"}})
+    e500 = errors.ServerError(500, {"error": {"code": 500, "message": "Internal Server Error"}})
+    e429 = errors.ClientError(429, {"error": {"code": 429, "message": "Resource Exhausted"}})
+    e408 = errors.ClientError(408, {"error": {"code": 408, "message": "Request Timeout"}})
+    assert is_transient_gemini_error(e504) is True
+    assert is_transient_gemini_error(e503) is True
+    assert is_transient_gemini_error(e502) is True
+    assert is_transient_gemini_error(e500) is True
+    assert is_transient_gemini_error(e429) is True
+    assert is_transient_gemini_error(e408) is True
+
+    # Transient transport errors
+    assert is_transient_gemini_error(httpx.ReadTimeout("Timeout")) is True
+    assert is_transient_gemini_error(httpx.ConnectError("Connection drop")) is True
+    assert is_transient_gemini_error(TimeoutError("System timeout")) is True
+
+    # Permanent failures - NEVER retry
+    e401 = errors.ClientError(401, {"error": {"code": 401, "message": "API Key Invalid"}})
+    e400 = errors.ClientError(400, {"error": {"code": 400, "message": "Bad Request"}})
+    e403 = errors.ClientError(403, {"error": {"code": 403, "message": "Forbidden"}})
+    e404 = errors.ClientError(404, {"error": {"code": 404, "message": "Model Not Found"}})
+    assert is_transient_gemini_error(e401) is False
+    assert is_transient_gemini_error(e400) is False
+    assert is_transient_gemini_error(e403) is False
+    assert is_transient_gemini_error(e404) is False
+    assert is_transient_gemini_error(ModelOutputValidationError("bad json")) is False
+    assert is_transient_gemini_error(ConfigurationError("key missing")) is False
+
+
+def test_gemini_service_retry_504_transient_success(sample_jpeg_bytes: bytes) -> None:
+    """Verify GeminiService automatically retries on HTTP 504 Gateway Timeout and succeeds on attempt 2."""
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.text = json.dumps({
+        "success": True,
+        "summary": "Scrambled Eggs",
+        "items": [{
+            "food_name": "Scrambled Eggs",
+            "estimated_quantity": 2.0,
+            "unit": "eggs",
+            "estimated_grams": 100.0,
+            "calories": 140.0,
+            "protein": 12.0,
+            "carbohydrates": 1.5,
+            "fat": 9.5,
+            "uncertainty": {
+                "confidence_score": 0.95,
+                "confidence_level": "high",
+                "notes": None,
+                "alternatives": []
+            }
+        }],
+        "warnings": []
+    })
+
+    # Fail attempt 1 with HTTP 504, succeed on attempt 2
+    mock_client.models.generate_content.side_effect = [
+        errors.ServerError(504, {"error": {"code": 504, "message": "Gateway Timeout"}}),
+        mock_response,
+    ]
+
+    service = GeminiService(
+        client=mock_client,
+        retry_initial_delay=0.001,
+        retry_max_delay=0.005,
+    )
+    result = service.recognize_food(sample_jpeg_bytes)
+
+    assert result.success is True
+    assert len(result.items) == 1
+    assert result.items[0].food_name == "Scrambled Eggs"
+    assert mock_client.models.generate_content.call_count == 2
+
+
+def test_gemini_service_retry_503_two_retries_success(sample_jpeg_bytes: bytes) -> None:
+    """Verify GeminiService handles two consecutive HTTP 503 errors and succeeds on attempt 3."""
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.text = json.dumps({
+        "success": True,
+        "summary": "Yellow Dal",
+        "items": [{
+            "food_name": "Yellow Dal Tadka",
+            "estimated_quantity": 1.0,
+            "unit": "bowl",
+            "estimated_grams": 180.0,
+            "calories": 150.0,
+            "protein": 9.0,
+            "carbohydrates": 20.0,
+            "fat": 4.0,
+            "uncertainty": {
+                "confidence_score": 0.9,
+                "confidence_level": "high",
+                "notes": None,
+                "alternatives": []
+            }
+        }],
+        "warnings": []
+    })
+
+    # Fail attempts 1 and 2 with HTTP 503, succeed on attempt 3
+    mock_client.models.generate_content.side_effect = [
+        errors.ServerError(503, {"error": {"code": 503, "message": "Service Unavailable"}}),
+        errors.ServerError(503, {"error": {"code": 503, "message": "Service Unavailable"}}),
+        mock_response,
+    ]
+
+    service = GeminiService(
+        client=mock_client,
+        retry_initial_delay=0.001,
+        retry_max_delay=0.005,
+    )
+    result = service.recognize_food(sample_jpeg_bytes)
+
+    assert result.success is True
+    assert len(result.items) == 1
+    assert result.items[0].food_name == "Yellow Dal Tadka"
+    assert mock_client.models.generate_content.call_count == 3
+
+
+def test_gemini_service_retry_429_rate_limit_success(sample_jpeg_bytes: bytes) -> None:
+    """Verify GeminiService automatically retries on HTTP 429 Rate Limit and succeeds."""
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.text = json.dumps({
+        "success": True,
+        "summary": "Apple",
+        "items": [{
+            "food_name": "Apple",
+            "estimated_quantity": 1.0,
+            "unit": "piece",
+            "estimated_grams": 182.0,
+            "calories": 95.0,
+            "protein": 0.5,
+            "carbohydrates": 25.0,
+            "fat": 0.3,
+            "uncertainty": {
+                "confidence_score": 0.95,
+                "confidence_level": "high",
+                "notes": None,
+                "alternatives": []
+            }
+        }],
+        "warnings": []
+    })
+
+    mock_client.models.generate_content.side_effect = [
+        errors.ClientError(429, {"error": {"code": 429, "message": "Resource Exhausted"}}),
+        mock_response,
+    ]
+
+    service = GeminiService(
+        client=mock_client,
+        retry_initial_delay=0.001,
+        retry_max_delay=0.005,
+    )
+    result = service.recognize_food(sample_jpeg_bytes)
+
+    assert result.success is True
+    assert mock_client.models.generate_content.call_count == 2
+
+
+def test_gemini_service_retry_timeout_success(sample_jpeg_bytes: bytes) -> None:
+    """Verify GeminiService retries on httpx.TimeoutException and succeeds."""
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.text = json.dumps({
+        "success": True,
+        "summary": "Banana",
+        "items": [{
+            "food_name": "Banana",
+            "estimated_quantity": 1.0,
+            "unit": "piece",
+            "estimated_grams": 118.0,
+            "calories": 105.0,
+            "protein": 1.3,
+            "carbohydrates": 27.0,
+            "fat": 0.3,
+            "uncertainty": {
+                "confidence_score": 0.95,
+                "confidence_level": "high",
+                "notes": None,
+                "alternatives": []
+            }
+        }],
+        "warnings": []
+    })
+
+    mock_client.models.generate_content.side_effect = [
+        httpx.ReadTimeout("Read timed out"),
+        mock_response,
+    ]
+
+    service = GeminiService(
+        client=mock_client,
+        retry_initial_delay=0.001,
+        retry_max_delay=0.005,
+    )
+    result = service.recognize_food(sample_jpeg_bytes)
+
+    assert result.success is True
+    assert mock_client.models.generate_content.call_count == 2
+
+
+def test_gemini_service_exhausted_retries_raises_unavailable(sample_jpeg_bytes: bytes) -> None:
+    """Verify persistent HTTP 503 raises GeminiUnavailableError after exactly 3 attempts."""
+    mock_client = MagicMock()
+    mock_client.models.generate_content.side_effect = [
+        errors.ServerError(503, {"error": {"code": 503, "message": "Service Unavailable"}}),
+        errors.ServerError(503, {"error": {"code": 503, "message": "Service Unavailable"}}),
+        errors.ServerError(503, {"error": {"code": 503, "message": "Service Unavailable"}}),
+    ]
+
+    service = GeminiService(
+        client=mock_client,
+        max_retries=2,
+        retry_initial_delay=0.001,
+        retry_max_delay=0.005,
+    )
+
+    with pytest.raises(GeminiUnavailableError) as exc_info:
+        service.recognize_food(sample_jpeg_bytes)
+
+    assert exc_info.value.code == 503
+    assert mock_client.models.generate_content.call_count == 3
+
+
+def test_gemini_service_exhausted_retries_raises_timeout(sample_jpeg_bytes: bytes) -> None:
+    """Verify persistent HTTP 504 raises GeminiTimeoutError after exactly 3 attempts."""
+    mock_client = MagicMock()
+    mock_client.models.generate_content.side_effect = [
+        errors.ServerError(504, {"error": {"code": 504, "message": "Gateway Timeout"}}),
+        errors.ServerError(504, {"error": {"code": 504, "message": "Gateway Timeout"}}),
+        errors.ServerError(504, {"error": {"code": 504, "message": "Gateway Timeout"}}),
+    ]
+
+    service = GeminiService(
+        client=mock_client,
+        max_retries=2,
+        retry_initial_delay=0.001,
+        retry_max_delay=0.005,
+    )
+
+    with pytest.raises(GeminiTimeoutError) as exc_info:
+        service.recognize_food(sample_jpeg_bytes)
+
+    assert exc_info.value.code == 504
+    assert mock_client.models.generate_content.call_count == 3
+
+
+def test_gemini_service_permanent_auth_failure_no_retries(sample_jpeg_bytes: bytes) -> None:
+    """Verify permanent HTTP 401 Unauthorized fails immediately on attempt 1 without retrying."""
+    mock_client = MagicMock()
+    mock_client.models.generate_content.side_effect = errors.ClientError(
+        401, {"error": {"code": 401, "message": "API Key Invalid"}}
+    )
+
+    service = GeminiService(
+        client=mock_client,
+        max_retries=2,
+        retry_initial_delay=0.001,
+        retry_max_delay=0.005,
+    )
+
+    with pytest.raises(GeminiServiceError) as exc_info:
+        service.recognize_food(sample_jpeg_bytes)
+
+    assert "authentication failed" in str(exc_info.value).lower()
+    assert mock_client.models.generate_content.call_count == 1
+
+
+def test_gemini_service_permanent_bad_request_no_retries(sample_jpeg_bytes: bytes) -> None:
+    """Verify permanent HTTP 400 Bad Request fails immediately on attempt 1 without retrying."""
+    mock_client = MagicMock()
+    mock_client.models.generate_content.side_effect = errors.ClientError(
+        400, {"error": {"code": 400, "message": "Invalid argument: Image payload corrupted"}}
+    )
+
+    service = GeminiService(
+        client=mock_client,
+        max_retries=2,
+        retry_initial_delay=0.001,
+        retry_max_delay=0.005,
+    )
+
+    with pytest.raises(GeminiServiceError) as exc_info:
+        service.recognize_food(sample_jpeg_bytes)
+
+    assert "invalid" in str(exc_info.value).lower()
+    assert mock_client.models.generate_content.call_count == 1
+
+
+def test_gemini_service_malformed_response_no_retries(sample_jpeg_bytes: bytes) -> None:
+    """Verify unparseable response raises ModelOutputValidationError on attempt 1 without retrying."""
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.text = "This is not valid JSON at all and cannot be parsed."
+    mock_client.models.generate_content.return_value = mock_response
+
+    service = GeminiService(
+        client=mock_client,
+        max_retries=2,
+        retry_initial_delay=0.001,
+        retry_max_delay=0.005,
+    )
+
+    with pytest.raises(ModelOutputValidationError):
+        service.recognize_food(sample_jpeg_bytes)
+
+    assert mock_client.models.generate_content.call_count == 1
+
+
+def test_gemini_service_parse_voice_meal_retry_transient_success() -> None:
+    """Verify parse_voice_meal retries on transient 503 and succeeds on attempt 2."""
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.text = json.dumps({
+        "success": True,
+        "transcript": "two boiled eggs",
+        "summary": "Two boiled eggs",
+        "items": [{
+            "food_description": "Boiled Eggs",
+            "quantity": 2.0,
+            "unit": "eggs",
+            "preparation": "hard boiled",
+            "state": "cooked",
+            "estimated_grams": 100.0,
+            "calories": 155.0,
+            "protein": 13.0,
+            "carbohydrates": 1.1,
+            "fat": 11.0,
+            "confidence": 0.95,
+            "confidence_level": "high",
+            "alternatives": [],
+            "notes": None,
+        }],
+        "warnings": [],
+        "clarifying_questions": [],
+    })
+
+    mock_client.models.generate_content.side_effect = [
+        errors.ServerError(503, {"error": {"code": 503, "message": "Service Unavailable"}}),
+        mock_response,
+    ]
+
+    service = GeminiService(
+        client=mock_client,
+        retry_initial_delay=0.001,
+        retry_max_delay=0.005,
+    )
+    result = service.parse_voice_meal("two boiled eggs")
+
+    assert result.success is True
+    assert len(result.items) == 1
+    assert result.items[0].food_description == "Boiled Eggs"
+    assert mock_client.models.generate_content.call_count == 2
+
+
+def test_recognize_food_endpoint_returns_504_on_timeout(
+    client: TestClient,
+    sample_jpeg_bytes: bytes,
+) -> None:
+    """Verify /api/v1/recognize-food returns HTTP 504 on GeminiTimeoutError with structured headers."""
+    mock_service = MagicMock(spec=GeminiService)
+    mock_service.recognize_food.side_effect = GeminiTimeoutError("Timed out after retries", code=504)
+
+    client.app.dependency_overrides[get_gemini_service] = lambda: mock_service
+    try:
+        response = client.post(
+            "/api/v1/recognize-food",
+            files={"file": ("meal.jpg", sample_jpeg_bytes, "image/jpeg")},
+        )
+        assert response.status_code == 504
+        assert "timed out after multiple attempts" in response.json()["detail"].lower()
+        assert response.headers.get("X-Error-Category") == "upstream_timeout"
+        assert response.headers.get("Retry-After") == "2"
+    finally:
+        client.app.dependency_overrides.clear()
+
+
+def test_recognize_food_endpoint_returns_503_on_unavailable(
+    client: TestClient,
+    sample_jpeg_bytes: bytes,
+) -> None:
+    """Verify /api/v1/recognize-food returns HTTP 503 on GeminiUnavailableError with structured headers."""
+    mock_service = MagicMock(spec=GeminiService)
+    mock_service.recognize_food.side_effect = GeminiUnavailableError("Service overloaded", code=503)
+
+    client.app.dependency_overrides[get_gemini_service] = lambda: mock_service
+    try:
+        response = client.post(
+            "/api/v1/recognize-food",
+            files={"file": ("meal.jpg", sample_jpeg_bytes, "image/jpeg")},
+        )
+        assert response.status_code == 503
+        assert "temporarily overloaded or unavailable" in response.json()["detail"].lower()
+        assert response.headers.get("X-Error-Category") == "upstream_unavailable"
+        assert response.headers.get("Retry-After") == "3"
+    finally:
+        client.app.dependency_overrides.clear()
+
+
+def test_parse_voice_meal_endpoint_returns_504_on_timeout(client: TestClient) -> None:
+    """Verify /api/v1/parse-voice-meal returns HTTP 504 on GeminiTimeoutError."""
+    mock_service = MagicMock(spec=GeminiService)
+    mock_service.parse_voice_meal.side_effect = GeminiTimeoutError("Voice timed out", code=504)
+
+    client.app.dependency_overrides[get_gemini_service] = lambda: mock_service
+    try:
+        response = client.post(
+            "/api/v1/parse-voice-meal",
+            json={"transcript": "two chapatis and dal"},
+        )
+        assert response.status_code == 504
+        assert "timed out after multiple attempts" in response.json()["detail"].lower()
+        assert response.headers.get("X-Error-Category") == "upstream_timeout"
+    finally:
+        client.app.dependency_overrides.clear()
+
+
+def test_parse_voice_meal_endpoint_returns_503_on_unavailable(client: TestClient) -> None:
+    """Verify /api/v1/parse-voice-meal returns HTTP 503 on GeminiUnavailableError."""
+    mock_service = MagicMock(spec=GeminiService)
+    mock_service.parse_voice_meal.side_effect = GeminiUnavailableError("Voice service down", code=503)
+
+    client.app.dependency_overrides[get_gemini_service] = lambda: mock_service
+    try:
+        response = client.post(
+            "/api/v1/parse-voice-meal",
+            json={"transcript": "a bowl of curd rice"},
+        )
+        assert response.status_code == 503
+        assert "temporarily overloaded or unavailable" in response.json()["detail"].lower()
+        assert response.headers.get("X-Error-Category") == "upstream_unavailable"
+    finally:
+        client.app.dependency_overrides.clear()
 
 
 

@@ -327,7 +327,7 @@ export function AIFoodScannerModal({
   }, [candidates]);
 
   const confirmLogToDiary = async () => {
-    if (candidates.length === 0) return;
+    if (saving || candidates.length === 0) return;
 
     // Validate candidates first before modifying storage
     for (const item of candidates) {

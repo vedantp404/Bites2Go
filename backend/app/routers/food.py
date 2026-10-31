@@ -14,6 +14,8 @@ from app.models.food import (
 from app.services.gemini import (
     GeminiService,
     GeminiServiceError,
+    GeminiTimeoutError,
+    GeminiUnavailableError,
     ModelOutputValidationError,
     RateLimitError,
     get_gemini_service,
@@ -88,21 +90,37 @@ async def recognize_food(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
+            headers={"X-Error-Category": "configuration"},
         ) from exc
     except RateLimitError as exc:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=str(exc),
+            headers={"Retry-After": "5", "X-Error-Category": "rate_limit"},
+        ) from exc
+    except GeminiTimeoutError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="The AI food recognition service timed out after multiple attempts. Please try again.",
+            headers={"Retry-After": "2", "X-Error-Category": "upstream_timeout"},
+        ) from exc
+    except GeminiUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The AI food recognition service is temporarily overloaded or unavailable. Please try again in a few moments.",
+            headers={"Retry-After": "3", "X-Error-Category": "upstream_unavailable"},
         ) from exc
     except ModelOutputValidationError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="AI model returned an unparseable or malformed nutritional response.",
+            headers={"X-Error-Category": "model_output"},
         ) from exc
     except GeminiServiceError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="The AI food recognition service encountered an error. Please try again.",
+            headers={"X-Error-Category": "upstream_error"},
         ) from exc
     except Exception as exc:
         raise HTTPException(
@@ -154,21 +172,37 @@ async def recognize_food_base64(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
+            headers={"X-Error-Category": "configuration"},
         ) from exc
     except RateLimitError as exc:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=str(exc),
+            headers={"Retry-After": "5", "X-Error-Category": "rate_limit"},
+        ) from exc
+    except GeminiTimeoutError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="The AI food recognition service timed out after multiple attempts. Please try again.",
+            headers={"Retry-After": "2", "X-Error-Category": "upstream_timeout"},
+        ) from exc
+    except GeminiUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The AI food recognition service is temporarily overloaded or unavailable. Please try again in a few moments.",
+            headers={"Retry-After": "3", "X-Error-Category": "upstream_unavailable"},
         ) from exc
     except ModelOutputValidationError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="AI model returned an unparseable or malformed nutritional response.",
+            headers={"X-Error-Category": "model_output"},
         ) from exc
     except GeminiServiceError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="The AI food recognition service encountered an error. Please try again.",
+            headers={"X-Error-Category": "upstream_error"},
         ) from exc
     except Exception as exc:
         raise HTTPException(
@@ -212,21 +246,37 @@ async def parse_voice_meal(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
+            headers={"X-Error-Category": "configuration"},
         ) from exc
     except RateLimitError as exc:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=str(exc),
+            headers={"Retry-After": "5", "X-Error-Category": "rate_limit"},
+        ) from exc
+    except GeminiTimeoutError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="The AI voice parsing service timed out after multiple attempts. Please try again.",
+            headers={"Retry-After": "2", "X-Error-Category": "upstream_timeout"},
+        ) from exc
+    except GeminiUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The AI voice parsing service is temporarily overloaded or unavailable. Please try again in a few moments.",
+            headers={"Retry-After": "3", "X-Error-Category": "upstream_unavailable"},
         ) from exc
     except ModelOutputValidationError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="AI model returned an unparseable or malformed food parsing response.",
+            headers={"X-Error-Category": "model_output"},
         ) from exc
     except GeminiServiceError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="The AI voice parsing service encountered an error. Please try again.",
+            headers={"X-Error-Category": "upstream_error"},
         ) from exc
     except Exception as exc:
         raise HTTPException(

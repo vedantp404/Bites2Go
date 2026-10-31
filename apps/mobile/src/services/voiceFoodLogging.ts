@@ -85,7 +85,7 @@ export async function parseVoiceMeal(
   const baseUrl = getBackendBaseUrl();
   const url = `${baseUrl}/api/v1/parse-voice-meal`;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  const timeoutId = setTimeout(() => controller.abort(), 40000);
 
   try {
     const response = await fetch(url, {
@@ -106,7 +106,11 @@ export async function parseVoiceMeal(
       let detail = `Error ${response.status}`;
       try {
         const errorJson = await response.json();
-        detail = errorJson.detail || detail;
+        if (typeof errorJson?.detail === 'string') {
+          detail = errorJson.detail;
+        } else if (errorJson?.detail?.message) {
+          detail = errorJson.detail.message;
+        }
       } catch {
         // use default detail
       }

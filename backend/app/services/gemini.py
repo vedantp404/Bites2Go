@@ -1,14 +1,21 @@
 """Gemini API food recognition service using the official Google GenAI SDK."""
 
 import json
-from typing import Optional
+import logging
+import time
+from typing import Callable, Optional, TypeVar
 import httpx
 from google import genai
 from google.genai import errors, types
 from pydantic import ValidationError
+import tenacity
 
 from app.config import get_settings
 from app.models.food import FoodRecognitionResponse, VoiceMealParseResponse
+
+logger = logging.getLogger("bites2go.gemini")
+
+T = TypeVar("T")
 
 
 class GeminiServiceError(RuntimeError):
@@ -16,7 +23,24 @@ class GeminiServiceError(RuntimeError):
     pass
 
 
-class RateLimitError(GeminiServiceError):
+class GeminiTransientError(GeminiServiceError):
+    """Base exception for transient/retryable Gemini service failures."""
+    def __init__(self, message: str, code: Optional[int] = None) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+class GeminiTimeoutError(GeminiTransientError):
+    """Raised when AI service requests time out after retries."""
+    pass
+
+
+class GeminiUnavailableError(GeminiTransientError):
+    """Raised when upstream AI service is temporarily unavailable or overloaded."""
+    pass
+
+
+class RateLimitError(GeminiTransientError):
     """Raised when Gemini API quota or rate limits are reached."""
     pass
 
@@ -24,6 +48,51 @@ class RateLimitError(GeminiServiceError):
 class ModelOutputValidationError(GeminiServiceError):
     """Raised when model returns malformed, unparseable, or invalid structured data."""
     pass
+
+
+def is_transient_gemini_error(exc: BaseException) -> bool:
+    """Determine whether an error from the Gemini API is transient and retryable."""
+    if isinstance(exc, errors.APIError):
+        code = getattr(exc, "code", None)
+        # Transient HTTP status codes:
+        # 429: Rate limit / Resource exhausted
+        # 408: Request timeout
+        # 500: Internal server error
+        # 502: Bad gateway
+        # 503: Service unavailable
+        # 504: Gateway timeout
+        if code in {408, 429, 500, 502, 503, 504}:
+            return True
+        if isinstance(exc, errors.ServerError):
+            return True
+        # Explicitly do NOT retry 400 Bad Request, 401 Unauthorized, 403 Forbidden, 404, etc.
+        return False
+
+    # Transient transport and network errors
+    if isinstance(
+        exc,
+        (
+            httpx.TimeoutException,
+            httpx.ConnectError,
+            httpx.RemoteProtocolError,
+            TimeoutError,
+        ),
+    ):
+        return True
+
+    return False
+
+
+def _get_safe_error_summary(exc: BaseException) -> str:
+    """Extract a safe summary of an error without exposing secrets, prompts, or API keys."""
+    if isinstance(exc, errors.APIError):
+        status_part = f" {exc.status}" if exc.status else ""
+        return f"HTTP {exc.code}{status_part}".strip()
+    if isinstance(exc, (TimeoutError, httpx.TimeoutException)):
+        return "Request timed out"
+    if isinstance(exc, (httpx.ConnectError, httpx.RemoteProtocolError)):
+        return "Connection error / network drop"
+    return type(exc).__name__
 
 
 SYSTEM_INSTRUCTION = (
@@ -79,16 +148,37 @@ VOICE_PARSER_SYSTEM_INSTRUCTION = (
 
 
 class GeminiService:
-    """Service wrapping Google GenAI SDK for structured food recognition."""
+    """Service wrapping Google GenAI SDK for structured food recognition with bounded retries."""
 
     def __init__(
         self,
         client: Optional[genai.Client] = None,
         model: Optional[str] = None,
+        timeout_seconds: Optional[float] = None,
+        max_retries: Optional[int] = None,
+        retry_initial_delay: Optional[float] = None,
+        retry_max_delay: Optional[float] = None,
     ) -> None:
         self._settings = get_settings()
         self._model = model or self._settings.gemini_model
         self._client = client
+        self._per_attempt_timeout_seconds = (
+            timeout_seconds if timeout_seconds is not None else self._settings.gemini_timeout_seconds
+        )
+        self._voice_timeout_seconds = min(self._per_attempt_timeout_seconds, 12.0)
+        self._max_retries = (
+            max_retries if max_retries is not None else self._settings.gemini_max_retries
+        )
+        self._retry_initial_delay = (
+            retry_initial_delay
+            if retry_initial_delay is not None
+            else self._settings.gemini_retry_initial_delay
+        )
+        self._retry_max_delay = (
+            retry_max_delay
+            if retry_max_delay is not None
+            else self._settings.gemini_retry_max_delay
+        )
 
     @property
     def client(self) -> genai.Client:
@@ -97,6 +187,156 @@ class GeminiService:
             api_key = self._settings.require_gemini_api_key()
             self._client = genai.Client(api_key=api_key)
         return self._client
+
+    def _execute_with_retry(
+        self,
+        operation_name: str,
+        fn: Callable[[], T],
+        max_retries: Optional[int] = None,
+        initial_delay: Optional[float] = None,
+        max_delay: Optional[float] = None,
+        exp_base: float = 2.0,
+        jitter: float = 1.0,
+    ) -> T:
+        """Execute a Gemini API call with bounded automatic retries for transient failures.
+
+        - Retries HTTP 429, 500, 502, 503, 504, and network/timeout exceptions.
+        - Permanent failures (400, 401, 403, 404, schema mismatches) fail immediately without retrying.
+        - Logs each attempt, elapsed time, retry decision, and final failure with useful error details.
+        - Never logs API keys, prompt contents, or image bytes.
+        """
+        retries = max_retries if max_retries is not None else self._max_retries
+        init_delay = initial_delay if initial_delay is not None else self._retry_initial_delay
+        maximum_delay = max_delay if max_delay is not None else self._retry_max_delay
+        total_attempts = retries + 1
+
+        attempt_start_times: dict[int, float] = {}
+        overall_start_time = time.perf_counter()
+
+        def _before_attempt(retry_state: tenacity.RetryCallState) -> None:
+            attempt_num = retry_state.attempt_number
+            attempt_start_times[attempt_num] = time.perf_counter()
+            logger.info(
+                "Gemini API [%s] call starting (attempt %d of %d, model=%s)",
+                operation_name,
+                attempt_num,
+                total_attempts,
+                self._model,
+            )
+
+        def _after_attempt(retry_state: tenacity.RetryCallState) -> None:
+            attempt_num = retry_state.attempt_number
+            t_start = attempt_start_times.get(attempt_num, overall_start_time)
+            attempt_elapsed = time.perf_counter() - t_start
+            if not retry_state.outcome.failed:
+                total_elapsed = time.perf_counter() - overall_start_time
+                logger.info(
+                    "Gemini API [%s] call succeeded on attempt %d of %d (attempt elapsed: %.2fs, total elapsed: %.2fs)",
+                    operation_name,
+                    attempt_num,
+                    total_attempts,
+                    attempt_elapsed,
+                    total_elapsed,
+                )
+
+        def _before_sleep(retry_state: tenacity.RetryCallState) -> None:
+            attempt_num = retry_state.attempt_number
+            t_start = attempt_start_times.get(attempt_num, overall_start_time)
+            attempt_elapsed = time.perf_counter() - t_start
+            exc = retry_state.outcome.exception()
+            safe_err = _get_safe_error_summary(exc)
+            sleep_duration = retry_state.upcoming_sleep
+            logger.warning(
+                "Gemini API [%s] attempt %d of %d failed with transient error [%s] in %.2fs. "
+                "Retrying in %.2fs (next attempt: %d of %d)...",
+                operation_name,
+                attempt_num,
+                total_attempts,
+                safe_err,
+                attempt_elapsed,
+                sleep_duration,
+                attempt_num + 1,
+                total_attempts,
+            )
+
+        retrying = tenacity.Retrying(
+            stop=tenacity.stop_after_attempt(total_attempts),
+            wait=tenacity.wait_exponential_jitter(
+                initial=init_delay,
+                max=maximum_delay,
+                exp_base=exp_base,
+                jitter=jitter,
+            ),
+            retry=tenacity.retry_if_exception(is_transient_gemini_error),
+            reraise=True,
+            before=_before_attempt,
+            after=_after_attempt,
+            before_sleep=_before_sleep,
+        )
+
+        try:
+            return retrying(fn)
+        except Exception as final_exc:
+            total_elapsed = time.perf_counter() - overall_start_time
+            safe_err = _get_safe_error_summary(final_exc)
+            logger.error(
+                "Gemini API [%s] call failed after %.2fs and %d attempt(s): %s",
+                operation_name,
+                total_elapsed,
+                len(attempt_start_times) or 1,
+                safe_err,
+            )
+
+            # Map the final exception to appropriate domain error
+            if isinstance(final_exc, errors.APIError):
+                code = getattr(final_exc, "code", None)
+                if code == 429:
+                    raise RateLimitError(
+                        "Gemini API rate limit or quota exceeded. Please wait a moment and try again.",
+                        code=429,
+                    ) from final_exc
+                if code in {408, 504}:
+                    raise GeminiTimeoutError(
+                        "AI recognition service timed out after multiple attempts. Please try again.",
+                        code=code,
+                    ) from final_exc
+                if code in {500, 502, 503}:
+                    raise GeminiUnavailableError(
+                        f"The AI recognition service is temporarily overloaded or unavailable (HTTP {code}). Please try again in a few moments.",
+                        code=code,
+                    ) from final_exc
+                if code == 401:
+                    raise GeminiServiceError(
+                        "AI service authentication failed. Please verify your GEMINI_API_KEY configuration."
+                    ) from final_exc
+                if code == 403:
+                    raise GeminiServiceError(
+                        "AI service access is forbidden. Please verify your API key permissions and project status."
+                    ) from final_exc
+                if code == 400:
+                    raise GeminiServiceError(
+                        "AI service rejected the request payload as invalid."
+                    ) from final_exc
+                raise GeminiServiceError(
+                    f"Gemini service was unable to process the request (HTTP {code}). Please try again later."
+                ) from final_exc
+
+            if isinstance(final_exc, (TimeoutError, httpx.TimeoutException)):
+                raise GeminiTimeoutError(
+                    "AI recognition request timed out after multiple attempts. Please try again."
+                ) from final_exc
+
+            if isinstance(final_exc, (httpx.ConnectError, httpx.RemoteProtocolError)):
+                raise GeminiUnavailableError(
+                    "Cannot establish connection to AI recognition service. Please check your network and try again."
+                ) from final_exc
+
+            if isinstance(final_exc, GeminiServiceError):
+                raise final_exc
+
+            raise GeminiServiceError(
+                "Unexpected error communicating with AI recognition service."
+            ) from final_exc
 
     def recognize_food(
         self,
@@ -121,38 +361,26 @@ class GeminiService:
 
         contents = [image_part, prompt_text]
 
-        timeout_ms = int(self._settings.gemini_timeout_seconds * 1000)
+        timeout_ms = int(self._per_attempt_timeout_seconds * 1000)
         config = types.GenerateContentConfig(
             system_instruction=SYSTEM_INSTRUCTION,
             response_mime_type="application/json",
             response_schema=FoodRecognitionResponse,
             temperature=0.2,
-            http_options=types.HttpOptions(timeout=timeout_ms),
+            http_options=types.HttpOptions(
+                timeout=timeout_ms,
+                retry_options=None,  # Keep SDK internal retries at 1 to prevent unexpected request multiplication
+            ),
         )
 
-        try:
-            response = self.client.models.generate_content(
+        def _call_gemini() -> types.GenerateContentResponse:
+            return self.client.models.generate_content(
                 model=self._model,
                 contents=contents,
                 config=config,
             )
-        except (TimeoutError, httpx.TimeoutException) as exc:
-            raise GeminiServiceError(
-                "AI recognition request timed out. Please try again."
-            ) from exc
-        except errors.APIError as exc:
-            code = getattr(exc, "code", None)
-            if code == 429:
-                raise RateLimitError(
-                    "Gemini API rate limit or quota exceeded. Please wait a moment and try again."
-                ) from exc
-            raise GeminiServiceError(
-                "Gemini service was unable to process the image. Please try again later."
-            ) from exc
-        except Exception as exc:
-            if isinstance(exc, GeminiServiceError):
-                raise
-            raise GeminiServiceError("Unexpected error communicating with AI recognition service.") from exc
+
+        response = self._execute_with_retry("recognize_food", _call_gemini)
 
         if not response or not response.text:
             raise ModelOutputValidationError("The AI service returned an empty response.")
@@ -209,40 +437,26 @@ class GeminiService:
             prompt_text += f"\nMeal context: {meal_context.strip()}"
 
         contents = [prompt_text]
-        timeout_ms = int(self._settings.gemini_timeout_seconds * 1000)
+        timeout_ms = int(self._voice_timeout_seconds * 1000)
         config = types.GenerateContentConfig(
             system_instruction=VOICE_PARSER_SYSTEM_INSTRUCTION,
             response_mime_type="application/json",
             response_schema=VoiceMealParseResponse,
             temperature=0.2,
-            http_options=types.HttpOptions(timeout=timeout_ms),
+            http_options=types.HttpOptions(
+                timeout=timeout_ms,
+                retry_options=None,  # Keep SDK internal retries at 1 to prevent unexpected request multiplication
+            ),
         )
 
-        try:
-            response = self.client.models.generate_content(
+        def _call_gemini() -> types.GenerateContentResponse:
+            return self.client.models.generate_content(
                 model=self._model,
                 contents=contents,
                 config=config,
             )
-        except (TimeoutError, httpx.TimeoutException) as exc:
-            raise GeminiServiceError(
-                "AI voice parsing request timed out. Please try again."
-            ) from exc
-        except errors.APIError as exc:
-            code = getattr(exc, "code", None)
-            if code == 429:
-                raise RateLimitError(
-                    "Gemini API rate limit or quota exceeded. Please wait a moment and try again."
-                ) from exc
-            raise GeminiServiceError(
-                "Gemini service was unable to process the spoken description. Please try again later."
-            ) from exc
-        except Exception as exc:
-            if isinstance(exc, GeminiServiceError):
-                raise
-            raise GeminiServiceError(
-                "Unexpected error communicating with AI voice recognition service."
-            ) from exc
+
+        response = self._execute_with_retry("parse_voice_meal", _call_gemini)
 
         if not response or not response.text:
             raise ModelOutputValidationError("The AI service returned an empty response.")

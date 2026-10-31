@@ -43,8 +43,17 @@ class Settings:
         # Max upload size: 10 MB
         self.max_image_size_bytes: int = int(os.getenv("MAX_IMAGE_SIZE_BYTES", str(10 * 1024 * 1024)))
         
-        # Request timeout in seconds
-        self.gemini_timeout_seconds: float = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "30.0"))
+        # Request timeout in seconds per attempt (default 12.0s so 3 bounded attempts fit within mobile timeout)
+        self.gemini_timeout_seconds: float = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "12.0"))
+        
+        # Max automatic retries for transient failures (default 2 additional attempts = 3 attempts total)
+        self.gemini_max_retries: int = int(os.getenv("GEMINI_MAX_RETRIES", "2"))
+        
+        # Retry backoff initial delay in seconds
+        self.gemini_retry_initial_delay: float = float(os.getenv("GEMINI_RETRY_INITIAL_DELAY", "1.0"))
+        
+        # Retry backoff maximum delay in seconds
+        self.gemini_retry_max_delay: float = float(os.getenv("GEMINI_RETRY_MAX_DELAY", "4.0"))
         
         # CORS origins (allow local development, emulator, and LAN)
         origins_str = os.getenv("ALLOWED_ORIGINS", "*")

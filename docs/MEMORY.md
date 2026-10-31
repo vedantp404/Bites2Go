@@ -1,5 +1,31 @@
 # Project memory
 
+## Current handoff: Gemini API Transient Resilience & Automatic Retry
+
+Investigated and resolved intermittent Gemini API failures (HTTP 504 Gateway Timeout, 503 Service Unavailable, and 429 Rate Limits) during food-photo recognition and voice meal parsing.
+
+Key Engineering Highlights:
+- Bounded Automatic Retry Architecture:
+  - Engineered `_execute_with_retry` in `backend/app/services/gemini.py` using `tenacity` exponential backoff with jitter (`initial_delay=1.0s`, `max_delay=4.0s`, `exp_base=2.0`, `jitter=1.0s`).
+  - Capped retries at two additional attempts (maximum 3 total attempts).
+  - Configured per-attempt timeout to 12.0s in `backend/app/config.py` and set `retry_options=None` in `GenerateContentConfig(http_options=...)`, completely preventing SDK request stacking or unpredicted multiplication.
+  - Total worst-case retry duration is bounded to ~25-28s, fitting safely inside the mobile app's 45s request timeout.
+- Precise Failure Classification:
+  - Transient/Retryable: `errors.APIError` with status codes 408, 429, 500, 502, 503, 504; `errors.ServerError`; and transport timeouts (`httpx.TimeoutException`, `httpx.ConnectError`, `TimeoutError`).
+  - Permanent/Non-retryable: 400 Bad Request, 401 Unauthorized, 403 Forbidden, 404 Not Found, `ConfigurationError`, and `ModelOutputValidationError` fail immediately on attempt 1 without waste.
+- Structured Safe Logging & Error Propagation:
+  - Logs operation name, attempt index, elapsed time per attempt, transient error details, sleep duration, and final failure status.
+  - Guaranteed zero leakage of API keys, base64 payloads, image bytes, or internal stack traces.
+  - FastAPI routers return semantic HTTP codes (504 Gateway Timeout, 503 Service Unavailable, 429 Rate Limit) with safe, actionable descriptions and `Retry-After` / `X-Error-Category` headers.
+- Mobile User Experience & Idempotency:
+  - Mobile services (`aiFoodRecognition.ts`, `voiceFoodLogging.ts`) safely extract structured error details.
+  - Scanner modal (`AIFoodScannerModal.tsx`) and voice modal (`VoiceFoodLoggingModal.tsx`) display actionable error messages, reset loading spinners cleanly, and enable straightforward "Try Again" manual retries.
+  - Guarded `confirmLogToDiary` against double-clicks and enforced candidate `stableEntryId` preservation to prevent duplicate SQLite diary entries on retry.
+- Verification & Test Coverage:
+  - Backend pytest suite expanded from 28 to 43 passed tests with 100% mocked Gemini calls covering 504/503/429 retry successes, persistent exhaustion, and immediate permanent failures.
+  - Mobile test suite expanded from 161 to 163 passed tests.
+  - TypeScript, ESLint, Prettier, and Metro Android bundle export (1,377 modules) all passed.
+
 ## Current handoff: Voice-Based Food Logging
 
 Implemented a production-quality, accessible voice food logging feature combining on-device speech-to-text, Gemini natural language meal interpretation, food catalogue matching against the 1,411-food unified database, and atomic SQLite persistence.

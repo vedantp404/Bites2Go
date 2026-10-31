@@ -103,7 +103,7 @@ export async function recognizeFoodFromImage(
   if (base64Data && base64Data.length > 0) {
     const url = `${baseUrl}/api/v1/recognize-food/base64`;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 35000);
+    const timeoutId = setTimeout(() => controller.abort(), 45000);
 
     try {
       const response = await fetch(url, {
@@ -120,7 +120,11 @@ export async function recognizeFoodFromImage(
         let detail = `Error ${response.status}`;
         try {
           const errorJson = await response.json();
-          detail = errorJson.detail || detail;
+          if (typeof errorJson?.detail === 'string') {
+            detail = errorJson.detail;
+          } else if (errorJson?.detail?.message) {
+            detail = errorJson.detail.message;
+          }
         } catch {
           // use default detail
         }
@@ -155,7 +159,7 @@ export async function recognizeFoodFromImage(
   } as unknown as Blob);
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 35000);
+  const timeoutId = setTimeout(() => controller.abort(), 45000);
 
   try {
     const response = await fetch(url, {
@@ -171,7 +175,11 @@ export async function recognizeFoodFromImage(
       let detail = `Error ${response.status}`;
       try {
         const errorJson = await response.json();
-        detail = errorJson.detail || detail;
+        if (typeof errorJson?.detail === 'string') {
+          detail = errorJson.detail;
+        } else if (errorJson?.detail?.message) {
+          detail = errorJson.detail.message;
+        }
       } catch {
         // use default detail
       }

@@ -163,6 +163,9 @@ export function VoiceFoodLoggingModal({
     setErrorMessage(null);
 
     if (!isNativeSupported) {
+      setErrorMessage(
+        'Native microphone speech recognition is unavailable in stock Expo Go. You can dictate using your mobile keyboard microphone or type your meal below.',
+      );
       Alert.alert(
         'Development Build Required',
         'Direct microphone speech recognition requires a native development build because third-party native code is not bundled into stock Expo Go.\n\nYou can still use voice logging right now: tap the microphone button on your keyboard to speak into the text box, or type your meal description directly!',
@@ -428,8 +431,10 @@ export function VoiceFoodLoggingModal({
 
   // Confirm and log to diary atomically
   const handleConfirmLog = async () => {
-    if (candidates.length === 0) {
-      Alert.alert('No Items', 'There are no items in this meal to log.');
+    if (saving || candidates.length === 0) {
+      if (!saving) {
+        Alert.alert('No Items', 'There are no items in this meal to log.');
+      }
       return;
     }
 
@@ -601,7 +606,11 @@ export function VoiceFoodLoggingModal({
                     ]}
                   >
                     <Text style={styles.micButtonText}>
-                      {isListening ? '⏹ Stop' : '🎙 Speak'}
+                      {isListening
+                        ? '⏹ Stop'
+                        : isNativeSupported
+                          ? '🎙 Speak'
+                          : '🎙 Speak (Dev Build Required)'}
                     </Text>
                   </Pressable>
                 </View>

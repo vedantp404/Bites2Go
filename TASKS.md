@@ -1,5 +1,18 @@
 # Ordered roadmap
 
+## Gemini API Transient Resilience & Automatic Retry — implemented
+
+- [x] Inspected FastAPI Gemini food recognition service, Google GenAI SDK (`google-genai==2.34.0`), timeout settings, and exception hierarchies.
+- [x] Implemented bounded automatic retry executor (`_execute_with_retry`) in `GeminiService` using exponential backoff with jitter (`tenacity==9.1.4`), retrying transient failures (HTTP 429, 500, 502, 503, 504, and transport timeouts) with a maximum of 2 additional attempts (3 total).
+- [x] Enforced strict non-retry policy for permanent failures: authentication errors (401), invalid requests (400), permissions (403), missing resources (404), configuration errors, and malformed model JSON outputs fail immediately on attempt 1.
+- [x] Bounded per-attempt timeouts to 12.0s and configured `retry_options=None` in `GenerateContentConfig(http_options=...)` to prevent multiplying requests or stacking SDK internal retries.
+- [x] Applied bounded retries across food photo recognition (`recognize_food`) and evaluated voice meal parsing (`parse_voice_meal`), ensuring responsive real-time voice logging.
+- [x] Added structured audit logging for every attempt: operation name, attempt number, elapsed time per attempt, transient error details, sleep duration, and final status without logging API keys, image bytes, or secrets.
+- [x] Returned structured, safe HTTP error responses with status codes (504 Gateway Timeout, 503 Service Unavailable, 429 Rate Limit) and headers (`Retry-After`, `X-Error-Category`) without exposing internal stack traces.
+- [x] Guarded mobile UI (`AIFoodScannerModal.tsx`, `VoiceFoodLoggingModal.tsx`) against duplicate diary logging on retry and ensured loading indicators reset properly with actionable retry prompts.
+- [x] Expanded backend test suite from 28 to 43 tests covering transient 504/503/429/timeout successes on retry, exhausted retries, immediate permanent failures, and endpoint responses.
+- [x] Expanded mobile unit test suite from 161 to 163 tests covering structured 504/503 error handling across photo and voice parsing.
+
 ## Voice-Based Food Logging — implemented
 
 - [x] Implemented production-quality voice food logging pipeline supporting spoken natural language meal descriptions.
