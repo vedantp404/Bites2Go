@@ -182,9 +182,11 @@ export function DiaryMeals({
                   {formatNutrient(entry.nutrients.fat, 'g')}
                 </Text>
                 <Text style={ui.label}>
-                  {entry.status === 'illustrative'
-                    ? 'Illustrative nutrition'
-                    : 'Verified source'}{' '}
+                  {entry.status === 'verified'
+                    ? 'Verified source'
+                    : entry.status === 'estimated'
+                      ? 'Estimated nutrition'
+                      : 'Illustrative nutrition'}{' '}
                   / Edit or delete
                 </Text>
               </Pressable>

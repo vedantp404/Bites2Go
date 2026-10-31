@@ -44,6 +44,15 @@ test('catalogue data integrity: all 894 foods meet physical and nutritional boun
     const { calories, protein, carbs, fat, fiber, sugar, sodium } =
       food.nutrients;
 
+    assert.ok(
+      ['illustrative', 'estimated', 'verified'].includes(food.status),
+      `Invalid status: ${food.status} in ${food.id}`,
+    );
+    assert.ok(
+      typeof food.source === 'string' && food.source.trim().length > 0,
+      `Empty source in ${food.id}`,
+    );
+
     // Non-negative and finite
     assert.ok(
       calories !== null && calories >= 0 && Number.isFinite(calories),
@@ -294,4 +303,99 @@ test('diary totals match exact sum of individual food entries without rounding d
     dayTotals.values.fat,
     entry1.nutrients.fat + entry2.nutrients.fat,
   );
+});
+
+test('provenance model: representative 50 high-priority foods are strictly verified or estimated with complete metadata', () => {
+  const verifiedFoods = foods.filter((f) => f.status === 'verified');
+  const estimatedFoods = foods.filter((f) => f.status === 'estimated');
+  const illustrativeFoods = foods.filter((f) => f.status === 'illustrative');
+
+  assert.equal(verifiedFoods.length, 36, 'Expected exactly 36 verified foods');
+  assert.equal(
+    estimatedFoods.length,
+    14,
+    'Expected exactly 14 estimated foods',
+  );
+  assert.equal(
+    illustrativeFoods.length,
+    844,
+    'Expected 844 illustrative foods',
+  );
+  assert.equal(
+    verifiedFoods.length + estimatedFoods.length + illustrativeFoods.length,
+    894,
+    'Total food count must equal 894',
+  );
+
+  // Every verified food must have verifiable provenance
+  for (const food of verifiedFoods) {
+    assert.ok(
+      typeof food.source === 'string' &&
+        (food.source.includes('USDA') || food.source.includes('ICMR-NIN')),
+      `Verified food ${food.id} must cite an authoritative database: ${food.source}`,
+    );
+    assert.ok(
+      typeof food.sourceId === 'string' && food.sourceId.trim().length > 0,
+      `Verified food ${food.id} must specify sourceId`,
+    );
+    assert.ok(
+      typeof food.sourceNotes === 'string' &&
+        food.sourceNotes.trim().length > 0,
+      `Verified food ${food.id} must include sourceNotes`,
+    );
+  }
+
+  // Every estimated food must document its recipe / formulation basis
+  for (const food of estimatedFoods) {
+    assert.ok(
+      typeof food.source === 'string' && food.source.trim().length > 0,
+      `Estimated food ${food.id} must specify source`,
+    );
+    assert.ok(
+      typeof food.sourceId === 'string' && food.sourceId.trim().length > 0,
+      `Estimated food ${food.id} must specify sourceId / formulation ID`,
+    );
+    assert.ok(
+      typeof food.sourceNotes === 'string' &&
+        food.sourceNotes.trim().length > 0,
+      `Estimated food ${food.id} must include recipe notes explaining ingredients/oil`,
+    );
+  }
+});
+
+test('diary integration preserves verified and estimated provenance metadata across logging and portion changes', () => {
+  const verifiedRoti = foods.find((f) => f.id === 'roti');
+  const estimatedPoha = foods.find((f) => f.id === 'kanda-poha');
+
+  assert.ok(verifiedRoti);
+  assert.ok(estimatedPoha);
+
+  const now = '2026-10-31T08:00:00.000Z';
+  const rotiEntry = createEntry(
+    verifiedRoti,
+    'Lunch',
+    '2026-10-31',
+    70,
+    'entry-roti',
+    now,
+  );
+  const pohaEntry = createEntry(
+    estimatedPoha,
+    'Breakfast',
+    '2026-10-31',
+    150,
+    'entry-poha',
+    now,
+  );
+
+  assert.equal(rotiEntry.status, 'verified');
+  assert.equal(rotiEntry.sourceId, verifiedRoti.sourceId);
+  assert.equal(rotiEntry.sourceNotes, verifiedRoti.sourceNotes);
+
+  assert.equal(pohaEntry.status, 'estimated');
+  assert.equal(pohaEntry.sourceId, estimatedPoha.sourceId);
+  assert.equal(pohaEntry.sourceNotes, estimatedPoha.sourceNotes);
+
+  assert.doesNotThrow(() => assertEntry(rotiEntry));
+  assert.doesNotThrow(() => assertEntry(pohaEntry));
 });

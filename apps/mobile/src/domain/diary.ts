@@ -39,7 +39,9 @@ export type DiaryEntry = {
   nutrients: FoodNutrients;
   preparation: string;
   source: string;
-  status: 'illustrative' | 'verified';
+  sourceId?: string;
+  sourceNotes?: string;
+  status: 'illustrative' | 'verified' | 'estimated';
   createdAt: string;
   updatedAt: string;
 };
@@ -64,6 +66,8 @@ export function createEntry(
     nutrients: scaleNutrients(food.nutrients, grams),
     preparation: food.preparation,
     source: food.source,
+    ...(food.sourceId ? { sourceId: food.sourceId } : {}),
+    ...(food.sourceNotes ? { sourceNotes: food.sourceNotes } : {}),
     status: food.status,
     createdAt: now,
     updatedAt: now,
@@ -197,7 +201,9 @@ export function assertEntry(value: unknown): asserts value is DiaryEntry {
     value.referenceGrams !== 100 ||
     !nutrientRecord(value.reference) ||
     !nutrientRecord(value.nutrients) ||
-    !['illustrative', 'verified'].includes(value.status as string) ||
+    !['illustrative', 'verified', 'estimated'].includes(
+      value.status as string,
+    ) ||
     !['createdAt', 'updatedAt'].every(
       (key) =>
         typeof value[key] === 'string' &&

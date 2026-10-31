@@ -37,8 +37,14 @@ test('catalog identities, provenance and raw/cooked distinction across 850+ item
   assert.equal(new Set(foods.map((f) => f.id)).size, foods.length);
   for (const food of foods) {
     assert.equal(food.referenceGrams, 100);
-    assert.equal(food.status, 'illustrative');
-    assert.match(food.source, /synthetic/);
+    assert.ok(
+      ['illustrative', 'estimated', 'verified'].includes(food.status),
+      `Invalid status ${food.status} on ${food.id}`,
+    );
+    assert.ok(
+      typeof food.source === 'string' && food.source.trim().length > 0,
+      `Empty source on ${food.id}`,
+    );
     assert.doesNotThrow(() => scaleNutrients(food.nutrients, 100));
     assert.ok(food.category.length > 0);
     assert.ok(food.preparation.length > 0);

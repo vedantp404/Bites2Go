@@ -22,8 +22,10 @@ export type Food = {
   preparation: string;
   referenceGrams: 100;
   nutrients: ExtendedNutrients;
-  status: 'illustrative' | 'verified';
+  status: 'illustrative' | 'verified' | 'estimated';
   source: string;
+  sourceId?: string;
+  sourceNotes?: string;
   servingGrams?: number;
   servingUnit?: string;
   commonServings?: readonly CommonServing[];

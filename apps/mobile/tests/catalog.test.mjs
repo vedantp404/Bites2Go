@@ -45,8 +45,14 @@ test('catalogue expansion contains >= 850 unique items with valid nutrients and 
     categories.add(food.category);
 
     assert.equal(food.referenceGrams, 100);
-    assert.equal(food.status, 'illustrative');
-    assert.match(food.source, /synthetic/);
+    assert.ok(
+      ['illustrative', 'estimated', 'verified'].includes(food.status),
+      `Invalid status ${food.status} on ${food.id}`,
+    );
+    assert.ok(
+      typeof food.source === 'string' && food.source.trim().length > 0,
+      `Empty source on ${food.id}`,
+    );
 
     const { calories, protein, carbs, fat } = food.nutrients;
     assert.ok(
