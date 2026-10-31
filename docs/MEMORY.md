@@ -8,7 +8,10 @@ Key Engineering Highlights:
 - Speech Recognition & Audio Pipeline:
   - Integrated `expo-speech-recognition@58.0.1` compatible with Expo SDK 58 and React Native 0.88.1 with zero external runtime dependencies.
   - Configured Android permissions (`RECORD_AUDIO`, `androidSpeechServicePackages` with Google Speech Services).
-  - Provided graceful fallback when speech recognizer is unavailable or permissions are denied, allowing direct typing or editing of meal transcripts.
+  - Built safe platform adapter `apps/mobile/src/services/speechRecognitionService.ts`: eliminates `Cannot find native module 'ExpoSpeechRecognition'` crash in stock Expo Go by dynamically detecting native module presence via `requireOptionalNativeModule` and `isRunningInExpoGo()`.
+  - Added safe React hook `useSafeSpeechRecognitionEvent` satisfying Rules of Hooks while avoiding unlinked native listener attachment.
+  - Provided graceful fallback when running in Expo Go or when speech recognizer is unavailable: informational guidance banner, keyboard speech dictation support, and direct transcript editing.
+  - Configured `apps/mobile/eas.json` with development and preview APK build profiles for distribution on devices without local Android SDK.
   - Live audio volume meter and listening/processing/review visual states.
 - FastAPI Backend & Gemini Pipeline:
   - Implemented `POST /api/v1/parse-voice-meal` in `backend/app/routers/food.py`.

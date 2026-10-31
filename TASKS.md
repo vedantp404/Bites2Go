@@ -4,6 +4,9 @@
 
 - [x] Implemented production-quality voice food logging pipeline supporting spoken natural language meal descriptions.
 - [x] Configured native speech-to-text with `expo-speech-recognition@58.0.1` compatible with Expo SDK 58 and Android permissions (`RECORD_AUDIO`, `androidSpeechServicePackages`).
+- [x] Built safe platform adapter (`speechRecognitionService.ts`) preventing `Cannot find native module 'ExpoSpeechRecognition'` runtime crashes in stock Expo Go or unlinked environments via `requireOptionalNativeModule` and `isRunningInExpoGo()`.
+- [x] Implemented graceful fallback UI banner and keyboard dictation guidance in `VoiceFoodLoggingModal.tsx`, preserving full transcript editing, Gemini natural language parsing, catalogue matching, and atomic SQLite diary logging across all environments.
+- [x] Configured `eas.json` with development and preview profiles for APK distribution.
 - [x] Built FastAPI backend endpoint `POST /api/v1/parse-voice-meal` using Google GenAI SDK with structured schema validation (`VoiceMealParseResponse` and `ParsedVoiceFoodItem`).
 - [x] Engineered comprehensive prompt interpretation: multi-item dish separation (e.g. rotis, dal, sabzi, coffee), colloquial measures (bowls, handfuls, slices, cups), in-flight speech self-corrections ("one roti, actually make that two"), preparation methods, and raw vs cooked weights.
 - [x] Integrated client matching against the 1,411-food unified catalogue, preserving dataset-first priority (Kaggle tier 1 > Built-in tier 2 > Custom tier 3) and nutrition provenance metadata.

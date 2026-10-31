@@ -26,11 +26,16 @@ import {
   View,
 } from 'react-native';
 import { randomUUID } from 'expo-crypto';
-import {
-  ExpoSpeechRecognitionModule,
-  useSpeechRecognitionEvent,
-} from 'expo-speech-recognition';
 
+import {
+  isNativeSpeechModuleAvailable,
+  useSafeSpeechRecognitionEvent,
+  isSpeechRecognitionServiceAvailable,
+  requestSpeechPermissions,
+  startSpeechRecognition,
+  stopSpeechRecognition,
+  abortSpeechRecognition,
+} from '../services/speechRecognitionService';
 import { useUI } from './dashboard';
 import { Action } from './FoodControls';
 import { useDiary } from '../state/DiaryProvider';
@@ -86,16 +91,16 @@ export function VoiceFoodLoggingModal({
   }, [date]);
 
   // Speech recognition event hooks
-  useSpeechRecognitionEvent('start', () => {
+  useSafeSpeechRecognitionEvent('start', () => {
     setIsListening(true);
     setErrorMessage(null);
   });
 
-  useSpeechRecognitionEvent('end', () => {
+  useSafeSpeechRecognitionEvent('end', () => {
     setIsListening(false);
   });
 
-  useSpeechRecognitionEvent('result', (event) => {
+  useSafeSpeechRecognitionEvent('result', (event) => {
     const results = event.results || [];
     if (results.length > 0) {
       const top = results[0]?.transcript || '';
@@ -108,7 +113,7 @@ export function VoiceFoodLoggingModal({
     }
   });
 
-  useSpeechRecognitionEvent('error', (event) => {
+  useSafeSpeechRecognitionEvent('error', (event) => {
     setIsListening(false);
     const errText =
       event.message ||
@@ -117,16 +122,18 @@ export function VoiceFoodLoggingModal({
     setErrorMessage(errText);
   });
 
-  useSpeechRecognitionEvent('volumechange', (event) => {
+  useSafeSpeechRecognitionEvent('volumechange', (event) => {
     if (typeof event.value === 'number') {
       setVolume(Math.max(0, Math.min(100, Math.round(event.value * 10))));
     }
   });
 
+  const isNativeSupported = isNativeSpeechModuleAvailable();
+
   const resetState = () => {
     if (isListening) {
       try {
-        ExpoSpeechRecognitionModule.abort();
+        abortSpeechRecognition();
       } catch {
         // ignore
       }
@@ -154,8 +161,18 @@ export function VoiceFoodLoggingModal({
   // Start audio capture
   const handleStartListening = async () => {
     setErrorMessage(null);
+
+    if (!isNativeSupported) {
+      Alert.alert(
+        'Development Build Required',
+        'Direct microphone speech recognition requires a native development build because third-party native code is not bundled into stock Expo Go.\n\nYou can still use voice logging right now: tap the microphone button on your keyboard to speak into the text box, or type your meal description directly!',
+        [{ text: 'OK' }],
+      );
+      return;
+    }
+
     try {
-      const isAvailable = ExpoSpeechRecognitionModule.isRecognitionAvailable();
+      const isAvailable = isSpeechRecognitionServiceAvailable();
       if (!isAvailable) {
         setErrorMessage(
           'Native speech recognizer is unavailable on this device. You can type your meal description directly into the text box below.',
@@ -163,7 +180,7 @@ export function VoiceFoodLoggingModal({
         return;
       }
 
-      const perm = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      const perm = await requestSpeechPermissions();
       if (!perm.granted) {
         setErrorMessage(
           'Microphone permission is required for voice input. Please enable it in Settings or type your meal description below.',
@@ -171,7 +188,7 @@ export function VoiceFoodLoggingModal({
         return;
       }
 
-      ExpoSpeechRecognitionModule.start({
+      startSpeechRecognition({
         lang: 'en-US',
         interimResults: true,
         continuous: true,
@@ -189,7 +206,7 @@ export function VoiceFoodLoggingModal({
 
   const handleStopListening = () => {
     try {
-      ExpoSpeechRecognitionModule.stop();
+      stopSpeechRecognition();
     } catch {
       // ignore
     }
@@ -521,8 +538,45 @@ export function VoiceFoodLoggingModal({
                 >
                   {isListening
                     ? 'Listening... Speak naturally (dishes, portions, or preparations):'
-                    : 'Tap the microphone to speak your meal, or type directly below:'}
+                    : isNativeSupported
+                      ? 'Tap the microphone to speak your meal, or type directly below:'
+                      : 'Type your meal description below, or use your keyboard microphone:'}
                 </Text>
+
+                {!isNativeSupported && (
+                  <View
+                    style={[
+                      styles.devBuildNotice,
+                      {
+                        backgroundColor: t.colors.accent,
+                        borderColor: t.colors.border,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.devBuildNoticeTitle,
+                        { color: t.colors.primary },
+                      ]}
+                    >
+                      💡 Development Build Feature
+                    </Text>
+                    <Text
+                      style={[
+                        styles.devBuildNoticeText,
+                        { color: t.colors.text },
+                      ]}
+                    >
+                      Direct microphone recording requires a native development
+                      build because third-party native code is not bundled into
+                      stock Expo Go.
+                      {'\n\n'}
+                      You can still log meals with your voice: tap the
+                      microphone icon on your mobile keyboard to dictate into
+                      the box below, or type your food description!
+                    </Text>
+                  </View>
+                )}
 
                 {/* Big pulse mic button */}
                 <View style={styles.micButtonContainer}>
@@ -1159,6 +1213,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  devBuildNotice: {
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 4,
+    width: '100%',
+  },
+  devBuildNoticeTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  devBuildNoticeText: {
+    fontSize: 12,
+    lineHeight: 18,
   },
   micButtonContainer: {
     marginVertical: 4,
