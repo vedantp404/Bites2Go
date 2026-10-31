@@ -1,5 +1,15 @@
 # Ordered roadmap
 
+## Nutrition Data Quality & Staple Foods Provenance — implemented
+
+- [x] Audited all 1,411 foods in unified catalogue (894 built-in + 517 Kaggle items) across 7 food categories for nutritional accuracy, physical bounds, Atwater factor consistency, and source provenance.
+- [x] Produced comprehensive `docs/NUTRITION_DATA_QUALITY_REPORT.md` documenting methodology, authoritative data sources (USDA FoodData Central, ICMR-NIN IFCT 2017), physical bounds checks, and Atwater tolerance bands.
+- [x] Upgraded 68 high-priority staple foods in `apps/mobile/src/data/foods.ts` to `verified` (42 items with explicit USDA FDC ID or ICMR-NIN IFCT 2017 code) or `estimated` (26 composite dishes with IFCT recipe formulation IDs).
+- [x] Catalogue-wide provenance upgraded from baseline 36 verified (2.6%), 14 estimated (1.0%), and 1,361 illustrative (96.5%) to 78 verified (5.5%), 40 estimated (2.8%), and 1,293 illustrative (91.6%).
+- [x] Preserved baseline items 0–11 invariants strictly (including `rice-cooked` at 150 kcal and undefined `servingGrams`) ensuring zero regressions across existing library, calendar, and diary test suites.
+- [x] Added rigorous automated verification suite (`apps/mobile/tests/nutritionAccuracy.test.mjs`) testing all 894 built-in items for physical bounds, verified/estimated provenance metadata, and representative batch 2 staple accuracy.
+- [x] Verified full test suites: all 150 mobile tests passed, 19 backend tests passed, TypeScript, ESLint, Prettier, Expo doctor (20/20 passed), Android release export bundled, and credential scan passed with 0 findings.
+
 ## Kaggle Dataset Integration (`adilshamim8/daily-food-and-nutrition-dataset`) — implemented
 
 - [x] Inspected Kaggle dataset v2: 651 raw records (1 header + 651 data rows), 12 columns, fixed 6 anomalous lines with unquoted commas.
@@ -13,8 +23,6 @@
 - [x] Updated `FoodSearchScreen.tsx`, `RecipeScreen.tsx`, and `LibraryControls.tsx` to search `unifiedFoods` while maintaining memoized `SearchHeader` to avoid keyboard blur regression.
 - [x] Created comprehensive unit test suite (`apps/mobile/tests/kaggleSearch.test.mjs`) covering all 10 validation requirements; all 149 mobile tests pass.
 - [x] Documented full metrics, methodology, and provenance in `docs/KAGGLE_IMPORT_REPORT.md`.
-
-
 
 ## Expanded Food Catalogue & Food Images — implemented
 
@@ -127,7 +135,6 @@ Stage 5 save/restart/edit/delete was verified on Android by the user. This does 
 - [ ] User verifies Stage 6 on Android: calendar layout, selection, scrolling, Back, historical flows and accessibility.
 - [ ] User review before Stage 7; do not start it automatically.
 
-
 ## Current task: Stage 5 local persistent diary
 
 The explicit request supersedes older Stage 5 Auth/Supabase dependencies. Work is directly on master. Historical checklists below do not authorize further work.
@@ -142,13 +149,11 @@ The explicit request supersedes older Stage 5 Auth/Supabase dependencies. Work i
 - [ ] Verify native SQLite persistence after closing/reopening on Android, plus the manual Test Plan scenarios.
 - [ ] User review and explicit authorization before Stage 6. No Stage 6 implementation.
 
-
 ## Current workflow and integration
 
 Direct-to-master development is now the default under AGENTS and RULES; earlier branch-only/no-merge instructions are historical. The fetched remote master at 845b953 already contained SDK 58 (64e5f33) and the first dashboard (2c548e2). Integration preserves that merge and adds the dependent visual refinement (2e81e27) and local food search (b9f76f3) without cherry-picking or duplicating commits. The merge was conflict-free and its application tree matched the Stage 4 branch.
 
 The user reports manually verifying Stage 4 on an Android phone. This is user-reported acceptance, not a new agent-run device test; device/OS and individual accessibility scenarios were not supplied. No next development stage is authorized. Wait for the next explicit instruction.
-
 
 ## Current Stage 4 status — 2026-10-30
 

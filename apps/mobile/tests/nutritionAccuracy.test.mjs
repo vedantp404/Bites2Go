@@ -305,21 +305,21 @@ test('diary totals match exact sum of individual food entries without rounding d
   );
 });
 
-test('provenance model: representative 50 high-priority foods are strictly verified or estimated with complete metadata', () => {
+test('provenance model: representative 118 high-priority foods are strictly verified or estimated with complete metadata', () => {
   const verifiedFoods = foods.filter((f) => f.status === 'verified');
   const estimatedFoods = foods.filter((f) => f.status === 'estimated');
   const illustrativeFoods = foods.filter((f) => f.status === 'illustrative');
 
-  assert.equal(verifiedFoods.length, 36, 'Expected exactly 36 verified foods');
+  assert.equal(verifiedFoods.length, 78, 'Expected exactly 78 verified foods');
   assert.equal(
     estimatedFoods.length,
-    14,
-    'Expected exactly 14 estimated foods',
+    40,
+    'Expected exactly 40 estimated foods',
   );
   assert.equal(
     illustrativeFoods.length,
-    844,
-    'Expected 844 illustrative foods',
+    776,
+    'Expected 776 illustrative foods',
   );
   assert.equal(
     verifiedFoods.length + estimatedFoods.length + illustrativeFoods.length,
@@ -361,6 +361,74 @@ test('provenance model: representative 50 high-priority foods are strictly verif
       `Estimated food ${food.id} must include recipe notes explaining ingredients/oil`,
     );
   }
+});
+
+test('batch 2 nutrition data quality: representative staple foods meet laboratory & formulation standards', () => {
+  // Rice cooked baseline preservation & Basmati verified
+  const cookedRice = foods.find((f) => f.id === 'rice-cooked');
+  assert.ok(cookedRice);
+  assert.equal(cookedRice.servingGrams, undefined);
+  assert.equal(cookedRice.nutrients.calories, 150);
+
+  const basmatiRice = foods.find((f) => f.id === 'rice-basmati-cooked');
+  assert.ok(basmatiRice && basmatiRice.status === 'verified');
+  assert.equal(basmatiRice.nutrients.fiber, 0.4);
+  assert.equal(basmatiRice.nutrients.calories, 130);
+
+  // Breads & Grains
+  const whiteBread = foods.find((f) => f.id === 'bread-white-slice');
+  assert.ok(whiteBread && whiteBread.status === 'verified');
+  assert.equal(whiteBread.sourceId, 'USDA FDC ID: 172685');
+  assert.equal(whiteBread.nutrients.calories, 265);
+
+  const plainParatha = foods.find((f) => f.id === 'paratha-plain');
+  assert.ok(plainParatha && plainParatha.status === 'estimated');
+  assert.ok(plainParatha.sourceId.includes('PR01'));
+
+  // Dairy & Cheese
+  const cheddar = foods.find((f) => f.id === 'cheese-cheddar');
+  assert.ok(cheddar && cheddar.status === 'verified');
+  assert.equal(cheddar.nutrients.calories, 403);
+  assert.equal(cheddar.sourceId, 'USDA FDC ID: 173418');
+
+  const desiGhee = foods.find((f) => f.id === 'ghee-desi');
+  assert.ok(desiGhee && desiGhee.status === 'verified');
+  assert.equal(desiGhee.nutrients.calories, 900);
+  assert.equal(desiGhee.nutrients.fat, 99.8);
+
+  // Pulses
+  const uradDal = foods.find((f) => f.id === 'urad-dal-cooked');
+  assert.ok(uradDal && uradDal.status === 'verified');
+  assert.equal(uradDal.sourceId, 'IFCT 2017: B009 / Pulses & Legumes');
+
+  const dalMakhani = foods.find((f) => f.id === 'dal-makhani');
+  assert.ok(dalMakhani && dalMakhani.status === 'estimated');
+  assert.ok(dalMakhani.sourceNotes.includes('whole black gram'));
+
+  // Nuts & Seeds
+  const peanutButter = foods.find((f) => f.id === 'peanut-butter-creamy');
+  assert.ok(peanutButter && peanutButter.status === 'verified');
+  assert.equal(peanutButter.nutrients.calories, 588);
+
+  const chiaSeeds = foods.find((f) => f.id === 'chia-seeds');
+  assert.ok(chiaSeeds && chiaSeeds.status === 'verified');
+  assert.equal(chiaSeeds.nutrients.fiber, 34.4);
+
+  // Meats & Seafood
+  const grilledChicken = foods.find((f) => f.id === 'chicken-breast-grilled');
+  assert.ok(grilledChicken && grilledChicken.status === 'verified');
+  assert.equal(grilledChicken.nutrients.protein, 31.0);
+  assert.equal(grilledChicken.nutrients.fiber, 0);
+
+  const salmon = foods.find((f) => f.id === 'salmon-grilled');
+  assert.ok(salmon && salmon.status === 'verified');
+  assert.equal(salmon.nutrients.protein, 22.1);
+  assert.equal(salmon.nutrients.fat, 12.4);
+
+  // Regional dishes
+  const biryani = foods.find((f) => f.id === 'chicken-biryani');
+  assert.ok(biryani && biryani.status === 'estimated');
+  assert.equal(biryani.nutrients.calories, 165);
 });
 
 test('diary integration preserves verified and estimated provenance metadata across logging and portion changes', () => {

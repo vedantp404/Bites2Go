@@ -1,16 +1,38 @@
 # Project memory
 
+## Current handoff: Nutrition Data Quality & Staple Foods Provenance
+
+Audited all 1,411 searchable foods in Bites2Go's unified catalogue (894 built-in foods in `apps/mobile/src/data/foods.ts` and 517 Kaggle dataset foods in `apps/mobile/src/data/kaggleFoods.ts`) to improve nutritional data quality, eliminate synthetic values for core staples, and establish rigorous provenance tracking.
+
+Key Achievements:
+
+- Audited 1,411 Unified Foods: Comprehensive evaluation of macronutrient density, energy density, and Atwater factor bounds (4P + 4C + 9F ~= kcal). Documented known variance factors including dietary fiber subtractions in chia/flax seeds and standard alcohol conversions.
+- Upgraded 68 High-Priority Staples: Enhanced 68 essential foods across 7 categories:
+  - Breads & Grains (12): Basmati rice, white bread, whole wheat bread, sourdough, phulka, tandoori roti, plain naan, butter naan, plain paratha, aloo paratha, paneer paratha, bhatura.
+  - Dairy & Cheese (10): Cheddar, mozzarella, parmesan, feta, creamed cottage cheese, skimmed cow milk, plain Greek yogurt, desi ghee, salted butter, buttermilk/chaas.
+  - Pulses & Legumes (6): Cooked urad dal, panchmel dal, dal fry, dal makhani, sambar, lobia curry.
+  - Nuts & Seeds (7): Creamy peanut butter, shelled walnuts, raw cashews, roasted peanuts, shelled pistachios, chia seeds, flax seeds.
+  - Produce & Fruits (13): Green grapes, fresh strawberries, fresh blueberries, raw avocado, muskmelon, steamed broccoli, green capsicum, boiled green peas, raw ginger, raw garlic, raw lemon, raw cabbage, boiled sweet potato.
+  - Meats, Fish & Eggs (10): Grilled chicken breast, grilled chicken thigh, grilled salmon, canned tuna in water, scrambled egg, fried egg, poached egg, masala omelette, Goan fish curry, mutton curry.
+  - Indian Breakfast & Snacks (10): Medu vada, khaman dhokla, semiya upma, poha chivda, Mumbai bhel puri, pani puri / golgappa, pav bhaji, chicken biryani, vegetable biryani, misal pav curry.
+- Provenance Status Transformation:
+  - Total Verified: 78 items (up from 36 baseline; +42 items with explicit USDA FDC ID or ICMR-NIN IFCT 2017 code).
+  - Total Estimated: 40 items (up from 14 baseline; +26 items with documented composite IFCT recipe formulations).
+  - Total Illustrative: 1,293 items (down from 1,361; preserved for synthetic Kaggle records and unverified fixtures).
+- Strict Baseline Invariance Preserved: Items 0–11 (`rice-cooked`, `rice-raw`, `roti`, `moong`, `chickpeas`, `milk`, `curd`, `banana`, `apple`, `almonds`, `oats`, `paneer`) were maintained to protect existing calendar, diary, and library test fixtures. Specifically, `rice-cooked` retains its legacy 150 kcal baseline and undefined `servingGrams`, while `rice-basmati-cooked` provides the authoritative 130 kcal USDA composition.
+- Automated Testing & Verification: All 150 mobile tests passed (including updated `nutritionAccuracy.test.mjs`), 19 backend tests passed, TypeScript, ESLint, Prettier, Expo doctor (20/20 passed), Android release export succeeded, and secret scan verified 0 pattern findings.
+- Comprehensive Documentation: Full audit report, category breakdown, and formulation tables published in `docs/NUTRITION_DATA_QUALITY_REPORT.md`.
+
 ## Current handoff: Kaggle Dataset Integration (`adilshamim8/daily-food-and-nutrition-dataset`)
 
 Integrated the Kaggle daily food and nutrition dataset (v2) by Adil Shamim into Bites2Go's food search system without corrupting nutrition models or breaking existing search performance:
+
 - Schema & Provenance: The dataset contains 651 raw records with synthetic dietary records. All imported records are strictly assigned `status: 'illustrative'` (never verified) with explicit source attribution to Adil Shamim v2.
 - Preprocessing Pipeline (`scripts/import_kaggle_dataset.py`): Normalizes portions to per-100g reference values, enforces physical laws (macronutrient density <= 100.5g/100g, calorie density <= 900 kcal/100g), quarantines physically impossible items (Line 486 Corn Nuts, 102.1g/100g), and merges 58 internal duplicates to produce 592 unique items.
 - Conservative Deduplication: 75 certain matches with existing built-in foods were merged preserving original stable IDs (`apple`, `banana`, `almonds`, `rice-brown-cooked`), 40 meaningfully different varieties were kept separate (e.g. 2% milk vs whole milk, steamed vs roasted), and 35 ambiguous matches with >35% calorie variance were kept separate.
 - Catalogue Integration: Exported 517 new foods prefixed with `kaggle:` into `kaggleFoods.ts`, creating a 1411-food `unifiedFoods.ts` catalogue. Built-in `foods.ts` invariant remains at 894 items, preserving all baseline test fixtures.
 - Dataset-First Ranking: `searchFoods` in `food.ts` applies tier bonuses (Tier 1 Kaggle +0.4, Tier 2 Built-in +0.2, Tier 3 Custom/Recipe +0.0), guaranteeing that Kaggle items rank first for equal relevance matches while built-in and custom foods remain discoverable.
 - Stability & Quality: Preserved module-scope memoized `SearchHeader` in `FoodSearchScreen.tsx` preventing Android keyboard focus blur. All 149 mobile tests pass (including 10 new tests in `kaggleSearch.test.mjs`).
-
-
 
 ## Current handoff: Expanded Food Catalogue & Food Images
 
@@ -96,7 +118,6 @@ Started from clean synchronized master 5a9f96b. User confirms Stage 5 save/resta
 
 Exact next step: user runs the Stage 6 Android checklist and reviews the result. Only after acceptance and explicit authorization, consider Stage 7 weight/goals/BMI under the roadmap. No Stage 7 code. Actual commit/push hashes are reported in completion output after verification.
 
-
 ## Current handoff: Stage 5 local diary
 
 Work started from clean synchronized master 412625c; direct-to-master policy remains. User explicitly approved local persistence instead of the earlier Auth/cloud roadmap. Implemented save/reload, meal selection, date navigation, real-entry-only Home/Diary totals, detached portion editing and confirmed deletion. Expo selected expo-sqlite 58.0.14 and expo-crypto 58.0.7; existing Expo/RN/React/TypeScript versions remain unchanged. Source nutrition and targets remain illustrative, not production guidance.
@@ -105,13 +126,11 @@ Repository validation preserves malformed/unsupported data and blocks writes; no
 
 Next: user executes the Stage 5 Android checklist and reviews local data/privacy limitations. Stop; do not start Stage 6. After acceptance and explicit authorization, minimal calendar/history is the recommended next stage. No branch/PR or automatic cloud/auth setup. Completion message records actual commit/push hashes after remote verification; no self-referential follow-up commit.
 
-
 ## Current workflow and integration
 
 Direct-to-master development is now the default under AGENTS and RULES; earlier branch-only/no-merge instructions are historical. The fetched remote master at 845b953 already contained SDK 58 (64e5f33) and the first dashboard (2c548e2). Integration preserves that merge and adds the dependent visual refinement (2e81e27) and local food search (b9f76f3) without cherry-picking or duplicating commits. The merge was conflict-free and its application tree matched the Stage 4 branch.
 
 The user reports manually verifying Stage 4 on an Android phone. This is user-reported acceptance, not a new agent-run device test; device/OS and individual accessibility scenarios were not supplied. No next development stage is authorized. Wait for the next explicit instruction.
-
 
 ## Current Stage 4 status — 2026-10-30
 
@@ -166,17 +185,17 @@ Next: review Stage 2 and verify the screen on Android before Stage 3. Stage 3 ha
 
 Branch `codex/expo-sdk-58`, based on master f75c4f3. Installed Expo 58.0.21, React Native 0.88.1, React 19.3.0, TypeScript 6.0.3. Expo-selected @types/react 19.3.0, eslint-config-expo 58.0.4, expo-status-bar 58.0.4 and safe-area-context 5.10.1. No changes to application features.
 
-| Check | Result |
-| --- | --- |
-| `npm run typecheck` | Passed |
-| `npm run lint` | Passed |
-| `npm run format:check` | Initially failed on Expo-generated app.json formatting; targeted Prettier formatting fixed it; rerun passed |
-| `npm test` | 1 passed, 0 failed (AA contrast) |
-| `npx expo-doctor` | 20/20 passed |
-| `npx expo config --type public` | Passed, SDK 58.0.0 |
-| `npx expo export --platform android` | Passed, Android Hermes bundle exported; not an APK/device test |
-| Manifest/lockfile comparison and `npm ls --depth=0` | Dependency ranges agree; installed tree valid |
-| `npm audit` before and after | Both report 8 affected packages: 5 low, 3 high; audit is not clean |
+| Check                                               | Result                                                                                                      |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `npm run typecheck`                                 | Passed                                                                                                      |
+| `npm run lint`                                      | Passed                                                                                                      |
+| `npm run format:check`                              | Initially failed on Expo-generated app.json formatting; targeted Prettier formatting fixed it; rerun passed |
+| `npm test`                                          | 1 passed, 0 failed (AA contrast)                                                                            |
+| `npx expo-doctor`                                   | 20/20 passed                                                                                                |
+| `npx expo config --type public`                     | Passed, SDK 58.0.0                                                                                          |
+| `npx expo export --platform android`                | Passed, Android Hermes bundle exported; not an APK/device test                                              |
+| Manifest/lockfile comparison and `npm ls --depth=0` | Dependency ranges agree; installed tree valid                                                               |
+| `npm audit` before and after                        | Both report 8 affected packages: 5 low, 3 high; audit is not clean                                          |
 
 Unchanged root advisories: deepmerge prototype poisoning (GHSA-gcqx-w48m-w2h4) and zod oversized-collection memory exhaustion (GHSA-mrhx-c7xc-m3w5), propagated through Expo config/CLI tooling. No newly reported advisory compared with the immediate pre-upgrade baseline. These remain release risks; a passing bundle does not establish security. No forced remediation applied.
 
