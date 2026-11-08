@@ -1,5 +1,20 @@
 # Project memory
 
+## Current handoff: Recipe Screen Compilation & Mobile Build Fix
+
+Fixed TypeScript and JSX compilation in `apps/mobile/src/screens/RecipeScreen.tsx` (Milestone 1).
+
+Key Engineering Highlights:
+- Screen Cleanup & Restoration:
+  - Eliminated syntax errors and malformed JSX fragments caused by uncommitted working-tree edits in `RecipeScreen.tsx`.
+  - Preserved memoized collections (`available`, `allMatches`, `visibleMatches`, `ingredientFoodIds`) and stable `handleAddIngredient` callback from the VirtualizedList optimization.
+  - Simplified search match condition `{visibleMatches.length === 0 ? ...}` and added clear architectural documentation.
+- Verification & Integrity:
+  - TypeScript compilation (`npx tsc --noEmit --project apps/mobile/tsconfig.json`): Passed with 0 errors.
+  - Mobile unit test suite (`npm test --prefix apps/mobile`): 163/163 passed (100%).
+  - Android release bundling (`npx expo export --platform android`): Succeeded bundling 1,377 modules into 3.6 MB Hermes bytecode bundle (`entry-*.hbc`).
+  - ESLint (`npm run lint --prefix apps/mobile`): 0 warnings / 0 errors.
+
 ## Current handoff: Gemini API Transient Resilience & Automatic Retry
 
 Investigated and resolved intermittent Gemini API failures (HTTP 504 Gateway Timeout, 503 Service Unavailable, and 429 Rate Limits) during food-photo recognition and voice meal parsing.

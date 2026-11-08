@@ -1,3 +1,13 @@
+/**
+ * Recipe & Meal Editor Screen for Bites2Go.
+ *
+ * Provides:
+ * - Recipe creation and editing with ingredient selection from unified foods and custom foods.
+ * - Dynamic nutrition calculation and per-serving breakdowns via recipeNutrition().
+ * - O(1) ingredient membership lookup and windowed search matching for smooth rendering.
+ * - Atomic persistence to local SQLite library storage.
+ */
+
 import { useCallback, useMemo, useState } from 'react';
 import { Text } from 'react-native';
 import { randomUUID } from 'expo-crypto';
@@ -196,7 +206,7 @@ function Editor({ initial, item }: { initial: Library; item?: Recipe }) {
               onChangeText={setQuery}
               disabled={form.disabled}
             />
-            {searching && visibleMatches.length === 0 ? (
+            {visibleMatches.length === 0 ? (
               <Text style={ui.body}>
                 No matching ingredients. Create a custom food in My foods first
                 if needed.

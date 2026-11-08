@@ -1,5 +1,14 @@
 # Ordered roadmap
 
+## Recipe Screen Compilation & Mobile Build Fix — implemented
+
+- [x] Identified root cause of TypeScript compilation failure in `apps/mobile/src/screens/RecipeScreen.tsx`: uncommitted working-tree edits introduced duplicate declarations and malformed JSX fragment nesting.
+- [x] Cleaned up `RecipeScreen.tsx` with clear file header documentation, removed duplicate declarations, and simplified search match condition.
+- [x] Preserved recipe creation, editing, ingredient selection from unified foods and custom foods, dynamic nutrition calculations (`recipeNutrition`), and SQLite persistence.
+- [x] Verified full TypeScript compilation: `npx tsc --noEmit --project apps/mobile/tsconfig.json` passed with 0 errors.
+- [x] Ran mobile test suite: `npm test --prefix apps/mobile` passed 163/163 unit tests.
+- [x] Validated Android bundling: `npx expo export --platform android` succeeded bundling 1,377 modules and generating release Hermes bytecode bundle `entry-*.hbc`.
+
 ## Gemini API Transient Resilience & Automatic Retry — implemented
 
 - [x] Inspected FastAPI Gemini food recognition service, Google GenAI SDK (`google-genai==2.34.0`), timeout settings, and exception hierarchies.
