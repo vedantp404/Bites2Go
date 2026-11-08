@@ -20,6 +20,7 @@ import {
   recentFoods,
   browseFoods,
   portionGrams,
+  foodOrigin,
 } from '../src/domain/library.ts';
 import {
   createLibraryRepository,
@@ -609,4 +610,12 @@ test('multi-ingredient meals log fractional/multiple servings as one snapshot ea
   await library.save(deleted, changed);
   assert.deepEqual(await createDiaryRepository(storage).loadAll(), snapshots);
   assert.equal((await library.load()).recipes.length, 0);
+});
+test('foodOrigin describes built-in foods, custom foods and recipes accurately', () => {
+  assert.equal(foodOrigin(foods[0]), 'Built-in illustrative food');
+  assert.equal(foodOrigin(customAsFood(custom())), 'User-created estimate');
+  assert.equal(
+    foodOrigin(recipeAsFood(recipe())),
+    'Recipe / snapshot estimates',
+  );
 });

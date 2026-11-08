@@ -221,8 +221,32 @@ test('calendar validation and day stepping respect leap/month/year boundaries', 
   assert.equal(shiftDay('2024-02-28', 1), '2024-02-29');
   assert.equal(shiftDay('2024-03-01', -1), '2024-02-29');
   assert.equal(shiftDay('2026-12-31', 1), '2027-01-01');
+  assert.equal(shiftDay('2000-02-28', 1), '2000-02-29');
+  assert.equal(shiftDay('1900-02-28', 1), '1900-03-01');
+  assert.equal(shiftDay('2100-02-28', 1), '2100-03-01');
+  assert.throws(
+    () => shiftDay('1900-01-01', -1),
+    /outside the supported range/,
+  );
+  assert.throws(() => shiftDay('9999-12-31', 1), /outside the supported range/);
+  assert.throws(() => shiftDay('2026-10-30', 0.5), /Invalid diary date/);
+  assert.throws(() => shiftDay('invalid', 1), /Invalid diary date/);
   assert.equal(validDateKey('2026-02-29'), false);
   assert.equal(validDateKey('2026-13-01'), false);
+  assert.equal(validDateKey('2026-00-15'), false);
+  assert.equal(validDateKey('2026-04-31'), false);
+  assert.equal(validDateKey('2000-02-29'), true);
+  assert.equal(validDateKey('1900-02-29'), false);
+  assert.equal(validDateKey('2100-02-29'), false);
+  assert.equal(validDateKey('1900-01-01'), true);
+  assert.equal(validDateKey('1899-12-31'), false);
+  assert.equal(validDateKey('9999-12-31'), true);
+  assert.equal(validDateKey('10000-01-01'), false);
+  assert.equal(validDateKey('2026/10/30'), false);
+  assert.equal(validDateKey(''), false);
+  assert.equal(validDateKey(null), false);
+  assert.equal(validDateKey(undefined), false);
+  assert.equal(validDateKey(20261030), false);
   assert.equal(localDateKey(new Date(2026, 9, 30, 23, 59)), '2026-10-30');
 });
 test('local date keys near UTC midnight and DST retain explicit calendar dates', () => {

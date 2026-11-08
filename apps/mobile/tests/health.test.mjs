@@ -162,12 +162,18 @@ test('remaining and macro progress reuse diary rules including excess, unknown a
 test('BMI uses kg/metres squared with one-decimal display and invalid/missing protection', () => {
   assert.equal(bmi(200, 80), 20);
   assert.equal(bmi(175, 70).toFixed(1), '22.9');
+  assert.equal(bmi(100, 20), 20);
+  assert.equal(bmi(250, 500), 80);
   for (const [h, w] of [
     [null, 70],
     [175, null],
     [0, 70],
+    [99.9, 70],
+    [250.1, 70],
     [251, 70],
     [175, -1],
+    [175, 19.9],
+    [175, 500.1],
     [NaN, 70],
     [175, Infinity],
   ])
@@ -192,6 +198,9 @@ test('gain/loss goals handle reached, overshoot, regress, maintenance and no bas
   assert.equal(weightProgress(70, g(null, 65)).percent, null);
   assert.equal(weightProgress(null, g(80, 70)).difference, null);
   assert.equal(weightProgress(70, g(80, 0)).difference, null);
+  assert.equal(weightProgress(75, g(80, 70), '2026-10-29').percent, null);
+  assert.equal(weightProgress(75, g(80, 70), '2026-10-29').fill, 0);
+  assert.equal(weightProgress(75, g(80, 70), today).percent, 50);
 });
 test('weight goal start is explicit and stable; first subsequent measurement establishes missing start', () => {
   let d = settings(emptyHealth());
@@ -218,6 +227,18 @@ test('chart represents only actual points, preserves time gaps and handles singl
   assert.deepEqual(weightPoints([]), []);
   assert.equal(weightPoints([weight()])[0].x, 0.5);
   assert.equal(weightPoints([weight()])[0].y, 0.5);
+  const sameKg = weightPoints([
+    weight('a', '2026-01-01', 70),
+    weight('b', '2026-01-02', 70),
+  ]);
+  assert.equal(sameKg[0].y, 0.5);
+  assert.equal(sameKg[1].y, 0.5);
+  const sameDate = weightPoints([
+    weight('a', '2026-01-01', 70),
+    weight('b', '2026-01-01', 75),
+  ]);
+  assert.equal(sameDate[0].x, 0.5);
+  assert.equal(sameDate[1].x, 0.5);
   const points = weightPoints([
     weight('c', '2026-01-11', 72),
     weight('a', '2026-01-01', 70),
