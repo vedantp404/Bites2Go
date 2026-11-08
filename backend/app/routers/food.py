@@ -11,20 +11,29 @@ from app.models.food import (
     VoiceMealParseRequest,
     VoiceMealParseResponse,
 )
-from app.services.gemini import (
-    GeminiService,
+from app.services.ai_service import DualProviderService, get_ai_service
+from app.services.providers.base import (
+    AIAllProvidersFailedError,
+    AIAuthenticationError,
+    AIRateLimitError,
+    AIServiceError,
+    AITimeoutError,
+    AIUnavailableError,
     GeminiServiceError,
     GeminiTimeoutError,
     GeminiUnavailableError,
     ModelOutputValidationError,
     RateLimitError,
-    get_gemini_service,
 )
 from app.services.image import (
     ImageSizeExceededError,
     InvalidImageError,
     validate_and_sanitize_image,
 )
+
+# Backward compatibility alias
+get_gemini_service = get_ai_service
+GeminiService = DualProviderService
 
 router = APIRouter(prefix="/api/v1", tags=["Food Recognition"])
 
@@ -91,6 +100,12 @@ async def recognize_food(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
             headers={"X-Error-Category": "configuration"},
+        ) from exc
+    except AIAllProvidersFailedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The AI food recognition service is temporarily unavailable. All configured providers failed to process the request. Please try again or use manual search.",
+            headers={"Retry-After": "3", "X-Error-Category": "all_providers_failed"},
         ) from exc
     except RateLimitError as exc:
         raise HTTPException(
@@ -174,6 +189,12 @@ async def recognize_food_base64(
             detail=str(exc),
             headers={"X-Error-Category": "configuration"},
         ) from exc
+    except AIAllProvidersFailedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The AI food recognition service is temporarily unavailable. All configured providers failed to process the request. Please try again or use manual search.",
+            headers={"Retry-After": "3", "X-Error-Category": "all_providers_failed"},
+        ) from exc
     except RateLimitError as exc:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -247,6 +268,12 @@ async def parse_voice_meal(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
             headers={"X-Error-Category": "configuration"},
+        ) from exc
+    except AIAllProvidersFailedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The AI voice parsing service is temporarily unavailable. All configured providers failed to process the request. Please try again or type your foods manually.",
+            headers={"Retry-After": "3", "X-Error-Category": "all_providers_failed"},
         ) from exc
     except RateLimitError as exc:
         raise HTTPException(

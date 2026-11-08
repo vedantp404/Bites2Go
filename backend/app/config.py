@@ -55,6 +55,16 @@ class Settings:
         # Retry backoff maximum delay in seconds
         self.gemini_retry_max_delay: float = float(os.getenv("GEMINI_RETRY_MAX_DELAY", "4.0"))
         
+        # Provider architecture configuration
+        self.ai_primary_provider: str = os.getenv("AI_PRIMARY_PROVIDER", "gemini").lower()
+        self.ai_fallback_enabled: bool = os.getenv("AI_FALLBACK_ENABLED", "true").lower() in ("true", "1", "yes")
+
+        # OpenRouter fallback configuration
+        self.openrouter_model: str = os.getenv("OPENROUTER_MODEL", "openrouter/free")
+        self.openrouter_base_url: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
+        self.openrouter_timeout_seconds: float = float(os.getenv("OPENROUTER_TIMEOUT_SECONDS", "25.0"))
+        self.openrouter_max_retries: int = int(os.getenv("OPENROUTER_MAX_RETRIES", "1"))
+
         # CORS origins (allow local development, emulator, and LAN)
         origins_str = os.getenv("ALLOWED_ORIGINS", "*")
         self.allowed_origins: list[str] = [o.strip() for o in origins_str.split(",") if o.strip()]
@@ -81,6 +91,34 @@ class Settings:
     def is_gemini_configured(self) -> bool:
         """Boolean indicator for whether Gemini API key is available."""
         return self.gemini_api_key is not None
+
+    @property
+    def openrouter_api_key(self) -> Optional[str]:
+        """Fetch the OpenRouter API key without logging or exposing it."""
+        key = os.getenv("OPENROUTER_API_KEY")
+        if key and key.strip():
+            return key.strip()
+        return None
+
+    def require_openrouter_api_key(self) -> str:
+        """Fetch the OpenRouter API key or raise ConfigurationError."""
+        key = self.openrouter_api_key
+        if not key:
+            raise ConfigurationError(
+                "OPENROUTER_API_KEY is not configured. "
+                "Please configure OPENROUTER_API_KEY in backend/.env before calling the OpenRouter endpoint."
+            )
+        return key
+
+    @property
+    def is_openrouter_configured(self) -> bool:
+        """Boolean indicator for whether OpenRouter API key is available."""
+        return self.openrouter_api_key is not None
+
+    @property
+    def is_ai_configured(self) -> bool:
+        """Indicate whether at least one AI provider is configured."""
+        return self.is_gemini_configured or self.is_openrouter_configured
 
 
 _settings: Optional[Settings] = None

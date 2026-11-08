@@ -22,12 +22,23 @@ logger = logging.getLogger("bites2go.backend")
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Validate startup configuration safely."""
     settings = get_settings()
+    configured_providers = []
     if settings.is_gemini_configured:
-        logger.info("Gemini AI recognition service is configured and ready.")
+        configured_providers.append(f"Gemini ({settings.gemini_model})")
+    if settings.is_openrouter_configured:
+        configured_providers.append(f"OpenRouter ({settings.openrouter_model})")
+
+    if configured_providers:
+        logger.info(
+            "AI recognition services ready: %s. Primary: %s, Fallback enabled: %s",
+            ", ".join(configured_providers),
+            settings.ai_primary_provider,
+            settings.ai_fallback_enabled,
+        )
     else:
         logger.warning(
-            "GEMINI_API_KEY is not configured in backend/.env. "
-            "The health check will work, but /api/v1/recognize-food will return 503."
+            "Neither GEMINI_API_KEY nor OPENROUTER_API_KEY is configured in backend/.env. "
+            "Health check will work, but recognition endpoints will return 503."
         )
     yield
 
