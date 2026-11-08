@@ -15,6 +15,7 @@ from app.models.food import FoodRecognitionResponse, VoiceMealParseResponse
 from app.services.providers.base import (
     AIAuthenticationError,
     AIRateLimitError,
+    AIRequestCancelledError,
     AIServiceError,
     AITimeoutError,
     AIUnavailableError,
@@ -22,6 +23,7 @@ from app.services.providers.base import (
     ModelOutputValidationError,
     SYSTEM_INSTRUCTION,
     VOICE_PARSER_SYSTEM_INSTRUCTION,
+    is_request_cancelled,
 )
 
 logger = logging.getLogger("bites2go.gemini")
@@ -129,8 +131,12 @@ class GeminiProvider(BaseAIProvider):
         max_delay: Optional[float] = None,
         exp_base: float = 2.0,
         jitter: float = 1.0,
+        is_cancelled: Optional[Callable[[], bool]] = None,
     ) -> T:
         """Execute a Gemini API call with bounded automatic retries for transient errors."""
+        if is_request_cancelled(is_cancelled):
+            raise AIRequestCancelledError("Client disconnected / request cancelled.", provider=self.name)
+
         retries = max_retries if max_retries is not None else self._max_retries
         init_delay = initial_delay if initial_delay is not None else self._retry_initial_delay
         maximum_delay = max_delay if max_delay is not None else self._retry_max_delay
@@ -140,6 +146,8 @@ class GeminiProvider(BaseAIProvider):
         overall_start_time = time.perf_counter()
 
         def _before_attempt(retry_state: tenacity.RetryCallState) -> None:
+            if is_request_cancelled(is_cancelled):
+                raise AIRequestCancelledError("Client disconnected / request cancelled.", provider=self.name)
             attempt_num = retry_state.attempt_number
             attempt_start_times[attempt_num] = time.perf_counter()
             logger.info(
@@ -166,6 +174,8 @@ class GeminiProvider(BaseAIProvider):
                 )
 
         def _before_sleep(retry_state: tenacity.RetryCallState) -> None:
+            if is_request_cancelled(is_cancelled):
+                raise AIRequestCancelledError("Client disconnected / request cancelled.", provider=self.name)
             attempt_num = retry_state.attempt_number
             t_start = attempt_start_times.get(attempt_num, overall_start_time)
             attempt_elapsed = time.perf_counter() - t_start
@@ -283,6 +293,8 @@ class GeminiProvider(BaseAIProvider):
         self,
         image_bytes: bytes,
         mime_type: str = "image/jpeg",
+        timeout_seconds: Optional[float] = None,
+        is_cancelled: Optional[Callable[[], bool]] = None,
     ) -> FoodRecognitionResponse:
         """Analyze food image and return validated structured food candidates."""
         image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
@@ -294,7 +306,8 @@ class GeminiProvider(BaseAIProvider):
 
         contents = [image_part, prompt_text]
 
-        timeout_ms = int(self._per_attempt_timeout_seconds * 1000)
+        effective_timeout = timeout_seconds if timeout_seconds is not None else self._per_attempt_timeout_seconds
+        timeout_ms = int(effective_timeout * 1000)
         config = types.GenerateContentConfig(
             system_instruction=SYSTEM_INSTRUCTION,
             response_mime_type="application/json",
@@ -313,7 +326,7 @@ class GeminiProvider(BaseAIProvider):
                 config=config,
             )
 
-        response = self._execute_with_retry("recognize_food", _call_gemini)
+        response = self._execute_with_retry("recognize_food", _call_gemini, is_cancelled=is_cancelled)
 
         if not response or not response.text:
             raise ModelOutputValidationError("The AI service returned an empty response.", provider=self.name)
@@ -353,6 +366,8 @@ class GeminiProvider(BaseAIProvider):
         self,
         transcript: str,
         meal_context: Optional[str] = None,
+        timeout_seconds: Optional[float] = None,
+        is_cancelled: Optional[Callable[[], bool]] = None,
     ) -> VoiceMealParseResponse:
         """Parse spoken food description and return structured items and nutrition."""
         prompt_text = f"Spoken food transcript: {transcript.strip()}"
@@ -360,7 +375,8 @@ class GeminiProvider(BaseAIProvider):
             prompt_text += f"\nMeal context: {meal_context.strip()}"
 
         contents = [prompt_text]
-        timeout_ms = int(self._voice_timeout_seconds * 1000)
+        effective_timeout = timeout_seconds if timeout_seconds is not None else self._voice_timeout_seconds
+        timeout_ms = int(effective_timeout * 1000)
         config = types.GenerateContentConfig(
             system_instruction=VOICE_PARSER_SYSTEM_INSTRUCTION,
             response_mime_type="application/json",
@@ -379,7 +395,7 @@ class GeminiProvider(BaseAIProvider):
                 config=config,
             )
 
-        response = self._execute_with_retry("parse_voice_meal", _call_gemini)
+        response = self._execute_with_retry("parse_voice_meal", _call_gemini, is_cancelled=is_cancelled)
 
         if not response or not response.text:
             raise ModelOutputValidationError("The AI service returned an empty response.", provider=self.name)

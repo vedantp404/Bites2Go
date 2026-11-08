@@ -43,7 +43,7 @@ class Settings:
         # Max upload size: 10 MB
         self.max_image_size_bytes: int = int(os.getenv("MAX_IMAGE_SIZE_BYTES", str(10 * 1024 * 1024)))
         
-        # Request timeout in seconds per attempt (default 12.0s so 3 bounded attempts fit within mobile timeout)
+        # Request timeout in seconds per attempt (default 12.0s so bounded attempts fit within mobile timeout)
         self.gemini_timeout_seconds: float = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "12.0"))
         
         # Max automatic retries for transient failures (default 2 additional attempts = 3 attempts total)
@@ -53,8 +53,12 @@ class Settings:
         self.gemini_retry_initial_delay: float = float(os.getenv("GEMINI_RETRY_INITIAL_DELAY", "1.0"))
         
         # Retry backoff maximum delay in seconds
-        self.gemini_retry_max_delay: float = float(os.getenv("GEMINI_RETRY_MAX_DELAY", "4.0"))
+        self.gemini_retry_max_delay: float = float(os.getenv("GEMINI_RETRY_MAX_DELAY", "3.0"))
         
+        # Global server-side request deadline budgets (must complete before mobile AbortController timeouts: 45s photo / 40s voice)
+        self.server_deadline_seconds: float = float(os.getenv("SERVER_DEADLINE_SECONDS", "35.0"))
+        self.voice_server_deadline_seconds: float = float(os.getenv("VOICE_SERVER_DEADLINE_SECONDS", "30.0"))
+
         # Provider architecture configuration
         self.ai_primary_provider: str = os.getenv("AI_PRIMARY_PROVIDER", "gemini").lower()
         self.ai_fallback_enabled: bool = os.getenv("AI_FALLBACK_ENABLED", "true").lower() in ("true", "1", "yes")
@@ -62,8 +66,11 @@ class Settings:
         # OpenRouter fallback configuration
         self.openrouter_model: str = os.getenv("OPENROUTER_MODEL", "openrouter/free")
         self.openrouter_base_url: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
-        self.openrouter_timeout_seconds: float = float(os.getenv("OPENROUTER_TIMEOUT_SECONDS", "25.0"))
+        self.openrouter_timeout_seconds: float = float(os.getenv("OPENROUTER_TIMEOUT_SECONDS", "15.0"))
         self.openrouter_max_retries: int = int(os.getenv("OPENROUTER_MAX_RETRIES", "1"))
+
+        # Deployed git commit hash (populated on Render via RENDER_GIT_COMMIT)
+        self.git_commit: str = os.getenv("RENDER_GIT_COMMIT", os.getenv("GIT_COMMIT", "dev"))
 
         # CORS origins (allow local development, emulator, and LAN)
         origins_str = os.getenv("ALLOWED_ORIGINS", "*")

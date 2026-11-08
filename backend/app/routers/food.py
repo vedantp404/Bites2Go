@@ -1,8 +1,11 @@
 """Food recognition API endpoint."""
 
+import asyncio
 import base64
+import logging
+import threading
 from typing import Optional
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel, Field
 
 from app.config import ConfigurationError
@@ -16,6 +19,7 @@ from app.services.providers.base import (
     AIAllProvidersFailedError,
     AIAuthenticationError,
     AIRateLimitError,
+    AIRequestCancelledError,
     AIServiceError,
     AITimeoutError,
     AIUnavailableError,
@@ -24,12 +28,15 @@ from app.services.providers.base import (
     GeminiUnavailableError,
     ModelOutputValidationError,
     RateLimitError,
+    current_cancellation_check,
 )
 from app.services.image import (
     ImageSizeExceededError,
     InvalidImageError,
     validate_and_sanitize_image,
 )
+
+logger = logging.getLogger("bites2go.food_router")
 
 # Backward compatibility alias
 get_gemini_service = get_ai_service
@@ -51,6 +58,7 @@ class Base64ImagePayload(BaseModel):
     summary="Recognize foods and estimate macronutrients from a photo",
 )
 async def recognize_food(
+    request: Request,
     file: Optional[UploadFile] = File(None),
     gemini_service: GeminiService = Depends(get_gemini_service),
 ) -> FoodRecognitionResponse:
@@ -58,7 +66,8 @@ async def recognize_food(
 
     - Strips all EXIF metadata and device tags before analysis.
     - Never persists photos to disk or external storage.
-    - Calls Gemini with structured output validation.
+    - Supports bounded retries and failover between primary and secondary providers.
+    - Aborts immediately if the client disconnects to prevent wasted AI spend.
     """
     if file is None:
         raise HTTPException(
@@ -82,9 +91,6 @@ async def recognize_food(
 
     try:
         sanitized_bytes, mime_type = validate_and_sanitize_image(raw_bytes)
-        response = gemini_service.recognize_food(sanitized_bytes, mime_type=mime_type)
-        return response
-
     except InvalidImageError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -95,6 +101,41 @@ async def recognize_food(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail=str(exc),
         ) from exc
+
+    cancel_event = threading.Event()
+
+    async def _monitor_disconnect() -> None:
+        while not cancel_event.is_set():
+            try:
+                if await request.is_disconnected():
+                    cancel_event.set()
+                    break
+            except Exception:
+                pass
+            await asyncio.sleep(0.2)
+
+    monitor_task = asyncio.create_task(_monitor_disconnect())
+    token = current_cancellation_check.set(cancel_event.is_set)
+
+    try:
+        response = await asyncio.to_thread(
+            gemini_service.recognize_food,
+            sanitized_bytes,
+            mime_type=mime_type,
+        )
+        return response
+
+    except AIRequestCancelledError as exc:
+        logger.info("Food recognition cancelled due to client disconnect: %s", exc)
+        raise HTTPException(
+            status_code=499,
+            detail="Client disconnected before food recognition completed.",
+            headers={"X-Error-Category": "client_disconnected"},
+        ) from exc
+    except asyncio.CancelledError:
+        cancel_event.set()
+        logger.info("Food recognition request task was cancelled.")
+        raise
     except ConfigurationError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -107,19 +148,19 @@ async def recognize_food(
             detail="The AI food recognition service is temporarily unavailable. All configured providers failed to process the request. Please try again or use manual search.",
             headers={"Retry-After": "3", "X-Error-Category": "all_providers_failed"},
         ) from exc
-    except RateLimitError as exc:
+    except (AIRateLimitError, RateLimitError) as exc:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=str(exc),
             headers={"Retry-After": "5", "X-Error-Category": "rate_limit"},
         ) from exc
-    except GeminiTimeoutError as exc:
+    except (AITimeoutError, GeminiTimeoutError) as exc:
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="The AI food recognition service timed out after multiple attempts. Please try again.",
             headers={"Retry-After": "2", "X-Error-Category": "upstream_timeout"},
         ) from exc
-    except GeminiUnavailableError as exc:
+    except (AIUnavailableError, GeminiUnavailableError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="The AI food recognition service is temporarily overloaded or unavailable. Please try again in a few moments.",
@@ -131,7 +172,7 @@ async def recognize_food(
             detail="AI model returned an unparseable or malformed nutritional response.",
             headers={"X-Error-Category": "model_output"},
         ) from exc
-    except GeminiServiceError as exc:
+    except (AIServiceError, GeminiServiceError) as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="The AI food recognition service encountered an error. Please try again.",
@@ -142,6 +183,14 @@ async def recognize_food(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred during food recognition.",
         ) from exc
+    finally:
+        current_cancellation_check.reset(token)
+        cancel_event.set()
+        monitor_task.cancel()
+        try:
+            await monitor_task
+        except asyncio.CancelledError:
+            pass
 
 
 @router.post(
@@ -151,13 +200,13 @@ async def recognize_food(
     summary="Recognize foods from a base64 encoded image string",
 )
 async def recognize_food_base64(
+    request: Request,
     payload: Base64ImagePayload,
     gemini_service: GeminiService = Depends(get_gemini_service),
 ) -> FoodRecognitionResponse:
     """Analyze a base64-encoded food image string in-memory."""
     raw_b64 = payload.image_base64.strip()
     if "," in raw_b64:
-        # Strip data URL prefix if present (e.g. data:image/jpeg;base64,...)
         raw_b64 = raw_b64.split(",", 1)[1]
 
     try:
@@ -170,9 +219,6 @@ async def recognize_food_base64(
 
     try:
         sanitized_bytes, mime_type = validate_and_sanitize_image(raw_bytes)
-        response = gemini_service.recognize_food(sanitized_bytes, mime_type=mime_type)
-        return response
-
     except InvalidImageError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -183,6 +229,41 @@ async def recognize_food_base64(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail=str(exc),
         ) from exc
+
+    cancel_event = threading.Event()
+
+    async def _monitor_disconnect() -> None:
+        while not cancel_event.is_set():
+            try:
+                if await request.is_disconnected():
+                    cancel_event.set()
+                    break
+            except Exception:
+                pass
+            await asyncio.sleep(0.2)
+
+    monitor_task = asyncio.create_task(_monitor_disconnect())
+    token = current_cancellation_check.set(cancel_event.is_set)
+
+    try:
+        response = await asyncio.to_thread(
+            gemini_service.recognize_food,
+            sanitized_bytes,
+            mime_type=mime_type,
+        )
+        return response
+
+    except AIRequestCancelledError as exc:
+        logger.info("Food recognition base64 cancelled due to client disconnect: %s", exc)
+        raise HTTPException(
+            status_code=499,
+            detail="Client disconnected before food recognition completed.",
+            headers={"X-Error-Category": "client_disconnected"},
+        ) from exc
+    except asyncio.CancelledError:
+        cancel_event.set()
+        logger.info("Food recognition base64 request task was cancelled.")
+        raise
     except ConfigurationError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -195,19 +276,19 @@ async def recognize_food_base64(
             detail="The AI food recognition service is temporarily unavailable. All configured providers failed to process the request. Please try again or use manual search.",
             headers={"Retry-After": "3", "X-Error-Category": "all_providers_failed"},
         ) from exc
-    except RateLimitError as exc:
+    except (AIRateLimitError, RateLimitError) as exc:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=str(exc),
             headers={"Retry-After": "5", "X-Error-Category": "rate_limit"},
         ) from exc
-    except GeminiTimeoutError as exc:
+    except (AITimeoutError, GeminiTimeoutError) as exc:
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="The AI food recognition service timed out after multiple attempts. Please try again.",
             headers={"Retry-After": "2", "X-Error-Category": "upstream_timeout"},
         ) from exc
-    except GeminiUnavailableError as exc:
+    except (AIUnavailableError, GeminiUnavailableError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="The AI food recognition service is temporarily overloaded or unavailable. Please try again in a few moments.",
@@ -219,7 +300,7 @@ async def recognize_food_base64(
             detail="AI model returned an unparseable or malformed nutritional response.",
             headers={"X-Error-Category": "model_output"},
         ) from exc
-    except GeminiServiceError as exc:
+    except (AIServiceError, GeminiServiceError) as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="The AI food recognition service encountered an error. Please try again.",
@@ -230,6 +311,14 @@ async def recognize_food_base64(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred during food recognition.",
         ) from exc
+    finally:
+        current_cancellation_check.reset(token)
+        cancel_event.set()
+        monitor_task.cancel()
+        try:
+            await monitor_task
+        except asyncio.CancelledError:
+            pass
 
 
 @router.post(
@@ -239,6 +328,7 @@ async def recognize_food_base64(
     summary="Parse spoken food description into structured items and nutritional estimates",
 )
 async def parse_voice_meal(
+    request: Request,
     payload: VoiceMealParseRequest,
     gemini_service: GeminiService = Depends(get_gemini_service),
 ) -> VoiceMealParseResponse:
@@ -248,6 +338,7 @@ async def parse_voice_meal(
     - Translates colloquial measures (bowls, handfuls, slices) into realistic gram estimates.
     - Resolves in-flight corrections (e.g. 'one roti, actually make that two').
     - Distinguishes raw vs cooked state.
+    - Cancels immediately if client disconnects.
     """
     cleaned_transcript = payload.transcript.strip()
     if not cleaned_transcript:
@@ -256,13 +347,40 @@ async def parse_voice_meal(
             detail="Transcript cannot be empty or whitespace only.",
         )
 
+    cancel_event = threading.Event()
+
+    async def _monitor_disconnect() -> None:
+        while not cancel_event.is_set():
+            try:
+                if await request.is_disconnected():
+                    cancel_event.set()
+                    break
+            except Exception:
+                pass
+            await asyncio.sleep(0.2)
+
+    monitor_task = asyncio.create_task(_monitor_disconnect())
+    token = current_cancellation_check.set(cancel_event.is_set)
+
     try:
-        response = gemini_service.parse_voice_meal(
+        response = await asyncio.to_thread(
+            gemini_service.parse_voice_meal,
             transcript=cleaned_transcript,
             meal_context=payload.meal_context,
         )
         return response
 
+    except AIRequestCancelledError as exc:
+        logger.info("Voice meal parsing cancelled due to client disconnect: %s", exc)
+        raise HTTPException(
+            status_code=499,
+            detail="Client disconnected before voice meal parsing completed.",
+            headers={"X-Error-Category": "client_disconnected"},
+        ) from exc
+    except asyncio.CancelledError:
+        cancel_event.set()
+        logger.info("Voice meal parsing request task was cancelled.")
+        raise
     except ConfigurationError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -275,19 +393,19 @@ async def parse_voice_meal(
             detail="The AI voice parsing service is temporarily unavailable. All configured providers failed to process the request. Please try again or type your foods manually.",
             headers={"Retry-After": "3", "X-Error-Category": "all_providers_failed"},
         ) from exc
-    except RateLimitError as exc:
+    except (AIRateLimitError, RateLimitError) as exc:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=str(exc),
             headers={"Retry-After": "5", "X-Error-Category": "rate_limit"},
         ) from exc
-    except GeminiTimeoutError as exc:
+    except (AITimeoutError, GeminiTimeoutError) as exc:
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="The AI voice parsing service timed out after multiple attempts. Please try again.",
             headers={"Retry-After": "2", "X-Error-Category": "upstream_timeout"},
         ) from exc
-    except GeminiUnavailableError as exc:
+    except (AIUnavailableError, GeminiUnavailableError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="The AI voice parsing service is temporarily overloaded or unavailable. Please try again in a few moments.",
@@ -299,7 +417,7 @@ async def parse_voice_meal(
             detail="AI model returned an unparseable or malformed food parsing response.",
             headers={"X-Error-Category": "model_output"},
         ) from exc
-    except GeminiServiceError as exc:
+    except (AIServiceError, GeminiServiceError) as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="The AI voice parsing service encountered an error. Please try again.",
@@ -310,5 +428,11 @@ async def parse_voice_meal(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred during voice food parsing.",
         ) from exc
-
-
+    finally:
+        current_cancellation_check.reset(token)
+        cancel_event.set()
+        monitor_task.cancel()
+        try:
+            await monitor_task
+        except asyncio.CancelledError:
+            pass

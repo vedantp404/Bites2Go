@@ -1,7 +1,8 @@
 """Base abstraction and exception definitions for AI recognition providers."""
 
+import contextvars
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Callable, Optional
 
 from app.models.food import FoodRecognitionResponse, VoiceMealParseResponse
 
@@ -59,6 +60,11 @@ class ModelOutputValidationError(AIServiceError):
     pass
 
 
+class AIRequestCancelledError(AIServiceError):
+    """Raised when the client disconnects or aborts the in-flight AI request."""
+    pass
+
+
 class AIAllProvidersFailedError(AIServiceError):
     """Raised when all configured providers (primary and fallback) have failed."""
 
@@ -85,6 +91,21 @@ GeminiUnavailableError = AIUnavailableError
 RateLimitError = AIRateLimitError
 
 
+current_cancellation_check: contextvars.ContextVar[Optional[Callable[[], bool]]] = (
+    contextvars.ContextVar("current_cancellation_check", default=None)
+)
+
+
+def is_request_cancelled(explicit_check: Optional[Callable[[], bool]] = None) -> bool:
+    """Check whether the active request has been cancelled by client disconnect."""
+    if explicit_check is not None and explicit_check():
+        return True
+    ctx_check = current_cancellation_check.get()
+    if ctx_check is not None and ctx_check():
+        return True
+    return False
+
+
 class BaseAIProvider(ABC):
     """Abstract interface defining required capabilities for food AI providers."""
 
@@ -105,6 +126,8 @@ class BaseAIProvider(ABC):
         self,
         image_bytes: bytes,
         mime_type: str = "image/jpeg",
+        timeout_seconds: Optional[float] = None,
+        is_cancelled: Optional[Callable[[], bool]] = None,
     ) -> FoodRecognitionResponse:
         """Recognize food from image bytes and return normalized FoodRecognitionResponse."""
         pass
@@ -114,6 +137,8 @@ class BaseAIProvider(ABC):
         self,
         transcript: str,
         meal_context: Optional[str] = None,
+        timeout_seconds: Optional[float] = None,
+        is_cancelled: Optional[Callable[[], bool]] = None,
     ) -> VoiceMealParseResponse:
         """Parse voice transcript and return normalized VoiceMealParseResponse."""
         pass

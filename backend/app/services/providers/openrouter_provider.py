@@ -21,6 +21,7 @@ from app.models.food import (
 from app.services.providers.base import (
     AIAuthenticationError,
     AIRateLimitError,
+    AIRequestCancelledError,
     AIServiceError,
     AITimeoutError,
     AIUnavailableError,
@@ -28,6 +29,7 @@ from app.services.providers.base import (
     ModelOutputValidationError,
     SYSTEM_INSTRUCTION,
     VOICE_PARSER_SYSTEM_INSTRUCTION,
+    is_request_cancelled,
 )
 
 logger = logging.getLogger("bites2go.openrouter")
@@ -231,14 +233,20 @@ class OpenRouterProvider(BaseAIProvider):
         self,
         operation_name: str,
         fn: Callable[[], httpx.Response],
+        is_cancelled: Optional[Callable[[], bool]] = None,
     ) -> dict[str, Any]:
         """Execute OpenRouter HTTP call with bounded retries for transient errors."""
+        if is_request_cancelled(is_cancelled):
+            raise AIRequestCancelledError("Client disconnected / request cancelled.", provider=self.name)
+
         retries = self._max_retries
         total_attempts = retries + 1
 
         overall_start_time = time.perf_counter()
 
         def _before_attempt(retry_state: tenacity.RetryCallState) -> None:
+            if is_request_cancelled(is_cancelled):
+                raise AIRequestCancelledError("Client disconnected / request cancelled.", provider=self.name)
             logger.info(
                 "OpenRouter API [%s] call starting (attempt %d of %d, model=%s)",
                 operation_name,
@@ -259,6 +267,8 @@ class OpenRouterProvider(BaseAIProvider):
                 )
 
         def _before_sleep(retry_state: tenacity.RetryCallState) -> None:
+            if is_request_cancelled(is_cancelled):
+                raise AIRequestCancelledError("Client disconnected / request cancelled.", provider=self.name)
             exc = retry_state.outcome.exception()
             logger.warning(
                 "OpenRouter API [%s] attempt %d of %d failed with transient error [%s]. Retrying...",
@@ -350,6 +360,8 @@ class OpenRouterProvider(BaseAIProvider):
         self,
         image_bytes: bytes,
         mime_type: str = "image/jpeg",
+        timeout_seconds: Optional[float] = None,
+        is_cancelled: Optional[Callable[[], bool]] = None,
     ) -> FoodRecognitionResponse:
         """Recognize food items from an image using OpenRouter vision chat completion."""
         api_key = self._get_api_key()
@@ -409,15 +421,17 @@ class OpenRouterProvider(BaseAIProvider):
 
         url = f"{self._base_url}/chat/completions"
         client = self._get_client()
+        effective_timeout = timeout_seconds if timeout_seconds is not None else self._timeout_seconds
 
         def _call_openrouter() -> httpx.Response:
             return client.post(
                 url,
                 headers={"Authorization": f"Bearer {api_key}"},
                 json=payload,
+                timeout=effective_timeout,
             )
 
-        data = self._execute_with_retry("recognize_food", _call_openrouter)
+        data = self._execute_with_retry("recognize_food", _call_openrouter, is_cancelled=is_cancelled)
 
         choices = data.get("choices", [])
         if not choices:
@@ -487,6 +501,8 @@ class OpenRouterProvider(BaseAIProvider):
         self,
         transcript: str,
         meal_context: Optional[str] = None,
+        timeout_seconds: Optional[float] = None,
+        is_cancelled: Optional[Callable[[], bool]] = None,
     ) -> VoiceMealParseResponse:
         """Parse spoken food description using OpenRouter chat completion."""
         api_key = self._get_api_key()
@@ -533,15 +549,17 @@ class OpenRouterProvider(BaseAIProvider):
 
         url = f"{self._base_url}/chat/completions"
         client = self._get_client()
+        effective_timeout = timeout_seconds if timeout_seconds is not None else self._timeout_seconds
 
         def _call_openrouter() -> httpx.Response:
             return client.post(
                 url,
                 headers={"Authorization": f"Bearer {api_key}"},
                 json=payload,
+                timeout=effective_timeout,
             )
 
-        data = self._execute_with_retry("parse_voice_meal", _call_openrouter)
+        data = self._execute_with_retry("parse_voice_meal", _call_openrouter, is_cancelled=is_cancelled)
 
         choices = data.get("choices", [])
         if not choices:

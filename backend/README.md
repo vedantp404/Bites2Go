@@ -64,8 +64,8 @@ AI_FALLBACK_ENABLED=true
 # Obtain your free API key at: https://aistudio.google.com/
 GEMINI_API_KEY=your_gemini_api_key_here
 GEMINI_MODEL=gemini-3.5-flash
-GEMINI_TIMEOUT_SECONDS=15.0
-GEMINI_MAX_RETRIES=1
+GEMINI_TIMEOUT_SECONDS=12.0
+GEMINI_MAX_RETRIES=2
 
 # ---------------------------------------------------------------------------
 # OpenRouter (Fallback Provider)
@@ -79,15 +79,17 @@ OPENROUTER_API_KEY=your_openrouter_api_key_here
 # Alternatively specify a fixed model identifier (e.g. google/gemma-4-31b-it:free).
 OPENROUTER_MODEL=openrouter/free
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-OPENROUTER_TIMEOUT_SECONDS=25.0
+OPENROUTER_TIMEOUT_SECONDS=15.0
 OPENROUTER_MAX_RETRIES=1
 
 # ---------------------------------------------------------------------------
-# Server Runtime Settings
+# Server Runtime Settings & Request Deadlines
 # ---------------------------------------------------------------------------
 HOST=127.0.0.1
 PORT=8000
 ENVIRONMENT=development
+SERVER_DEADLINE_SECONDS=35.0
+VOICE_SERVER_DEADLINE_SECONDS=30.0
 MAX_IMAGE_SIZE_BYTES=10485760
 ALLOWED_ORIGINS=*
 ```
@@ -181,7 +183,8 @@ Example response:
   "gemini_configured": true,
   "openrouter_configured": true,
   "model": "gemini-3.5-flash",
-  "fallback_model": "openrouter/free"
+  "fallback_model": "openrouter/free",
+  "commit": "df210795"
 }
 ```
 

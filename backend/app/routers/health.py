@@ -25,5 +25,5 @@ def health_check() -> dict:
         "openrouter_configured": settings.is_openrouter_configured,
         "model": settings.gemini_model,
         "fallback_model": settings.openrouter_model,
+        "commit": settings.git_commit[:8],
     }
-
