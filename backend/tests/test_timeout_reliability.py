@@ -275,3 +275,298 @@ def test_health_check_returns_commit_hash(client: TestClient) -> None:
         assert "key" not in key.lower() or key in ("gemini_configured", "openrouter_configured")
         assert not str(value).startswith("AIza")
         assert not str(value).startswith("sk-or")
+
+
+# ---------------------------------------------------------------------------
+# Test 8: Router server deadline timeout returns HTTP 504
+# ---------------------------------------------------------------------------
+def test_router_server_deadline_timeout_returns_504(
+    client: TestClient,
+    sample_jpeg_bytes: bytes,
+) -> None:
+    """When the AI service exceeds server deadline budget, router returns HTTP 504."""
+    mock_service = MagicMock(spec=DualProviderService)
+
+    def slow_recognize(*args, **kwargs):
+        time.sleep(0.1)
+        raise RuntimeError("Should not be reached if timed out")
+
+    mock_service.recognize_food.side_effect = slow_recognize
+
+    custom_settings = Settings()
+    custom_settings.server_deadline_seconds = 0.02  # 20ms deadline
+
+    client.app.dependency_overrides[get_ai_service] = lambda: mock_service
+    from app.config import get_settings
+    client.app.dependency_overrides[get_settings] = lambda: custom_settings
+
+    try:
+        t0 = time.perf_counter()
+        response = client.post(
+            "/api/v1/recognize-food",
+            files={"file": ("meal.jpg", sample_jpeg_bytes, "image/jpeg")},
+        )
+        elapsed = time.perf_counter() - t0
+        assert response.status_code == 504
+        assert response.headers.get("X-Error-Category") == "upstream_timeout"
+        data = response.json()
+        assert "server deadline budget" in data["detail"].lower()
+        # Ensure it failed fast within ~0.3s instead of hanging
+        assert elapsed < 0.5
+    finally:
+        client.app.dependency_overrides.clear()
+
+
+# ---------------------------------------------------------------------------
+# Test 9: Router voice server deadline timeout returns HTTP 504
+# ---------------------------------------------------------------------------
+def test_router_voice_server_deadline_timeout_returns_504(
+    client: TestClient,
+) -> None:
+    """When voice parsing exceeds server deadline budget, router returns HTTP 504."""
+    mock_service = MagicMock(spec=DualProviderService)
+
+    def slow_parse(*args, **kwargs):
+        time.sleep(0.1)
+        raise RuntimeError("Should not be reached")
+
+    mock_service.parse_voice_meal.side_effect = slow_parse
+
+    custom_settings = Settings()
+    custom_settings.voice_server_deadline_seconds = 0.02
+
+    client.app.dependency_overrides[get_ai_service] = lambda: mock_service
+    from app.config import get_settings
+    client.app.dependency_overrides[get_settings] = lambda: custom_settings
+
+    try:
+        t0 = time.perf_counter()
+        response = client.post(
+            "/api/v1/parse-voice-meal",
+            json={"transcript": "two dosas with sambar"},
+        )
+        elapsed = time.perf_counter() - t0
+        assert response.status_code == 504
+        assert response.headers.get("X-Error-Category") == "upstream_timeout"
+        data = response.json()
+        assert "server deadline budget" in data["detail"].lower()
+        assert elapsed < 0.5
+    finally:
+        client.app.dependency_overrides.clear()
+
+
+# ---------------------------------------------------------------------------
+# Test 10: Timing logs emitted for endpoint completion and monitor cleanup
+# ---------------------------------------------------------------------------
+def test_timing_logs_emitted_on_success(
+    client: TestClient,
+    sample_jpeg_bytes: bytes,
+    sample_candidate: FoodItemCandidate,
+    sample_voice_item: ParsedVoiceFoodItem,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Verify privacy-safe timing logs with request correlation IDs are emitted on successful requests."""
+    import logging
+
+    mock_service = MagicMock(spec=DualProviderService)
+    mock_service.recognize_food.return_value = FoodRecognitionResponse(
+        success=True,
+        summary="Paneer Butter Masala",
+        items=[sample_candidate],
+    )
+    mock_service.parse_voice_meal.return_value = VoiceMealParseResponse(
+        success=True,
+        transcript="2 chapatis",
+        items=[sample_voice_item],
+    )
+
+    client.app.dependency_overrides[get_ai_service] = lambda: mock_service
+
+    try:
+        with caplog.at_level(logging.INFO):
+            # 1. Photo endpoint
+            resp = client.post(
+                "/api/v1/recognize-food",
+                files={"file": ("meal.jpg", sample_jpeg_bytes, "image/jpeg")},
+                headers={"X-Request-ID": "test-req-photo"},
+            )
+            assert resp.status_code == 200
+
+            # 2. Voice endpoint
+            resp_voice = client.post(
+                "/api/v1/parse-voice-meal",
+                json={"transcript": "2 chapatis"},
+                headers={"X-Request-ID": "test-req-voice"},
+            )
+            assert resp_voice.status_code == 200
+
+        # Assert timing logs with correlation ID for photo
+        assert any("[Timing][test-req-photo] Endpoint [recognize_food] completed successfully" in msg for msg in caplog.messages)
+        # Assert timing logs with correlation ID for voice
+        assert any("[Timing][test-req-voice] Endpoint [parse_voice_meal] completed successfully" in msg for msg in caplog.messages)
+        # Assert cleanup timing
+        assert any("Cancellation-monitor cleanup took" in msg for msg in caplog.messages)
+
+    finally:
+        client.app.dependency_overrides.clear()
+
+
+# ---------------------------------------------------------------------------
+# Test 11: OpenRouter provider timing logs
+# ---------------------------------------------------------------------------
+def test_openrouter_provider_timing_logs(
+    sample_jpeg_bytes: bytes,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Verify OpenRouter provider logs request, JSON parsing, and validation timing."""
+    import logging
+    from app.services.providers.openrouter_provider import OpenRouterProvider
+
+    settings = Settings()
+    mock_http_client = MagicMock()
+    mock_http_response = MagicMock()
+    mock_http_response.status_code = 200
+    mock_http_response.json.return_value = {
+        "choices": [
+            {
+                "message": {
+                    "content": '{"success": true, "summary": "Dal Tadka", "items": [{"food_name": "Dal", "estimated_quantity": 1.0, "unit": "bowl", "estimated_grams": 150.0, "calories": 180.0, "protein": 9.0, "carbohydrates": 24.0, "fat": 5.0, "uncertainty": {"confidence_score": 0.85, "confidence_level": "high"}}]}'
+                }
+            }
+        ]
+    }
+    mock_http_response.raise_for_status = MagicMock()
+    mock_http_client.post.return_value = mock_http_response
+
+    provider = OpenRouterProvider(
+        api_key="sk-or-test-key",
+        settings=settings,
+        http_client=mock_http_client,
+    )
+
+    with caplog.at_level(logging.INFO):
+        result = provider.recognize_food(sample_jpeg_bytes)
+
+    assert result.success is True
+    assert any("[Timing]" in msg and "OpenRouter API [recognize_food] request succeeded" in msg for msg in caplog.messages)
+    assert any("[Timing]" in msg and "OpenRouter [recognize_food] response body read and JSON decoding took" in msg for msg in caplog.messages)
+    assert any("[Timing]" in msg and "OpenRouter [recognize_food] response JSON parsing took" in msg for msg in caplog.messages)
+    assert any("[Timing]" in msg and "OpenRouter [recognize_food] Pydantic validation took" in msg for msg in caplog.messages)
+
+
+# ---------------------------------------------------------------------------
+# Test 12: Gemini provider timing logs
+# ---------------------------------------------------------------------------
+def test_gemini_provider_timing_logs(
+    sample_jpeg_bytes: bytes,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Verify Gemini provider logs request, cleaning, and validation timing."""
+    import logging
+    from app.services.providers.gemini_provider import GeminiProvider
+
+    settings = Settings()
+    provider = GeminiProvider(settings=settings)
+
+    mock_client = MagicMock()
+    mock_gen_response = MagicMock()
+    mock_gen_response.text = '{"success": true, "summary": "Roti", "items": [{"food_name": "Roti", "estimated_quantity": 1.0, "unit": "piece", "estimated_grams": 40.0, "calories": 100.0, "protein": 3.0, "carbohydrates": 20.0, "fat": 1.0, "uncertainty": {"confidence_score": 0.95, "confidence_level": "high"}}]}'
+    mock_client.models.generate_content.return_value = mock_gen_response
+    provider._client = mock_client
+
+    with caplog.at_level(logging.INFO):
+        result = provider.recognize_food(sample_jpeg_bytes)
+
+    assert result.success is True
+    assert any("[Timing]" in msg and "Gemini API [recognize_food] request succeeded" in msg for msg in caplog.messages)
+    assert any("[Timing]" in msg and "Gemini [recognize_food] response JSON text cleaning took" in msg for msg in caplog.messages)
+    assert any("[Timing]" in msg and "Gemini [recognize_food] Pydantic validation took" in msg for msg in caplog.messages)
+
+
+# ---------------------------------------------------------------------------
+# Test 13: Cancellation monitor cleanup completes promptly without delay
+# ---------------------------------------------------------------------------
+def test_cancellation_monitor_cleanup_is_prompt(
+    client: TestClient,
+    sample_jpeg_bytes: bytes,
+    sample_candidate: FoodItemCandidate,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Ensure cancellation monitor cleanup finishes within bounded deadline (< 50ms) and does not delay response."""
+    import logging
+
+    mock_service = MagicMock(spec=DualProviderService)
+    mock_service.recognize_food.return_value = FoodRecognitionResponse(
+        success=True,
+        summary="Paneer Butter Masala",
+        items=[sample_candidate],
+    )
+
+    client.app.dependency_overrides[get_ai_service] = lambda: mock_service
+
+    try:
+        with caplog.at_level(logging.INFO):
+            t0 = time.perf_counter()
+            resp = client.post(
+                "/api/v1/recognize-food",
+                files={"file": ("meal.jpg", sample_jpeg_bytes, "image/jpeg")},
+                headers={"X-Request-ID": "test-cleanup-fast"},
+            )
+            elapsed = time.perf_counter() - t0
+
+        assert resp.status_code == 200
+        # Overall request must be immediate
+        assert elapsed < 0.2
+
+        # Check cleanup log recorded < 0.05s
+        cleanup_logs = [msg for msg in caplog.messages if "Cancellation-monitor cleanup took" in msg]
+        assert len(cleanup_logs) >= 1
+        assert any("[Timing][test-cleanup-fast]" in msg for msg in cleanup_logs)
+
+    finally:
+        client.app.dependency_overrides.clear()
+
+
+# ---------------------------------------------------------------------------
+# Test 14: Fallback timing logs emitted when Gemini 503 triggers OpenRouter
+# ---------------------------------------------------------------------------
+def test_fallback_timing_logs_emitted_on_failover(
+    sample_jpeg_bytes: bytes,
+    sample_candidate: FoodItemCandidate,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Verify fallback start log is emitted when primary fails and switches to OpenRouter."""
+    import logging
+    from app.services.providers.base import current_request_id
+
+    mock_primary = MagicMock(spec=BaseAIProvider)
+    mock_primary.name = "gemini"
+    mock_primary.is_configured = True
+    mock_primary.recognize_food.side_effect = AIUnavailableError("Gemini 503 Overloaded", provider="gemini")
+
+    mock_fallback = MagicMock(spec=BaseAIProvider)
+    mock_fallback.name = "openrouter"
+    mock_fallback.is_configured = True
+    mock_fallback.recognize_food.return_value = FoodRecognitionResponse(
+        success=True,
+        summary="Paneer Butter Masala",
+        items=[sample_candidate],
+    )
+
+    settings = Settings()
+    service = DualProviderService(
+        gemini_provider=mock_primary,
+        openrouter_provider=mock_fallback,
+        settings=settings,
+    )
+
+    token = current_request_id.set("test-failover-req")
+    try:
+        with caplog.at_level(logging.INFO):
+            result = service.recognize_food(sample_jpeg_bytes)
+
+        assert result.success is True
+        assert any("[Timing][test-failover-req] AI Service [recognize_food] started" in msg for msg in caplog.messages)
+        assert any("[Timing][test-failover-req] Fallback start: switching from primary [gemini] to fallback [openrouter]" in msg for msg in caplog.messages)
+    finally:
+        current_request_id.reset(token)

@@ -17,6 +17,7 @@ from app.services.providers.base import (
     AIUnavailableError,
     BaseAIProvider,
     ModelOutputValidationError,
+    get_current_request_id,
     is_request_cancelled,
 )
 from app.services.providers.gemini_provider import GeminiProvider
@@ -91,6 +92,14 @@ class DualProviderService:
             else self._settings.server_deadline_seconds
         )
         start_time = time.perf_counter()
+        logger.info(
+            "[Timing][%s] AI Service [%s] started (budget: %.1fs, primary=%s, fallback=%s)",
+            get_current_request_id(),
+            "recognize_food",
+            total_budget,
+            primary.name,
+            fallback.name if fallback_available else "none",
+        )
 
         def remaining_budget() -> float:
             elapsed = time.perf_counter() - start_time
@@ -105,7 +114,8 @@ class DualProviderService:
             rem = remaining_budget()
             if rem < 4.0:
                 logger.warning(
-                    "Remaining budget (%.2fs) insufficient for fallback AI provider [%s] (min 4.0s).",
+                    "[Timing][%s] Remaining budget (%.2fs) insufficient for fallback AI provider [%s] (min 4.0s).",
+                    get_current_request_id(),
                     rem,
                     fallback.name,
                 )
@@ -115,7 +125,9 @@ class DualProviderService:
                 )
 
             logger.info(
-                "Attempting fallback provider [%s] for food recognition after primary %s (remaining budget: %.2fs).",
+                "[Timing][%s] Fallback start: switching from primary [%s] to fallback [%s] after %s (remaining budget: %.2fs).",
+                get_current_request_id(),
+                primary.name,
                 fallback.name,
                 reason,
                 rem,
@@ -263,6 +275,14 @@ class DualProviderService:
             else self._settings.voice_server_deadline_seconds
         )
         start_time = time.perf_counter()
+        logger.info(
+            "[Timing][%s] AI Service [%s] started (budget: %.1fs, primary=%s, fallback=%s)",
+            get_current_request_id(),
+            "parse_voice_meal",
+            total_budget,
+            primary.name,
+            fallback.name if fallback_available else "none",
+        )
 
         def remaining_budget() -> float:
             elapsed = time.perf_counter() - start_time
@@ -277,7 +297,8 @@ class DualProviderService:
             rem = remaining_budget()
             if rem < 4.0:
                 logger.warning(
-                    "Remaining budget (%.2fs) insufficient for fallback AI provider [%s] (min 4.0s).",
+                    "[Timing][%s] Remaining budget (%.2fs) insufficient for fallback AI provider [%s] (min 4.0s).",
+                    get_current_request_id(),
                     rem,
                     fallback.name,
                 )
@@ -287,7 +308,9 @@ class DualProviderService:
                 )
 
             logger.info(
-                "Attempting fallback provider [%s] for voice meal parsing after primary %s (remaining budget: %.2fs).",
+                "[Timing][%s] Fallback start: switching from primary [%s] to fallback [%s] after %s (remaining budget: %.2fs).",
+                get_current_request_id(),
+                primary.name,
                 fallback.name,
                 reason,
                 rem,

@@ -29,6 +29,7 @@ from app.services.providers.base import (
     ModelOutputValidationError,
     SYSTEM_INSTRUCTION,
     VOICE_PARSER_SYSTEM_INSTRUCTION,
+    get_current_request_id,
     is_request_cancelled,
 )
 
@@ -242,40 +243,40 @@ class OpenRouterProvider(BaseAIProvider):
         retries = self._max_retries
         total_attempts = retries + 1
 
+        attempt_start_times: dict[int, float] = {}
         overall_start_time = time.perf_counter()
 
         def _before_attempt(retry_state: tenacity.RetryCallState) -> None:
             if is_request_cancelled(is_cancelled):
                 raise AIRequestCancelledError("Client disconnected / request cancelled.", provider=self.name)
+            attempt_num = retry_state.attempt_number
+            attempt_start_times[attempt_num] = time.perf_counter()
             logger.info(
-                "OpenRouter API [%s] call starting (attempt %d of %d, model=%s)",
+                "[Timing][%s] OpenRouter API [%s] call starting (attempt %d of %d, model=%s)",
+                get_current_request_id(),
                 operation_name,
-                retry_state.attempt_number,
+                attempt_num,
                 total_attempts,
                 self._model,
             )
-
-        def _after_attempt(retry_state: tenacity.RetryCallState) -> None:
-            if not retry_state.outcome.failed:
-                total_elapsed = time.perf_counter() - overall_start_time
-                logger.info(
-                    "OpenRouter API [%s] succeeded on attempt %d of %d (total elapsed: %.2fs)",
-                    operation_name,
-                    retry_state.attempt_number,
-                    total_attempts,
-                    total_elapsed,
-                )
 
         def _before_sleep(retry_state: tenacity.RetryCallState) -> None:
             if is_request_cancelled(is_cancelled):
                 raise AIRequestCancelledError("Client disconnected / request cancelled.", provider=self.name)
             exc = retry_state.outcome.exception()
+            attempt_num = retry_state.attempt_number
+            t_start = attempt_start_times.get(attempt_num, overall_start_time)
+            attempt_elapsed = time.perf_counter() - t_start
+            sleep_sec = retry_state.upcoming_sleep
             logger.warning(
-                "OpenRouter API [%s] attempt %d of %d failed with transient error [%s]. Retrying...",
+                "[Timing][%s] OpenRouter API [%s] attempt %d of %d failed with transient error [%s] in %.3fs. Retrying in %.2fs...",
+                get_current_request_id(),
                 operation_name,
-                retry_state.attempt_number,
+                attempt_num,
                 total_attempts,
                 type(exc).__name__,
+                attempt_elapsed,
+                sleep_sec,
             )
 
         retrying = tenacity.Retrying(
@@ -284,14 +285,35 @@ class OpenRouterProvider(BaseAIProvider):
             retry=tenacity.retry_if_exception(is_retryable_openrouter_error),
             reraise=True,
             before=_before_attempt,
-            after=_after_attempt,
             before_sleep=_before_sleep,
         )
 
         try:
             response = retrying(fn)
+            attempt_num = retrying.statistics.get("attempt_number", 1)
+            total_elapsed = time.perf_counter() - overall_start_time
+            t_attempt_start = attempt_start_times.get(attempt_num, overall_start_time)
+            attempt_elapsed = time.perf_counter() - t_attempt_start
+            logger.info(
+                "[Timing][%s] OpenRouter API [%s] request succeeded on attempt %d of %d (attempt elapsed: %.3fs, total elapsed: %.3fs)",
+                get_current_request_id(),
+                operation_name,
+                attempt_num,
+                total_attempts,
+                attempt_elapsed,
+                total_elapsed,
+            )
             response.raise_for_status()
-            return response.json()
+            t_body_start = time.perf_counter()
+            data = response.json()
+            t_body_elapsed = time.perf_counter() - t_body_start
+            logger.info(
+                "[Timing][%s] OpenRouter [%s] response body read and JSON decoding took %.4fs",
+                get_current_request_id(),
+                operation_name,
+                t_body_elapsed,
+            )
+            return data
         except httpx.HTTPStatusError as http_err:
             status_code = http_err.response.status_code
             safe_err = f"HTTP {status_code}"
@@ -424,15 +446,26 @@ class OpenRouterProvider(BaseAIProvider):
         effective_timeout = timeout_seconds if timeout_seconds is not None else self._timeout_seconds
 
         def _call_openrouter() -> httpx.Response:
-            return client.post(
+            t_req_start = time.perf_counter()
+            resp = client.post(
                 url,
                 headers={"Authorization": f"Bearer {api_key}"},
                 json=payload,
                 timeout=effective_timeout,
             )
+            t_req_elapsed = time.perf_counter() - t_req_start
+            logger.info(
+                "[Timing][%s] OpenRouter [%s] HTTP request completed in %.3fs (status: %d)",
+                get_current_request_id(),
+                "recognize_food",
+                t_req_elapsed,
+                resp.status_code,
+            )
+            return resp
 
         data = self._execute_with_retry("recognize_food", _call_openrouter, is_cancelled=is_cancelled)
 
+        t_parse_start = time.perf_counter()
         choices = data.get("choices", [])
         if not choices:
             raise ModelOutputValidationError(
@@ -488,9 +521,25 @@ class OpenRouterProvider(BaseAIProvider):
             parsed_raw["summary"] = ""
         if "warnings" not in parsed_raw or not isinstance(parsed_raw["warnings"], list):
             parsed_raw["warnings"] = []
+        t_parse_elapsed = time.perf_counter() - t_parse_start
+        logger.info(
+            "[Timing][%s] OpenRouter [%s] response JSON parsing took %.4fs",
+            get_current_request_id(),
+            "recognize_food",
+            t_parse_elapsed,
+        )
 
+        t_val_start = time.perf_counter()
         try:
-            return FoodRecognitionResponse.model_validate(parsed_raw)
+            validated = FoodRecognitionResponse.model_validate(parsed_raw)
+            t_val_elapsed = time.perf_counter() - t_val_start
+            logger.info(
+                "[Timing][%s] OpenRouter [%s] Pydantic validation took %.4fs",
+                get_current_request_id(),
+                "recognize_food",
+                t_val_elapsed,
+            )
+            return validated
         except ValidationError as val_err:
             raise ModelOutputValidationError(
                 f"OpenRouter response failed validation schema: {str(val_err)}",
@@ -552,15 +601,26 @@ class OpenRouterProvider(BaseAIProvider):
         effective_timeout = timeout_seconds if timeout_seconds is not None else self._timeout_seconds
 
         def _call_openrouter() -> httpx.Response:
-            return client.post(
+            t_req_start = time.perf_counter()
+            resp = client.post(
                 url,
                 headers={"Authorization": f"Bearer {api_key}"},
                 json=payload,
                 timeout=effective_timeout,
             )
+            t_req_elapsed = time.perf_counter() - t_req_start
+            logger.info(
+                "[Timing][%s] OpenRouter [%s] HTTP request completed in %.3fs (status: %d)",
+                get_current_request_id(),
+                "parse_voice_meal",
+                t_req_elapsed,
+                resp.status_code,
+            )
+            return resp
 
         data = self._execute_with_retry("parse_voice_meal", _call_openrouter, is_cancelled=is_cancelled)
 
+        t_parse_start = time.perf_counter()
         choices = data.get("choices", [])
         if not choices:
             raise ModelOutputValidationError(
@@ -614,9 +674,25 @@ class OpenRouterProvider(BaseAIProvider):
             parsed_raw["summary"] = ""
         if "warnings" not in parsed_raw or not isinstance(parsed_raw["warnings"], list):
             parsed_raw["warnings"] = []
+        t_parse_elapsed = time.perf_counter() - t_parse_start
+        logger.info(
+            "[Timing][%s] OpenRouter [%s] response JSON parsing took %.4fs",
+            get_current_request_id(),
+            "parse_voice_meal",
+            t_parse_elapsed,
+        )
 
+        t_val_start = time.perf_counter()
         try:
-            return VoiceMealParseResponse.model_validate(parsed_raw)
+            validated = VoiceMealParseResponse.model_validate(parsed_raw)
+            t_val_elapsed = time.perf_counter() - t_val_start
+            logger.info(
+                "[Timing][%s] OpenRouter [%s] Pydantic validation took %.4fs",
+                get_current_request_id(),
+                "parse_voice_meal",
+                t_val_elapsed,
+            )
+            return validated
         except ValidationError as val_err:
             raise ModelOutputValidationError(
                 f"OpenRouter voice parsing failed validation schema: {str(val_err)}",

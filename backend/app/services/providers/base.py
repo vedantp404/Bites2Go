@@ -95,6 +95,16 @@ current_cancellation_check: contextvars.ContextVar[Optional[Callable[[], bool]]]
     contextvars.ContextVar("current_cancellation_check", default=None)
 )
 
+current_request_id: contextvars.ContextVar[Optional[str]] = (
+    contextvars.ContextVar("current_request_id", default=None)
+)
+
+
+def get_current_request_id() -> str:
+    """Return the active correlation/request ID or a default fallback."""
+    req_id = current_request_id.get()
+    return req_id if req_id else "req-local"
+
 
 def is_request_cancelled(explicit_check: Optional[Callable[[], bool]] = None) -> bool:
     """Check whether the active request has been cancelled by client disconnect."""

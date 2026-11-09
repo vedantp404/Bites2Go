@@ -4,11 +4,13 @@ import asyncio
 import base64
 import logging
 import threading
+import time
 from typing import Optional
+import uuid
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel, Field
 
-from app.config import ConfigurationError
+from app.config import ConfigurationError, Settings, get_settings
 from app.models.food import (
     FoodRecognitionResponse,
     VoiceMealParseRequest,
@@ -29,6 +31,7 @@ from app.services.providers.base import (
     ModelOutputValidationError,
     RateLimitError,
     current_cancellation_check,
+    current_request_id,
 )
 from app.services.image import (
     ImageSizeExceededError,
@@ -61,6 +64,7 @@ async def recognize_food(
     request: Request,
     file: Optional[UploadFile] = File(None),
     gemini_service: GeminiService = Depends(get_gemini_service),
+    settings: Settings = Depends(get_settings),
 ) -> FoodRecognitionResponse:
     """Analyze an uploaded food image in-memory and return validated food components.
 
@@ -68,7 +72,13 @@ async def recognize_food(
     - Never persists photos to disk or external storage.
     - Supports bounded retries and failover between primary and secondary providers.
     - Aborts immediately if the client disconnects to prevent wasted AI spend.
+    - Enforces hard server deadline budgets and non-blocking monitor cleanup.
     """
+    t_endpoint_start = time.perf_counter()
+    req_id = request.headers.get("x-request-id") or uuid.uuid4().hex[:8]
+    req_id_token = current_request_id.set(req_id)
+    logger.info("[Timing][%s] Endpoint [recognize_food] started", req_id)
+
     if file is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -107,26 +117,55 @@ async def recognize_food(
     async def _monitor_disconnect() -> None:
         while not cancel_event.is_set():
             try:
-                if await request.is_disconnected():
+                disconnected = await asyncio.wait_for(request.is_disconnected(), timeout=0.5)
+                if disconnected:
                     cancel_event.set()
                     break
+            except asyncio.TimeoutError:
+                pass
             except Exception:
                 pass
             await asyncio.sleep(0.2)
 
     monitor_task = asyncio.create_task(_monitor_disconnect())
     token = current_cancellation_check.set(cancel_event.is_set)
+    server_deadline = settings.server_deadline_seconds
 
     try:
-        response = await asyncio.to_thread(
-            gemini_service.recognize_food,
-            sanitized_bytes,
-            mime_type=mime_type,
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                gemini_service.recognize_food,
+                sanitized_bytes,
+                mime_type=mime_type,
+            ),
+            timeout=server_deadline,
+        )
+        total_endpoint_elapsed = time.perf_counter() - t_endpoint_start
+        logger.info(
+            "[Timing][%s] Endpoint [%s] completed successfully in %.3fs (items: %d)",
+            req_id,
+            "recognize_food",
+            total_endpoint_elapsed,
+            len(response.items),
         )
         return response
 
+    except asyncio.TimeoutError as exc:
+        cancel_event.set()
+        elapsed = time.perf_counter() - t_endpoint_start
+        logger.warning(
+            "[Timing][%s] Food recognition exceeded server deadline budget of %.1fs (elapsed: %.2fs)",
+            req_id,
+            server_deadline,
+            elapsed,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="The AI food recognition service exceeded its overall server deadline budget. Please try again.",
+            headers={"Retry-After": "2", "X-Error-Category": "upstream_timeout"},
+        ) from exc
     except AIRequestCancelledError as exc:
-        logger.info("Food recognition cancelled due to client disconnect: %s", exc)
+        logger.info("[Timing][%s] Food recognition cancelled due to client disconnect: %s", req_id, exc)
         raise HTTPException(
             status_code=499,
             detail="Client disconnected before food recognition completed.",
@@ -134,7 +173,7 @@ async def recognize_food(
         ) from exc
     except asyncio.CancelledError:
         cancel_event.set()
-        logger.info("Food recognition request task was cancelled.")
+        logger.info("[Timing][%s] Food recognition request task was cancelled.", req_id)
         raise
     except ConfigurationError as exc:
         raise HTTPException(
@@ -184,13 +223,17 @@ async def recognize_food(
             detail="An unexpected error occurred during food recognition.",
         ) from exc
     finally:
+        t_cleanup_start = time.perf_counter()
         current_cancellation_check.reset(token)
         cancel_event.set()
         monitor_task.cancel()
         try:
-            await monitor_task
-        except asyncio.CancelledError:
+            await asyncio.wait_for(monitor_task, timeout=0.05)
+        except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
             pass
+        t_cleanup_elapsed = time.perf_counter() - t_cleanup_start
+        logger.info("[Timing][%s] Cancellation-monitor cleanup took %.4fs", req_id, t_cleanup_elapsed)
+        current_request_id.reset(req_id_token)
 
 
 @router.post(
@@ -203,8 +246,14 @@ async def recognize_food_base64(
     request: Request,
     payload: Base64ImagePayload,
     gemini_service: GeminiService = Depends(get_gemini_service),
+    settings: Settings = Depends(get_settings),
 ) -> FoodRecognitionResponse:
     """Analyze a base64-encoded food image string in-memory."""
+    t_endpoint_start = time.perf_counter()
+    req_id = request.headers.get("x-request-id") or uuid.uuid4().hex[:8]
+    req_id_token = current_request_id.set(req_id)
+    logger.info("[Timing][%s] Endpoint [recognize_food_base64] started", req_id)
+
     raw_b64 = payload.image_base64.strip()
     if "," in raw_b64:
         raw_b64 = raw_b64.split(",", 1)[1]
@@ -235,26 +284,55 @@ async def recognize_food_base64(
     async def _monitor_disconnect() -> None:
         while not cancel_event.is_set():
             try:
-                if await request.is_disconnected():
+                disconnected = await asyncio.wait_for(request.is_disconnected(), timeout=0.5)
+                if disconnected:
                     cancel_event.set()
                     break
+            except asyncio.TimeoutError:
+                pass
             except Exception:
                 pass
             await asyncio.sleep(0.2)
 
     monitor_task = asyncio.create_task(_monitor_disconnect())
     token = current_cancellation_check.set(cancel_event.is_set)
+    server_deadline = settings.server_deadline_seconds
 
     try:
-        response = await asyncio.to_thread(
-            gemini_service.recognize_food,
-            sanitized_bytes,
-            mime_type=mime_type,
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                gemini_service.recognize_food,
+                sanitized_bytes,
+                mime_type=mime_type,
+            ),
+            timeout=server_deadline,
+        )
+        total_endpoint_elapsed = time.perf_counter() - t_endpoint_start
+        logger.info(
+            "[Timing][%s] Endpoint [%s] completed successfully in %.3fs (items: %d)",
+            req_id,
+            "recognize_food_base64",
+            total_endpoint_elapsed,
+            len(response.items),
         )
         return response
 
+    except asyncio.TimeoutError as exc:
+        cancel_event.set()
+        elapsed = time.perf_counter() - t_endpoint_start
+        logger.warning(
+            "[Timing][%s] Food recognition base64 exceeded server deadline budget of %.1fs (elapsed: %.2fs)",
+            req_id,
+            server_deadline,
+            elapsed,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="The AI food recognition service exceeded its overall server deadline budget. Please try again.",
+            headers={"Retry-After": "2", "X-Error-Category": "upstream_timeout"},
+        ) from exc
     except AIRequestCancelledError as exc:
-        logger.info("Food recognition base64 cancelled due to client disconnect: %s", exc)
+        logger.info("[Timing][%s] Food recognition base64 cancelled due to client disconnect: %s", req_id, exc)
         raise HTTPException(
             status_code=499,
             detail="Client disconnected before food recognition completed.",
@@ -262,7 +340,7 @@ async def recognize_food_base64(
         ) from exc
     except asyncio.CancelledError:
         cancel_event.set()
-        logger.info("Food recognition base64 request task was cancelled.")
+        logger.info("[Timing][%s] Food recognition base64 request task was cancelled.", req_id)
         raise
     except ConfigurationError as exc:
         raise HTTPException(
@@ -312,13 +390,17 @@ async def recognize_food_base64(
             detail="An unexpected error occurred during food recognition.",
         ) from exc
     finally:
+        t_cleanup_start = time.perf_counter()
         current_cancellation_check.reset(token)
         cancel_event.set()
         monitor_task.cancel()
         try:
-            await monitor_task
-        except asyncio.CancelledError:
+            await asyncio.wait_for(monitor_task, timeout=0.05)
+        except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
             pass
+        t_cleanup_elapsed = time.perf_counter() - t_cleanup_start
+        logger.info("[Timing][%s] Cancellation-monitor cleanup took %.4fs", req_id, t_cleanup_elapsed)
+        current_request_id.reset(req_id_token)
 
 
 @router.post(
@@ -331,6 +413,7 @@ async def parse_voice_meal(
     request: Request,
     payload: VoiceMealParseRequest,
     gemini_service: GeminiService = Depends(get_gemini_service),
+    settings: Settings = Depends(get_settings),
 ) -> VoiceMealParseResponse:
     """Analyze a spoken food description transcript and return validated food components.
 
@@ -339,7 +422,13 @@ async def parse_voice_meal(
     - Resolves in-flight corrections (e.g. 'one roti, actually make that two').
     - Distinguishes raw vs cooked state.
     - Cancels immediately if client disconnects.
+    - Enforces hard server deadline budgets and non-blocking monitor cleanup.
     """
+    t_endpoint_start = time.perf_counter()
+    req_id = request.headers.get("x-request-id") or uuid.uuid4().hex[:8]
+    req_id_token = current_request_id.set(req_id)
+    logger.info("[Timing][%s] Endpoint [parse_voice_meal] started", req_id)
+
     cleaned_transcript = payload.transcript.strip()
     if not cleaned_transcript:
         raise HTTPException(
@@ -352,26 +441,55 @@ async def parse_voice_meal(
     async def _monitor_disconnect() -> None:
         while not cancel_event.is_set():
             try:
-                if await request.is_disconnected():
+                disconnected = await asyncio.wait_for(request.is_disconnected(), timeout=0.5)
+                if disconnected:
                     cancel_event.set()
                     break
+            except asyncio.TimeoutError:
+                pass
             except Exception:
                 pass
             await asyncio.sleep(0.2)
 
     monitor_task = asyncio.create_task(_monitor_disconnect())
     token = current_cancellation_check.set(cancel_event.is_set)
+    server_deadline = settings.voice_server_deadline_seconds
 
     try:
-        response = await asyncio.to_thread(
-            gemini_service.parse_voice_meal,
-            transcript=cleaned_transcript,
-            meal_context=payload.meal_context,
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                gemini_service.parse_voice_meal,
+                transcript=cleaned_transcript,
+                meal_context=payload.meal_context,
+            ),
+            timeout=server_deadline,
+        )
+        total_endpoint_elapsed = time.perf_counter() - t_endpoint_start
+        logger.info(
+            "[Timing][%s] Endpoint [%s] completed successfully in %.3fs (items: %d)",
+            req_id,
+            "parse_voice_meal",
+            total_endpoint_elapsed,
+            len(response.items),
         )
         return response
 
+    except asyncio.TimeoutError as exc:
+        cancel_event.set()
+        elapsed = time.perf_counter() - t_endpoint_start
+        logger.warning(
+            "[Timing][%s] Voice meal parsing exceeded server deadline budget of %.1fs (elapsed: %.2fs)",
+            req_id,
+            server_deadline,
+            elapsed,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="The AI voice parsing service exceeded its overall server deadline budget. Please try again.",
+            headers={"Retry-After": "2", "X-Error-Category": "upstream_timeout"},
+        ) from exc
     except AIRequestCancelledError as exc:
-        logger.info("Voice meal parsing cancelled due to client disconnect: %s", exc)
+        logger.info("[Timing][%s] Voice meal parsing cancelled due to client disconnect: %s", req_id, exc)
         raise HTTPException(
             status_code=499,
             detail="Client disconnected before voice meal parsing completed.",
@@ -379,7 +497,7 @@ async def parse_voice_meal(
         ) from exc
     except asyncio.CancelledError:
         cancel_event.set()
-        logger.info("Voice meal parsing request task was cancelled.")
+        logger.info("[Timing][%s] Voice meal parsing request task was cancelled.", req_id)
         raise
     except ConfigurationError as exc:
         raise HTTPException(
@@ -429,10 +547,14 @@ async def parse_voice_meal(
             detail="An unexpected error occurred during voice food parsing.",
         ) from exc
     finally:
+        t_cleanup_start = time.perf_counter()
         current_cancellation_check.reset(token)
         cancel_event.set()
         monitor_task.cancel()
         try:
-            await monitor_task
-        except asyncio.CancelledError:
+            await asyncio.wait_for(monitor_task, timeout=0.05)
+        except (asyncio.TimeoutError, asyncio.CancelledError, Exception):
             pass
+        t_cleanup_elapsed = time.perf_counter() - t_cleanup_start
+        logger.info("[Timing][%s] Cancellation-monitor cleanup took %.4fs", req_id, t_cleanup_elapsed)
+        current_request_id.reset(req_id_token)

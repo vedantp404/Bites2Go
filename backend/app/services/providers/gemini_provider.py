@@ -23,6 +23,7 @@ from app.services.providers.base import (
     ModelOutputValidationError,
     SYSTEM_INSTRUCTION,
     VOICE_PARSER_SYSTEM_INSTRUCTION,
+    get_current_request_id,
     is_request_cancelled,
 )
 
@@ -151,27 +152,13 @@ class GeminiProvider(BaseAIProvider):
             attempt_num = retry_state.attempt_number
             attempt_start_times[attempt_num] = time.perf_counter()
             logger.info(
-                "Gemini API [%s] call starting (attempt %d of %d, model=%s)",
+                "[Timing][%s] Gemini API [%s] call starting (attempt %d of %d, model=%s)",
+                get_current_request_id(),
                 operation_name,
                 attempt_num,
                 total_attempts,
                 self._model,
             )
-
-        def _after_attempt(retry_state: tenacity.RetryCallState) -> None:
-            attempt_num = retry_state.attempt_number
-            t_start = attempt_start_times.get(attempt_num, overall_start_time)
-            attempt_elapsed = time.perf_counter() - t_start
-            if not retry_state.outcome.failed:
-                total_elapsed = time.perf_counter() - overall_start_time
-                logger.info(
-                    "Gemini API [%s] call succeeded on attempt %d of %d (attempt elapsed: %.2fs, total elapsed: %.2fs)",
-                    operation_name,
-                    attempt_num,
-                    total_attempts,
-                    attempt_elapsed,
-                    total_elapsed,
-                )
 
         def _before_sleep(retry_state: tenacity.RetryCallState) -> None:
             if is_request_cancelled(is_cancelled):
@@ -183,8 +170,9 @@ class GeminiProvider(BaseAIProvider):
             safe_err = _get_safe_error_summary(exc)
             sleep_duration = retry_state.upcoming_sleep
             logger.warning(
-                "Gemini API [%s] attempt %d of %d failed with transient error [%s] in %.2fs. "
+                "[Timing][%s] Gemini API [%s] attempt %d of %d failed with transient error [%s] in %.2fs. "
                 "Retrying in %.2fs (next attempt: %d of %d)...",
+                get_current_request_id(),
                 operation_name,
                 attempt_num,
                 total_attempts,
@@ -206,17 +194,31 @@ class GeminiProvider(BaseAIProvider):
             retry=tenacity.retry_if_exception(self.is_retryable_error),
             reraise=True,
             before=_before_attempt,
-            after=_after_attempt,
             before_sleep=_before_sleep,
         )
 
         try:
-            return retrying(fn)
+            result = retrying(fn)
+            attempt_num = retrying.statistics.get("attempt_number", 1)
+            total_elapsed = time.perf_counter() - overall_start_time
+            t_start = attempt_start_times.get(attempt_num, overall_start_time)
+            attempt_elapsed = time.perf_counter() - t_start
+            logger.info(
+                "[Timing][%s] Gemini API [%s] request succeeded on attempt %d of %d (attempt elapsed: %.3fs, total elapsed: %.3fs)",
+                get_current_request_id(),
+                operation_name,
+                attempt_num,
+                total_attempts,
+                attempt_elapsed,
+                total_elapsed,
+            )
+            return result
         except Exception as final_exc:
             total_elapsed = time.perf_counter() - overall_start_time
             safe_err = _get_safe_error_summary(final_exc)
             logger.error(
-                "Gemini API [%s] call terminated after %.2fs and %d attempt(s): %s",
+                "[Timing][%s] Gemini API [%s] call terminated after %.2fs and %d attempt(s): %s",
+                get_current_request_id(),
                 operation_name,
                 total_elapsed,
                 len(attempt_start_times) or 1,
@@ -331,6 +333,7 @@ class GeminiProvider(BaseAIProvider):
         if not response or not response.text:
             raise ModelOutputValidationError("The AI service returned an empty response.", provider=self.name)
 
+        t_parse_start = time.perf_counter()
         raw_text = response.text.strip()
         if raw_text.startswith("```json"):
             raw_text = raw_text[7:]
@@ -339,9 +342,14 @@ class GeminiProvider(BaseAIProvider):
         if raw_text.endswith("```"):
             raw_text = raw_text[:-3]
         raw_text = raw_text.strip()
+        t_parse_elapsed = time.perf_counter() - t_parse_start
+        logger.info("[Timing][%s] Gemini [%s] response JSON text cleaning took %.4fs", get_current_request_id(), "recognize_food", t_parse_elapsed)
 
+        t_val_start = time.perf_counter()
         try:
             parsed_data = FoodRecognitionResponse.model_validate_json(raw_text)
+            t_val_elapsed = time.perf_counter() - t_val_start
+            logger.info("[Timing][%s] Gemini [%s] Pydantic validation took %.4fs", get_current_request_id(), "recognize_food", t_val_elapsed)
             return parsed_data
         except ValidationError as val_err:
             try:
@@ -349,7 +357,10 @@ class GeminiProvider(BaseAIProvider):
                 if isinstance(data, dict):
                     if "items" not in data and "candidates" in data:
                         data["items"] = data.pop("candidates")
-                    return FoodRecognitionResponse.model_validate(data)
+                    parsed_data = FoodRecognitionResponse.model_validate(data)
+                    t_val_elapsed = time.perf_counter() - t_val_start
+                    logger.info("[Timing][%s] Gemini [%s] Pydantic validation took %.4fs", get_current_request_id(), "recognize_food", t_val_elapsed)
+                    return parsed_data
             except Exception:
                 pass
             raise ModelOutputValidationError(
@@ -400,6 +411,7 @@ class GeminiProvider(BaseAIProvider):
         if not response or not response.text:
             raise ModelOutputValidationError("The AI service returned an empty response.", provider=self.name)
 
+        t_parse_start = time.perf_counter()
         raw_text = response.text.strip()
         if raw_text.startswith("```json"):
             raw_text = raw_text[7:]
@@ -408,10 +420,15 @@ class GeminiProvider(BaseAIProvider):
         if raw_text.endswith("```"):
             raw_text = raw_text[:-3]
         raw_text = raw_text.strip()
+        t_parse_elapsed = time.perf_counter() - t_parse_start
+        logger.info("[Timing][%s] Gemini [%s] response JSON text cleaning took %.4fs", get_current_request_id(), "parse_voice_meal", t_parse_elapsed)
 
+        t_val_start = time.perf_counter()
         try:
             parsed_data = VoiceMealParseResponse.model_validate_json(raw_text)
             parsed_data.transcript = transcript.strip()
+            t_val_elapsed = time.perf_counter() - t_val_start
+            logger.info("[Timing][%s] Gemini [%s] Pydantic validation took %.4fs", get_current_request_id(), "parse_voice_meal", t_val_elapsed)
             return parsed_data
         except ValidationError as val_err:
             try:
@@ -419,7 +436,10 @@ class GeminiProvider(BaseAIProvider):
                 if isinstance(data, dict):
                     if "transcript" not in data:
                         data["transcript"] = transcript.strip()
-                    return VoiceMealParseResponse.model_validate(data)
+                    parsed_data = VoiceMealParseResponse.model_validate(data)
+                    t_val_elapsed = time.perf_counter() - t_val_start
+                    logger.info("[Timing][%s] Gemini [%s] Pydantic validation took %.4fs", get_current_request_id(), "parse_voice_meal", t_val_elapsed)
+                    return parsed_data
             except Exception:
                 pass
             raise ModelOutputValidationError(
