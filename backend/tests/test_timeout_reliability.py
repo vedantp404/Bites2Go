@@ -570,3 +570,351 @@ def test_fallback_timing_logs_emitted_on_failover(
         assert any("[Timing][test-failover-req] Fallback start: switching from primary [gemini] to fallback [openrouter]" in msg for msg in caplog.messages)
     finally:
         current_request_id.reset(token)
+
+
+# ---------------------------------------------------------------------------
+# Test 15: DualProviderService disables retries when fallback is active
+# ---------------------------------------------------------------------------
+def test_dual_provider_disables_retries_when_fallback_active(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When fallback is enabled and configured, both providers must use 0 retries to prevent budget exhaustion."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test-key")
+    monkeypatch.setenv("AI_FALLBACK_ENABLED", "true")
+    settings = Settings()
+
+    service = DualProviderService(settings=settings)
+
+    assert service._gemini._max_retries == 0
+    assert service._openrouter._max_retries == 0
+
+
+# ---------------------------------------------------------------------------
+# Test 16: DualProviderService preserves retries when fallback is disabled
+# ---------------------------------------------------------------------------
+def test_dual_provider_preserves_retries_when_fallback_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When fallback is disabled, primary provider retains configured retries for resilience."""
+    monkeypatch.setenv("AI_FALLBACK_ENABLED", "false")
+    settings = Settings()
+
+    service = DualProviderService(settings=settings)
+
+    assert service._gemini._max_retries == settings.gemini_max_retries
+
+
+# ---------------------------------------------------------------------------
+# Test 17: Photo recognition budget allocation prevents fallback starvation
+# ---------------------------------------------------------------------------
+def test_recognize_food_budget_allocation_prevents_fallback_starvation(
+    sample_jpeg_bytes: bytes,
+    sample_candidate: FoodItemCandidate,
+) -> None:
+    """Primary provider must be capped to reserve sufficient deadline budget for fallback."""
+    mock_primary = MagicMock(spec=BaseAIProvider)
+    mock_primary.name = "gemini"
+    mock_primary.is_configured = True
+
+    captured_primary_timeout = {}
+
+    def mock_primary_fail(*args, **kwargs):
+        captured_primary_timeout["timeout"] = kwargs.get("timeout_seconds")
+        raise AIUnavailableError("Gemini 503 high demand", provider="gemini", code=503)
+
+    mock_primary.recognize_food.side_effect = mock_primary_fail
+
+    mock_fallback = MagicMock(spec=BaseAIProvider)
+    mock_fallback.name = "openrouter"
+    mock_fallback.is_configured = True
+    mock_fallback.recognize_food.return_value = FoodRecognitionResponse(
+        success=True,
+        summary="Paneer Butter Masala",
+        items=[sample_candidate],
+    )
+
+    settings = Settings()
+    service = DualProviderService(
+        gemini_provider=mock_primary,
+        openrouter_provider=mock_fallback,
+        settings=settings,
+    )
+
+    # 35.0s budget: primary must be capped (<= 19.0s) so fallback gets >= 15.0s
+    res = service.recognize_food(sample_jpeg_bytes, deadline_seconds=35.0)
+
+    assert res.success is True
+    assert captured_primary_timeout["timeout"] <= 19.0
+
+    _, fb_kwargs = mock_fallback.recognize_food.call_args
+    assert fb_kwargs["timeout_seconds"] >= 15.0
+
+
+# ---------------------------------------------------------------------------
+# Test 18: Voice meal parsing budget allocation prevents fallback starvation
+# ---------------------------------------------------------------------------
+def test_parse_voice_meal_budget_allocation_prevents_fallback_starvation(
+    sample_voice_item: ParsedVoiceFoodItem,
+) -> None:
+    """Voice parsing primary must be capped to reserve sufficient deadline budget for fallback."""
+    mock_primary = MagicMock(spec=BaseAIProvider)
+    mock_primary.name = "gemini"
+    mock_primary.is_configured = True
+
+    captured_primary_timeout = {}
+
+    def mock_primary_fail(*args, **kwargs):
+        captured_primary_timeout["timeout"] = kwargs.get("timeout_seconds")
+        raise AIUnavailableError("Gemini 503 high demand", provider="gemini", code=503)
+
+    mock_primary.parse_voice_meal.side_effect = mock_primary_fail
+
+    mock_fallback = MagicMock(spec=BaseAIProvider)
+    mock_fallback.name = "openrouter"
+    mock_fallback.is_configured = True
+    mock_fallback.parse_voice_meal.return_value = VoiceMealParseResponse(
+        success=True,
+        transcript="2 chapatis",
+        summary="2 chapatis",
+        items=[sample_voice_item],
+    )
+
+    settings = Settings()
+    service = DualProviderService(
+        gemini_provider=mock_primary,
+        openrouter_provider=mock_fallback,
+        settings=settings,
+    )
+
+    # 32.0s budget: primary must be capped (<= 14.0s) so fallback gets >= 14.0s
+    res = service.parse_voice_meal(transcript="2 chapatis", deadline_seconds=32.0)
+
+    assert res.success is True
+    assert captured_primary_timeout["timeout"] <= 14.0
+
+    _, fb_kwargs = mock_fallback.parse_voice_meal.call_args
+    assert fb_kwargs["timeout_seconds"] >= 14.0
+
+
+# ---------------------------------------------------------------------------
+# Test 19: End-to-end FastAPI voice parsing failover under server deadline
+# ---------------------------------------------------------------------------
+def test_end_to_end_fastapi_voice_parsing_failover(
+    sample_voice_item: ParsedVoiceFoodItem,
+) -> None:
+    """When Gemini returns 503, FastAPI endpoint cleanly fails over to OpenRouter without 504."""
+    from app.main import app
+
+    mock_primary = MagicMock(spec=BaseAIProvider)
+    mock_primary.name = "gemini"
+    mock_primary.is_configured = True
+    mock_primary.parse_voice_meal.side_effect = AIUnavailableError(
+        "Gemini 503 UNAVAILABLE", provider="gemini", code=503
+    )
+
+    mock_fallback = MagicMock(spec=BaseAIProvider)
+    mock_fallback.name = "openrouter"
+    mock_fallback.is_configured = True
+    mock_fallback.parse_voice_meal.return_value = VoiceMealParseResponse(
+        success=True,
+        transcript="2 chapatis",
+        summary="2 chapatis",
+        items=[sample_voice_item],
+    )
+
+    settings = Settings()
+    mock_service = DualProviderService(
+        gemini_provider=mock_primary,
+        openrouter_provider=mock_fallback,
+        settings=settings,
+    )
+
+    app.dependency_overrides[get_ai_service] = lambda: mock_service
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/v1/parse-voice-meal",
+            json={"transcript": "2 chapatis"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert len(data["items"]) == 1
+        assert data["items"][0]["food_description"] == "2 chapatis"
+    finally:
+        app.dependency_overrides.pop(get_ai_service, None)
+
+
+# ---------------------------------------------------------------------------
+# Test 20: End-to-end FastAPI photo recognition failover under server deadline
+# ---------------------------------------------------------------------------
+def test_end_to_end_fastapi_photo_recognition_failover(
+    sample_jpeg_bytes: bytes,
+    sample_candidate: FoodItemCandidate,
+) -> None:
+    """When Gemini times out, FastAPI endpoint cleanly fails over to OpenRouter without 504."""
+    from app.main import app
+
+    mock_primary = MagicMock(spec=BaseAIProvider)
+    mock_primary.name = "gemini"
+    mock_primary.is_configured = True
+    mock_primary.recognize_food.side_effect = AITimeoutError(
+        "Gemini timed out", provider="gemini"
+    )
+
+    mock_fallback = MagicMock(spec=BaseAIProvider)
+    mock_fallback.name = "openrouter"
+    mock_fallback.is_configured = True
+    mock_fallback.recognize_food.return_value = FoodRecognitionResponse(
+        success=True,
+        summary="Paneer Butter Masala",
+        items=[sample_candidate],
+    )
+
+    settings = Settings()
+    mock_service = DualProviderService(
+        gemini_provider=mock_primary,
+        openrouter_provider=mock_fallback,
+        settings=settings,
+    )
+
+    app.dependency_overrides[get_ai_service] = lambda: mock_service
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/v1/recognize-food",
+            files={"file": ("food.jpg", sample_jpeg_bytes, "image/jpeg")},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert len(data["items"]) == 1
+        assert data["items"][0]["food_name"] == "Paneer Butter Masala"
+    finally:
+        app.dependency_overrides.pop(get_ai_service, None)
+
+
+# ---------------------------------------------------------------------------
+# Test 21: OpenRouter payload includes max_tokens and reasoning effort low
+# ---------------------------------------------------------------------------
+def test_openrouter_payload_includes_bounded_tokens_and_reasoning_effort(
+    sample_jpeg_bytes: bytes,
+) -> None:
+    """Verify OpenRouter requests include max_tokens and reasoning: {effort: low} to prevent latency spikes."""
+    from app.services.providers.openrouter_provider import OpenRouterProvider
+    import httpx
+
+    captured_payloads = []
+
+    def mock_post(url, *args, **kwargs):
+        payload = kwargs.get("json", {})
+        captured_payloads.append(payload)
+        # Return valid mock response
+        mock_resp = MagicMock(spec=httpx.Response)
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"success": true, "items": [{"food_name": "Roti", "estimated_quantity": 1, "unit": "piece", "estimated_grams": 40, "calories": 100, "protein": 3, "carbohydrates": 20, "fat": 1}]}'
+                    }
+                }
+            ]
+        }
+        return mock_resp
+
+    mock_client = MagicMock(spec=httpx.Client)
+    mock_client.post.side_effect = mock_post
+
+    settings = Settings()
+    provider = OpenRouterProvider(
+        api_key="sk-test",
+        settings=settings,
+        http_client=mock_client,
+    )
+
+    # 1. Photo recognition
+    provider.recognize_food(sample_jpeg_bytes)
+    assert len(captured_payloads) == 1
+    assert captured_payloads[0].get("max_tokens") == 1200
+    assert captured_payloads[0].get("reasoning") == {"effort": "low"}
+
+    # 2. Voice parsing
+    mock_client.post.side_effect = mock_post
+    mock_resp_voice = MagicMock(spec=httpx.Response)
+    mock_resp_voice.status_code = 200
+    mock_resp_voice.json.return_value = {
+        "choices": [
+            {
+                "message": {
+                    "content": '{"success": true, "transcript": "2 rotis", "summary": "2 rotis", "items": [{"food_description": "2 rotis", "quantity": 2, "unit": "piece", "estimated_grams": 80, "calories": 200, "protein": 6, "carbohydrates": 40, "fat": 2}]}'
+                }
+            }
+        ]
+    }
+    mock_client.post.side_effect = lambda *a, **kw: (captured_payloads.append(kw.get("json", {})), mock_resp_voice)[1]
+    provider.parse_voice_meal(transcript="2 rotis")
+    assert len(captured_payloads) == 2
+    assert captured_payloads[1].get("max_tokens") == 1200
+    assert captured_payloads[1].get("reasoning") == {"effort": "low"}
+
+
+# ---------------------------------------------------------------------------
+# Test 22: Slow OpenRouter response body completion raises AITimeoutError
+# ---------------------------------------------------------------------------
+def test_slow_openrouter_response_body_raises_timeout_error(
+    sample_jpeg_bytes: bytes,
+) -> None:
+    """When OpenRouter socket hangs or times out during body read, AITimeoutError is raised."""
+    from app.services.providers.openrouter_provider import OpenRouterProvider
+    import httpx
+
+    mock_client = MagicMock(spec=httpx.Client)
+    mock_client.post.side_effect = httpx.ReadTimeout("Socket read timed out after 18.0s")
+
+    settings = Settings()
+    provider = OpenRouterProvider(
+        api_key="sk-test",
+        settings=settings,
+        http_client=mock_client,
+    )
+
+    with pytest.raises(AITimeoutError) as exc_info:
+        provider.recognize_food(sample_jpeg_bytes, timeout_seconds=18.0)
+
+    assert "timed out" in str(exc_info.value).lower()
+    assert exc_info.value.provider == "openrouter"
+
+
+# ---------------------------------------------------------------------------
+# Test 23: Both providers timing out raises AIAllProvidersFailedError
+# ---------------------------------------------------------------------------
+def test_both_providers_timing_out_raises_all_providers_failed(
+    sample_jpeg_bytes: bytes,
+) -> None:
+    """When primary times out and fallback also times out, AIAllProvidersFailedError is raised."""
+    from app.services.providers.base import AIAllProvidersFailedError
+
+    mock_primary = MagicMock(spec=BaseAIProvider)
+    mock_primary.name = "gemini"
+    mock_primary.is_configured = True
+    mock_primary.recognize_food.side_effect = AITimeoutError("Gemini timed out", provider="gemini")
+
+    mock_fallback = MagicMock(spec=BaseAIProvider)
+    mock_fallback.name = "openrouter"
+    mock_fallback.is_configured = True
+    mock_fallback.recognize_food.side_effect = AITimeoutError("OpenRouter timed out", provider="openrouter")
+
+    settings = Settings()
+    service = DualProviderService(
+        gemini_provider=mock_primary,
+        openrouter_provider=mock_fallback,
+        settings=settings,
+    )
+
+    with pytest.raises(AIAllProvidersFailedError) as exc_info:
+        service.recognize_food(sample_jpeg_bytes)
+
+    err = exc_info.value
+    assert err.primary_provider == "gemini"
+    assert err.fallback_provider == "openrouter"
+    assert isinstance(err.primary_error, AITimeoutError)
+    assert isinstance(err.fallback_error, AITimeoutError)
+
+

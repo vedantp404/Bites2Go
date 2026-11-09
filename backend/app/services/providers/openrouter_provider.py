@@ -204,6 +204,9 @@ class OpenRouterProvider(BaseAIProvider):
         self._max_retries = (
             max_retries if max_retries is not None else self._settings.openrouter_max_retries
         )
+        self._max_tokens = (
+            getattr(self._settings, "openrouter_max_tokens", 1200)
+        )
         self._client = http_client
 
     @property
@@ -439,6 +442,8 @@ class OpenRouterProvider(BaseAIProvider):
             "messages": messages,
             "response_format": {"type": "json_object"},
             "temperature": 0.2,
+            "max_tokens": self._max_tokens,
+            "reasoning": {"effort": "low"},
         }
 
         url = f"{self._base_url}/chat/completions"
@@ -594,6 +599,8 @@ class OpenRouterProvider(BaseAIProvider):
             "messages": messages,
             "response_format": {"type": "json_object"},
             "temperature": 0.2,
+            "max_tokens": self._max_tokens,
+            "reasoning": {"effort": "low"},
         }
 
         url = f"{self._base_url}/chat/completions"

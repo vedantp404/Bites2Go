@@ -43,8 +43,8 @@ class Settings:
         # Max upload size: 10 MB
         self.max_image_size_bytes: int = int(os.getenv("MAX_IMAGE_SIZE_BYTES", str(10 * 1024 * 1024)))
         
-        # Request timeout in seconds per attempt (default 12.0s so bounded attempts fit within mobile timeout)
-        self.gemini_timeout_seconds: float = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "12.0"))
+        # Request timeout in seconds per attempt (default 14.0s so bounded attempts fit within mobile timeout)
+        self.gemini_timeout_seconds: float = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "14.0"))
         
         # Max automatic retries for transient failures (default 2 additional attempts = 3 attempts total)
         self.gemini_max_retries: int = int(os.getenv("GEMINI_MAX_RETRIES", "2"))
@@ -57,7 +57,7 @@ class Settings:
         
         # Global server-side request deadline budgets (must complete before mobile AbortController timeouts: 45s photo / 40s voice)
         self.server_deadline_seconds: float = float(os.getenv("SERVER_DEADLINE_SECONDS", "35.0"))
-        self.voice_server_deadline_seconds: float = float(os.getenv("VOICE_SERVER_DEADLINE_SECONDS", "30.0"))
+        self.voice_server_deadline_seconds: float = float(os.getenv("VOICE_SERVER_DEADLINE_SECONDS", "32.0"))
 
         # Provider architecture configuration
         self.ai_primary_provider: str = os.getenv("AI_PRIMARY_PROVIDER", "gemini").lower()
@@ -66,8 +66,9 @@ class Settings:
         # OpenRouter fallback configuration
         self.openrouter_model: str = os.getenv("OPENROUTER_MODEL", "openrouter/free")
         self.openrouter_base_url: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
-        self.openrouter_timeout_seconds: float = float(os.getenv("OPENROUTER_TIMEOUT_SECONDS", "15.0"))
+        self.openrouter_timeout_seconds: float = float(os.getenv("OPENROUTER_TIMEOUT_SECONDS", "18.0"))
         self.openrouter_max_retries: int = int(os.getenv("OPENROUTER_MAX_RETRIES", "1"))
+        self.openrouter_max_tokens: int = int(os.getenv("OPENROUTER_MAX_TOKENS", "1200"))
 
         # Deployed git commit hash (populated on Render via RENDER_GIT_COMMIT)
         self.git_commit: str = os.getenv("RENDER_GIT_COMMIT", os.getenv("GIT_COMMIT", "dev"))

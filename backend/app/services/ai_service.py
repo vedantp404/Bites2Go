@@ -37,15 +37,24 @@ class DualProviderService:
     ) -> None:
         self._settings = settings or get_settings()
         fallback_active = bool(
-            self._settings.ai_fallback_enabled and self._settings.is_openrouter_configured
+            self._settings.ai_fallback_enabled
+            and (
+                self._settings.is_openrouter_configured
+                if self._settings.ai_primary_provider == "gemini"
+                else self._settings.is_gemini_configured
+            )
         )
-        gemini_retries = 1 if fallback_active else self._settings.gemini_max_retries
+        gemini_retries = 0 if fallback_active else self._settings.gemini_max_retries
         self._gemini = gemini_provider or GeminiProvider(
             settings=self._settings,
             max_retries=gemini_retries,
             retry_on_rate_limit=not fallback_active,
         )
-        self._openrouter = openrouter_provider or OpenRouterProvider(settings=self._settings)
+        openrouter_retries = 0 if fallback_active else self._settings.openrouter_max_retries
+        self._openrouter = openrouter_provider or OpenRouterProvider(
+            settings=self._settings,
+            max_retries=openrouter_retries,
+        )
 
     @property
     def gemini(self) -> BaseAIProvider:
@@ -200,7 +209,9 @@ class DualProviderService:
             else self._settings.openrouter_timeout_seconds
         )
         rem = remaining_budget()
-        primary_timeout = min(primary_default_timeout, rem)
+        # When fallback is enabled, cap primary timeout to reserve at least 16.0s for fallback
+        max_primary_budget = max(total_budget - 16.0, 5.0) if fallback_available else rem
+        primary_timeout = min(primary_default_timeout, max_primary_budget, rem)
 
         try:
             return primary.recognize_food(
@@ -378,12 +389,14 @@ class DualProviderService:
 
         # Case 2: Attempt primary provider within budget
         primary_default_timeout = (
-            min(self._settings.gemini_timeout_seconds, 10.0)
+            min(self._settings.gemini_timeout_seconds, 14.0)
             if primary.name == "gemini"
             else self._settings.openrouter_timeout_seconds
         )
         rem = remaining_budget()
-        primary_timeout = min(primary_default_timeout, rem)
+        # When fallback is enabled, cap primary timeout to reserve at least 14.0s for fallback
+        max_primary_budget = max(total_budget - 14.0, 5.0) if fallback_available else rem
+        primary_timeout = min(primary_default_timeout, max_primary_budget, rem)
 
         try:
             return primary.parse_voice_meal(
