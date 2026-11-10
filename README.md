@@ -1,195 +1,181 @@
 # Bites2Go
 
-## My Meals & Recipes
+**Offline-first nutrition tracking for everyday meals, with optional AI-assisted food logging.**
 
-Open **Profile → My Meals & Recipes** (also available from Add Food). In **My Meals**, choose **Create meal / recipe**, add built-in or custom ingredients with gram quantities, enter the measured final meal weight and number of servings, and save. Saved meals show ingredients, combined calories/protein/carbs/fat/fiber and per-serving values. **Log Meal** opens one serving by default; enter 0.5, 1.5, 2 or another positive quantity, select the diary meal category, then confirm. It saves one combined diary entry using the selected date from Diary/Calendar, or today from Profile.
+Bites2Go is an Android-focused nutrition diary built with Expo, React Native and TypeScript. It helps you search foods, track portions and nutrients, create recipes, review your progress, and log meals by photo or spoken description. The diary is stored locally in SQLite; AI suggestions are **reviewed and confirmed by the user** before they become diary entries.
 
-Edit/delete through the meal card; previously logged nutrition remains unchanged. Ingredient snapshots also survive source changes. Unknown nutrients stay unknown. Existing recipes appear automatically; no migration or duplicate store. Core persistence is offline SQLite. For "My Power Sandwich", add missing bread/peanut butter/cashew ingredients as custom foods using their actual label data; no guessed catalogue values are added. Light/Dark/System themes use existing controls. AI/cloud remain disabled and the existing audit production blocker remains unresolved.
+> **Project status:** Active development / Android preview testing. The app and its FastAPI AI backend are functional, but AI provider availability, free-tier quotas, device acceptance, and production security hardening remain in progress. This repository is not presented as a production-ready medical or nutrition service.
 
-## Stage 11 — accepted for development; production release blocked
+## Features
 
-Local hardening and 96 passing tests are documented in [Release readiness](docs/RELEASE_READINESS.md). Types/lint/format, Doctor, configuration, Android export and local SQL policy tests pass. Dependency audit remains **3 high / 5 low** with no verified compatible patch; no dependency changes or live cloud. The user explicitly accepts these documented findings for the Stage 11 development commit only; this is not production security clearance. Physical Android acceptance and signed-build installation remain pending.
+- **Food diary:** Log breakfast, lunch, dinner and snacks; edit or delete portions; browse previous days in a calendar; view daily calories and available macros.
+- **Food search and portions:** Search a bundled food catalogue, choose gram quantities or supported servings, and review nutrient calculations before saving.
+- **My Foods, Meals & Recipes:** Create custom foods from label values, combine ingredients into saved meals, calculate yields and per-serving nutrition, and log fractional servings. Previously saved diary entries retain their original nutrition snapshots.
+- **Favourites and recents:** Return quickly to frequently used foods and recently logged items.
+- **Progress and insights:** Track weight, goals, BMI calculations, and historical nutrition summaries. Partial or unknown nutrient values remain explicitly unknown rather than being treated as zero.
+- **AI photo recognition:** Submit a meal photograph for suggested foods and quantities, then review and correct the results before logging.
+- **AI voice meal parsing:** Speak or type a meal description (including common Indian foods and Hinglish phrasing), then review the extracted items and portions.
+- **Offline-first experience:** Manual diary logging, saved foods and historical records work without a cloud AI connection. Light, dark and system themes are supported.
 
-## Stage 10: offline Nutrition Insights
-
-Open **Progress → Nutrition insights**. Choose the last 7 or 30 days (including today), or apply a custom local-date range up to 92 days. Browse daily calorie/macro/fiber snapshots and historical targets, nutrient trend dots with target markers, averages with eligibility counts, calorie/protein target consistency, neutral observations and actual in-range weight measurements. Add Food retains the displayed insight date; Open food diary opens the existing diary destination.
-
-Period calculations use a conservative proxy: past days with entries in all four meal sections and known values for the particular nutrient. There is no completed-diary flag, so this cannot prove completeness and excludes intentionally skipped meal sections. Today remains in progress. No-entry days are unknown intake, not zero; incomplete nutrients show daily known subtotals without percentages and are excluded from averages/consistency. [Insights rules](docs/INSIGHTS.md) explains the exact denominators, inclusive 90–110% target band and limitations.
-
-Baseline 79 tests; final 93/93 pass, plus TypeScript, lint, formatting, Expo Doctor 20/20, configuration validation, Android bundle export and existing local SQL integration checks. No dependency additions or database migrations. Cloud remains disabled. Audit unchanged at 5 low/3 high. Physical Android/TalkBack/theme verification remains pending in [Test Plan](docs/TEST_PLAN.md). Stage 11 is not started.
-
-## Stage 9: backend integration foundation (cloud not enabled)
-
-Selected Supabase after comparing official Supabase/Firebase guidance. No cloud configuration was available, so this implements the brief's tested-boundary fallback: diary-only sync planning with account consent/binding, conflict and stale-response protection, tombstones/retry handling, isolated checkpoint storage, and an owner-scoped PostgreSQL migration. Profile honestly shows offline/not-signed-in status. No records leave the device; SQLite startup and every existing offline feature remain unchanged.
-
-Authentication, secure session persistence, live transport, consent/conflict UI and the local transactional sync coordinator are not enabled or claimed complete. Public environment configuration alone does not activate them. [Backend setup and rollout](docs/BACKEND.md) gives the comparison, exact setup steps, data model, policies, export/deletion plan and remaining implementation gates.
-
-79 automated tests pass, including mocked sync and real SQLite preservation checks. The actual SQL migration also passed real temporary PostgreSQL policy/CAS tests with synthetic identities. Types, lint, formatting, Doctor 20/20, public config and Android export pass. Audit remains 5 low/3 high; no packages changed. Live Supabase Auth/PostgREST and physical Android acceptance remain pending. Stop after Stage 9; no Stage 10 work.
-
-## Stage 8: custom foods, recipes and favourites
-
-Open **Profile → My foods and recipes**, or **Add Food → My foods**, to create, view, edit or delete your own foods and recipes. Add Food now includes All, Favourites, Recent, Custom and Recipes filters. Favourite an item from its details; Recent lists up to 20 available items from actual confirmed diary activity. Search includes custom descriptions/brands.
-
-Custom food values describe a defined serving weight in grams; blank nutrients remain unknown and explicit zero stays zero. Recipes use built-in/custom ingredient snapshots, measured final yield in grams and a serving count. Review totals and per-serving estimates before saving. Log either grams or defined servings, review the selected meal/date and explicitly confirm. Editing or deleting a source never changes existing diary nutrition.
-
-A separate `bites2go.library.v1` document uses the existing SQLite KV repository pattern. Initialization is additive; diary, health and appearance data are untouched. No dependency changes, image uploads, nested recipes, backend or cloud sync. Bundled images/placeholders and Light/Dark/System are reused.
-
-66 tests, typecheck, lint, formatting, Expo Doctor 20/20, public configuration and Android bundle export passed. Audit remains 5 low / 3 high (existing tooling dependencies); no forced fixes. Native Android restart, layout and accessibility checks remain pending in [Test Plan](docs/TEST_PLAN.md). Stop after Stage 8; Stage 9 is not implemented.
-
-## Stage 7: weights, goals and BMI
-
-Progress now provides dated kg measurements, latest/all-time change, edit/delete confirmation, a chart of actual recorded points and gain/loss/maintenance goal tracking. Profile and Progress link to Goals and height. BMI uses saved height and latest dated weight, displays one decimal and makes no diagnosis or weight-category classification.
-
-Personal calorie/protein/carbohydrate/fat targets start unset. Save your own targets in Profile; Home, Diary and Calendar use the targets effective on the displayed date. Earlier goal history is preserved. Zero disables progress; unknown nutrients keep remaining amounts unavailable. Existing illustrative food values are unchanged.
-
-Weights, height and goals use a separate local SQLite KV document (`bites2go.health.v1`). Diary and appearance records are untouched. One weight per local date; future measurements are rejected. No backend, sync or new packages. [Architecture](docs/ARCHITECTURE.md) documents initialization, validation and conflict/retry handling; [Test Plan](docs/TEST_PLAN.md) contains the Android acceptance checklist.
-
-51 automated tests, TypeScript, lint, formatting, Expo Doctor 20/20, configuration validation and Android export passed during implementation. Audit remains 5 low / 3 high. Physical-device and rendered accessibility/theme verification is pending. Stage 8 is described above.
-
-## Visual redesign and appearance
-
-The app now uses the Vibrant Food App direction: warm light surfaces, charcoal dark surfaces, green actions, restrained orange accents, rounded cards, local food photography and consistent navigation.
-
-- Home: daily nutrition ring, macro bars, food inspiration and saved meals.
-- Search/details: category chips, thumbnails, prominent food images and unchanged portion confirmation.
-- Diary/calendar: themed meal groups, historical food images, date markers and a themed delete confirmation.
-- Profile: Appearance → Light, Dark or System (default), with the effective mode displayed. Changes apply immediately and persist locally. Progress now includes Stage 7 weight tracking.
-
-Appearance uses the separate SQLite key `bites2go.appearance.v1`; diary schema and nutrient snapshots are unchanged. The app waits for preference loading before mounting its screens. Persistence failures are reported in Profile with a retry by selecting the mode again.
-
-Two CC0 photos (apple/banana, about 228 KB total) are bundled for offline use; other foods use a reusable placeholder. See [image credits](apps/mobile/assets/food/README.md). Food values remain illustrative and photos do not represent exact portions.
-
-Run `cd apps/mobile` then `npm start -- --clear`, and scan with SDK 58 Expo Go on Android. Native configuration changes apply to rebuilt standalone/development clients; Expo Go controls its own launch screen and system-bar configuration. Physical Android acceptance is pending; see [Test Plan](docs/TEST_PLAN.md). Stage 7 is described above.
-
-An Android nutrition tracker designed around everyday Indian meals, reliable food data, and optional AI-assisted logging.
-
-**Status: Stage 10 Nutrition Insights implemented; live authentication/sync remains disabled and Android acceptance is pending. Stage 5 persistence was verified by the user.** Product name is a working name based on the workspace folder. Stage 1 is committed as 458c3c1. Mobile dependencies are installed locally; no external services provisioned.
-
-## Goals and scope
-
-Make manual food logging quick, make nutrition calculations explainable, and preserve trustworthy diary history. The core product must work without an AI provider.
-
-The MVP includes a polished dashboard, food search, gram and supported serving entry, editable meal logs, daily totals, persistent diaries, past dates, basic nutrition goals, and weight records. Recipes and favourites are implemented locally in Stage 8; advanced insights, achievements, photo recognition, voice, and conversational assistance remain future work.
-
-## Proposed stack
-
-React Native + Expo + TypeScript for Android; Python + FastAPI + Pydantic for the backend; Supabase PostgreSQL and Auth with Row Level Security (RLS). AI stays behind the backend, with xAI and Gemini evaluated before Stage 10. Exact dependency versions will be selected and locked during initialization.
-
-## Documentation map
-
-| File | Purpose |
-| --- | --- |
-| [RULES.md](RULES.md) | Rules for future development sessions |
-| [TASKS.md](TASKS.md) | Ordered roadmap and Stage 2 acceptance criteria |
-| [PRD](docs/PRD.md) | Requirements, journeys, MVP, acceptance criteria |
-| [Architecture](docs/ARCHITECTURE.md) | Modules, data model, calculations, boundaries |
-| [Design](docs/DESIGN.md) | Visual tokens, screen inventory, accessibility |
-| [Test plan](docs/TEST_PLAN.md) | Business, integration, security and Android checks |
-| [Security](docs/SECURITY.md) | Auth, RLS, secrets, uploads and privacy |
-| [Decisions](docs/DECISIONS.md) | Confirmed constraints and provisional recommendations |
-| [Memory](docs/MEMORY.md) | Verified workspace state and next step |
-| [Research](docs/RESEARCH.md) | Official source, provider, licensing and cost findings |
-| [GitHub workflow](docs/GITHUB_WORKFLOW.md) | Safe repository setup and contribution process |
-
-Actual mobile structure:
+## How it works
 
 ```text
-apps/mobile/
-  app/                            # root Stack, five routes under (tabs), food-search
-  src/screens/                    # Home, Diary, FoodSearch, unfinished sections
-  src/components/dashboard.tsx    # cards, actions, accessible nutrient bars
-  src/data/dashboardPreview.ts    # isolated synthetic meals and targets
-  src/domain/dashboard.ts         # deterministic totals and progress
-  src/theme/tokens.ts             # reusable design system
-  tests/                          # calculation, progress and contrast tests
-  app.json, tsconfig.json, eslint.config.js
-  package.json, package-lock.json
+Android app (Expo / React Native)
+  ├── Food search, diary, recipes, goals, insights
+  │     └── Local SQLite (authoritative diary and user data)
+  └── Optional AI-assisted logging
+        └── FastAPI backend (Render)
+              ├── Photo: Gemini primary → OpenRouter vision fallback
+              └── Voice transcript: OpenRouter Nemotron primary → Gemini fallback
+                    ↓
+             Structured candidate foods
+                    ↓
+             User reviews and confirms
+                    ↓
+             Saved locally in SQLite
 ```
 
-Expo template assets and its MIT notice are retained; final product branding/license selection remains pending.
+The backend does not write directly to the mobile diary. A cloud authentication/synchronization design exists in the repository, but **live cloud sync is not enabled** in the current app.
 
-## Roadmap
+### AI configuration
 
-1. Foundation documentation (this stage).
-2. Minimal Expo app, TypeScript, tokens and developer checks.
-3. Dashboard and navigation prototype with labeled mock data.
-4. Local illustrative food catalog, offline search and portion calculations. Production catalog rights and backend setup remain future prerequisites.
-5. Local persistent diary; cloud/authentication deferred.
-6. Calendar, history and logging streaks.
-7. Goals, BMI and weight progress: completes MVP scope.
-8. Custom foods, recipes, favorites and saved meals.
-9. Nutrient gap insights.
-10. Reviewed AI-assisted logging.
-11. Consolidated quality, privacy and security validation.
-12. APK packaging and release preparation.
+The current backend implementation uses separate routing for each task:
 
-Testing and security are requirements throughout, not work postponed to Stage 11.
+| Task | Primary | Fallback |
+| --- | --- | --- |
+| Photo recognition | `gemini-3.5-flash` | `nvidia/nemotron-3.5-super-vl:free` via OpenRouter; an optional alternative free vision model |
+| Voice meal parsing (text transcript) | `nvidia/nemotron-3-ultra-550b-a55b:free` via OpenRouter | `gemini-3.5-flash` |
 
-## Setup and testing
+The mobile app supplies a **text transcript** for AI voice meal parsing; the text-only Nemotron Ultra model is not used for image recognition. Provider models and deadlines are configurable on the backend. Requests can still fail because of upstream outages, free-tier limits, invalid model output, or network issues. Manual logging remains the reliable alternative.
 
-Requires Node 22.23.2 (tested), npm 10.9.8, and a compatible Android Expo Go installation for physical-device testing. No credentials needed.
+## Tech stack
 
-```powershell
+| Layer | Technology |
+| --- | --- |
+| Mobile | React Native, Expo Router, Expo SDK 58, TypeScript |
+| Offline storage | Expo SQLite |
+| Backend | Python, FastAPI, Pydantic, Uvicorn |
+| AI integrations | Google Gemini API, OpenRouter API |
+| Deployment | Expo EAS (Android preview builds), Render (backend) |
+| Planned / disabled | Supabase-based authentication and diary sync |
+
+## Repository layout
+
+```text
+Bites2Go/
+├── apps/
+│   └── mobile/             # Expo Android app, screens, domain logic and tests
+├── backend/
+│   ├── app/                # FastAPI application, routers and AI providers
+│   └── tests/              # Backend tests, including provider failover
+├── docs/                   # Architecture, product, security and test documentation
+├── .planning/              # GSD project planning and milestone state
+├── scripts/                # Data and developer utilities
+├── TASKS.md                # Project task history and handoffs
+└── README.md
+```
+
+## Getting started
+
+### Prerequisites
+
+- Node.js and npm compatible with the lockfile (Node.js 22 is used in development)
+- Python 3.13 or another version supported by `backend/requirements.txt`
+- Android phone with a compatible Expo development build, or an Android emulator
+- API keys **only if you want to run the AI backend**
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/vedantp404/Bites2Go.git
+cd Bites2Go
+```
+
+### 2. Run the mobile app
+
+```bash
 cd apps/mobile
 npm ci
-npm start -- --clear --lan
-npm run typecheck
-npm run lint
-npm test
-npm run format:check
-npm run doctor
+npx expo start --clear
 ```
 
-Use `npm run format` to format. On a physical phone, use SDK 58 Expo Go and scan Metro's QR code on the same network. Recheck Expo Go support when installing. `npm run android` requires a configured Android SDK and running emulator/USB device. None was available here. Verify initial screen, scrolling at large text sizes, safe areas, Add Food alert and reload. Android bundle export (`npx expo export --platform android`) passed; it does not produce an installable APK or verify device behavior.
+Open the project using a **compatible development build** on your Android device (or the available Expo workflow for your project setup). A normal installed preview APK does not need Metro running for everyday use. Native configuration changes require a new native build.
 
-Typecheck, lint, formatting, one contrast test, Expo Doctor (20/20), config validation and bundle export passed. The earlier SDK 57 localhost startup did not verify phone connectivity; use LAN mode for your phone. Device rendering remains unverified. Eight transitive npm advisories remain after compatible remediation; see Test Plan. Never use forced audit downgrades without compatibility review.
+For a production-style Android JavaScript bundle check (not an APK):
 
-Only public configuration may be bundled in the app. No `.env` is required. Backend setup is deferred.
+```bash
+npx expo export --platform android
+```
 
-## Screenshots
+### 3. Run the backend locally (optional)
 
-Screenshots will be added after the Stage 3 prototype exists. No mockups are presented as working product screenshots.
+From the repository root, in PowerShell:
+
+```powershell
+cd backend
+py -3.13 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+Copy-Item .env.example .env
+# Edit backend/.env with your own local API keys and settings.
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+Check the local backend at `http://127.0.0.1:8000/health` and interactive API docs at `http://127.0.0.1:8000/docs`.
+
+The mobile app uses `EXPO_PUBLIC_AI_BACKEND_URL` to choose its API endpoint. For an installed preview APK, this is normally configured at build time to point to the hosted backend. Changing the URL in a local `.env` file does **not** change an already-installed APK. Use the appropriate network-accessible host address when testing on a physical phone; the phone cannot reach your PC through its own `localhost`.
+
+**Security:** Never commit `.env`, `.env.local`, API keys, personal meal data, or access tokens. Only public `EXPO_PUBLIC_*` values belong in the client bundle.
+
+## Testing
+
+From the repository root:
+
+```powershell
+# Backend
+.\backend\.venv\Scripts\python.exe -m pytest backend/tests -v
+
+# Mobile unit tests
+npm test --prefix apps/mobile
+
+# Mobile TypeScript check
+npx tsc --noEmit --project apps/mobile/tsconfig.json
+
+# Android bundle validation
+cd apps/mobile
+npx expo export --platform android
+```
+
+Unit tests and bundle exports do not replace physical-device checks. Before a release, verify permission flows, speech recognition, photo capture, offline persistence, accessibility, and real AI failure/recovery behavior on Android. See the [test plan](docs/TEST_PLAN.md).
+
+## Deployment notes
+
+- **Backend:** The project has been tested on a Render Python web service using `uvicorn app.main:app --host 0.0.0.0 --port $PORT`. Keep Gemini/OpenRouter secrets in Render's environment settings, not in the mobile app.
+- **Android:** Preview builds use Expo EAS. An `expo export` bundle is not an installable APK.
+- **Model availability:** Free API endpoints may throttle, time out or return invalid/empty outputs. A successful `/health` response confirms configuration, **not** guaranteed inference availability.
+- **Before public release:** Review API abuse protection, rate limiting, data handling, dependency advisories, free-tier quota limits, and release-device acceptance. The `environment` field in `/health` should be checked against deployment configuration.
+
+## Documentation
+
+| Guide | Description |
+| --- | --- |
+| [Product requirements](docs/PRD.md) | Product goals and user journeys |
+| [Architecture](docs/ARCHITECTURE.md) | Modules, data models and offline boundaries |
+| [Backend guide](backend/README.md) | AI service setup, endpoints and provider configuration |
+| [Test plan](docs/TEST_PLAN.md) | Automated and device validation |
+| [Security](docs/SECURITY.md) | Privacy and security considerations |
+| [Release readiness](docs/RELEASE_READINESS.md) | Outstanding release gates |
+| [Project tasks](TASKS.md) | Implementation history and next steps |
+| [Development rules](RULES.md) | Repository workflow and conventions |
 
 ## Contributing
 
-Read RULES and the relevant documentation, agree one bounded task, preserve unrelated changes, validate, and review the diff. Use meaningful conventional commits and PRs for larger features. No automatic commit or push during Stage 1. A code license has not been selected; public hosting alone would not grant reuse rights.
+Bites2Go is under active development. Before contributing, read [RULES.md](RULES.md) and the relevant documentation. Keep changes focused, preserve unrelated working-tree edits, run the relevant checks, and use descriptive Git commits. Do not push changes or deploy without the project maintainer's approval.
 
-## SDK 58 upgrade
+## Limitations and disclaimer
 
-On `codex/expo-sdk-58`: Expo 58.0.21, React Native 0.88.1, React 19.3.0 and TypeScript 6.0.3. The lockfile records the Expo-aligned dependency set. Master remains unchanged pending review.
+Bites2Go's nutrition values and AI meal estimates are informational and may be incomplete or inaccurate. Food photos cannot reliably determine exact quantities, ingredients or cooking methods; users should verify entries. BMI and nutrition insights are not medical diagnoses. Offline app data can be lost if the app is uninstalled or its data is cleared unless an independent backup exists.
 
-To preview on Android, stop old Metro servers, run the commands above from `apps/mobile`, connect your computer and phone to the same Wi-Fi, and scan the QR code with SDK 58 Expo Go. Allow Node through Windows Firewall for the private network if prompted. Do not use localhost mode for a separate phone. Android Studio is not required for Expo Go. Verify the screen, Add Food alert, scrolling at larger text sizes and reload; physical-device verification is still pending.
+## License
 
-## Stage 3 dashboard preview
-
-Branch `codex/stage-3-dashboard` builds on SDK 58 commit 64e5f33. Home displays local today, calorie target/consumed/remaining, macro progress and four meals. Diary reuses the preview meals. Calendar, Progress and Profile are explicitly unfinished. Expo Router supplies tab navigation; all food actions explain that logging is unavailable.
-
-Demo targets and meal totals are synthetic UI fixtures, not user records or nutrition advice. Breakfast/lunch contain labeled samples; Snacks/Dinner demonstrate empty states. No data is saved. SDK 58 remains installed. Five tests, typecheck, lint, formatting, Doctor (20/20), config and Android export pass. Physical-device, TalkBack and large-text layout checks remain pending.
-
-Run `npm start -- --clear --lan` in apps/mobile and scan in SDK 58 Expo Go on the same Wi-Fi. Test all five tabs, Android Back, each meal's Add Food flow, large-text scrolling and screen-reader progress announcements. Stage 4 now adds local food search; see the instructions below.
-
-The dashboard now follows the supplied visual reference: green header, calorie ring, compact macro bars, rounded meal cards and icon tabs. Physical-device visual verification remains pending.
-
-## Try Stage 5
-
-```powershell
-cd C:\Users\Asus\Music\Bites2Go\apps\mobile
-npm ci
-npm start -- --clear --lan
-```
-
-Open SDK 58 Expo Go on the same Wi-Fi and scan the QR code. Add Food opens search, carries the chosen diary date/meal, and lets you choose a meal when needed. Review grams and confirm to save locally. Home uses today's saved entries; Diary supports Previous day / Today / Next day (no future entries). Tap an entry to edit its portion or delete with confirmation. Cancelling does not save a draft. Success feedback and totals appear only after persistence succeeds; failed actions retain drafts for retry.
-
-Storage: Expo SQLite 58.0.14 key-value API and Expo Crypto 58.0.7 UUIDs. All 12 food records remain illustrative; saved reference/portion snapshots preserve history. Sample dashboard meals are never counted. Targets are clearly labeled sample settings, not medical recommendations. No account, cloud sync, analytics or app uploads. Local data is not application-encrypted and can be lost when uninstalling/clearing app data; OS/Expo Go host backup policies apply. Invalid/unsupported diary data blocks writes without clearing it. No destructive automatic migration or recovery reset is provided.
-
-Run `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm test`, `npx expo-doctor`, `npx expo config --type public`, `npx expo export --platform android`, and `npm audit`. See Test Plan for actual results. **Still required on Android:** save, close/reopen, edit/cancel, delete/cancel, separate dates, duplicate taps, keyboard and accessibility. Prior Stage 4 verification does not establish native persistence.
-
-## Stage 6 calendar and history
-
-Open Calendar to browse months. Monday is the first weekday. Today has a text label, the selected day has an outline, and a dot indicates actual saved entries. Tap a date to show its diary below the grid. Meal cards show portions, calories and available macros; add/edit/delete reuse the existing persistent diary and preserve that date. Month arrows only browse; they do not change the selected diary. Previous/Next day changes selection and month; Today returns to the actual current day. Home always shows today. Future dates can be viewed but cannot be logged yet.
-
-No schema migration, duplicate database, new package or cloud service. Navigation reuses a memoized date index of the existing loaded diary. On narrow screens, swipe the calendar grid horizontally; date targets are not shrunk below 48 dp. Selection survives tab changes during the session; after restarting, selection defaults to today while entries persist. Follow the Stage 6 Test Plan on Android; automated checks do not establish device rendering or Back behavior.
-
-## Development workflow
-
-Work directly on `master` by default, validate and review changes, then commit and push to `origin/master` and verify its hash. PRs/feature branches are only required when explicitly requested or mandated by repository policy. Follow AGENTS.md and RULES.md. Stage 4 Android acceptance is user-reported; detailed device/accessibility evidence is not recorded. Wait for explicit authorization before the next stage.
+A public software license has **not yet been selected**. Repository visibility does not, by itself, grant permission to reuse or redistribute the code.
