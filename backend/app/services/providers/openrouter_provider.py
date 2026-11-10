@@ -1,6 +1,7 @@
 """OpenRouter AI recognition provider implementing OpenAI-compatible Chat Completions API."""
 
 import base64
+from email.utils import parsedate_to_datetime
 import json
 import logging
 import re
@@ -322,6 +323,177 @@ def _build_model_payload(
     return payload
 
 
+def _parse_retry_after_header(headers_map: dict[str, str]) -> Optional[float]:
+    """Safely parse Retry-After header (seconds or HTTP-date) into non-negative seconds."""
+    raw = headers_map.get("retry-after")
+    if raw is None or not str(raw).strip():
+        return None
+    text = str(raw).strip()
+    try:
+        secs = float(text)
+        return max(0.0, secs) if secs == secs else None
+    except ValueError:
+        pass
+    try:
+        dt = parsedate_to_datetime(text)
+        if dt is not None:
+            return max(0.0, dt.timestamp() - time.time())
+    except (TypeError, ValueError, OverflowError):
+        pass
+    return None
+
+
+def _parse_ratelimit_reset_seconds(raw_reset: Any) -> Optional[float]:
+    """Parse X-RateLimit-Reset (epoch ms, epoch s, or relative s) safely into remaining seconds."""
+    if isinstance(raw_reset, bool) or raw_reset is None:
+        return None
+    try:
+        val = float(str(raw_reset).strip())
+    except (TypeError, ValueError):
+        return None
+    if not (val == val):  # NaN check
+        return None
+    if val >= 1e12:  # Epoch milliseconds (e.g. OpenRouter 1794355200000)
+        return max(0.0, (val / 1000.0) - time.time())
+    if val >= 1e9:  # Epoch seconds
+        return max(0.0, val - time.time())
+    if val >= 0.0:  # Relative delta seconds
+        return val
+    return None
+
+
+def _collect_lower_headers(headers: Any, metadata: dict[str, Any]) -> dict[str, str]:
+    """Merge HTTP response headers and error.metadata.headers safely with lowercase keys."""
+    merged: dict[str, str] = {}
+    meta_headers = metadata.get("headers") if isinstance(metadata, dict) else None
+    if isinstance(meta_headers, dict):
+        for k, v in meta_headers.items():
+            if isinstance(k, str) and v is not None:
+                merged[k.lower()] = str(v)
+    if headers is not None and hasattr(headers, "items"):
+        try:
+            for k, v in headers.items():
+                if isinstance(k, str) and v is not None:
+                    merged[k.lower()] = str(v)
+        except Exception:
+            pass
+    return merged
+
+
+def classify_openrouter_rate_limit(
+    status_code: Optional[int],
+    headers: Any = None,
+    error_data: Any = None,
+    model_name: Optional[str] = None,
+) -> AIRateLimitError:
+    """Classify OpenRouter 429/402 using response headers & error metadata without logging secrets."""
+    err_obj = error_data.get("error") if isinstance(error_data, dict) else None
+    if not isinstance(err_obj, dict):
+        err_obj = error_data if isinstance(error_data, dict) and "message" in error_data else {}
+    metadata = err_obj.get("metadata") if isinstance(err_obj.get("metadata"), dict) else {}
+    merged_headers = _collect_lower_headers(headers, metadata)
+
+    raw_msg = err_obj.get("message") if isinstance(err_obj.get("message"), str) else ""
+    msg_lower = raw_msg.lower()
+    limit_source = _safe_label(metadata.get("limit_source"), default="none")
+    provider_name_raw = metadata.get("provider_name") or merged_headers.get("x-provider-name")
+    provider_name = _safe_label(provider_name_raw, default="none")
+    has_upstream_provider = provider_name != "none"
+    origin = _safe_label(merged_headers.get("x-openrouter-error-origin"), default="unknown")
+
+    rl_limit = _safe_int(merged_headers.get("x-ratelimit-limit"))
+    rl_remaining = _safe_int(merged_headers.get("x-ratelimit-remaining"))
+    retry_after_s = _parse_retry_after_header(merged_headers)
+    reset_in_s = _parse_ratelimit_reset_seconds(merged_headers.get("x-ratelimit-reset"))
+    effective_wait_s = retry_after_s if retry_after_s is not None else reset_in_s
+
+    if status_code == 402:
+        logger.warning(
+            "[Timing][%s] OpenRouter rate-limit classified (status=402, model=%s, category=quota_exhausted, scope=account)",
+            get_current_request_id(),
+            _safe_label(model_name, default="unknown"),
+        )
+        return AIRateLimitError(
+            "OpenRouter credit balance exhausted. Please add credits or select a free model.",
+            provider="openrouter",
+            code=402,
+            is_quota_exhausted=True,
+            error_category="quota_exhausted",
+            retry_after_seconds=effective_wait_s,
+            limit_scope="account",
+        )
+
+    is_daily = (
+        limit_source == "openrouter_free_tier_daily"
+        or "free-models-per-day" in msg_lower
+        or "per-day" in msg_lower
+        or "per day" in msg_lower
+        or "requests per day" in msg_lower
+        or (
+            reset_in_s is not None
+            and reset_in_s > 180.0
+            and rl_remaining == 0
+            and not has_upstream_provider
+        )
+    )
+    if is_daily:
+        category = "daily_quota_exhausted"
+        scope = "account"
+        quota_exhausted = True
+        msg = "OpenRouter free-tier daily quota exhausted."
+    elif has_upstream_provider or any(
+        hint in msg_lower
+        for hint in ("upstream", "provider returned error", "temporarily rate-limited upstream")
+    ):
+        category = "upstream_provider_saturated"
+        scope = "provider_upstream"
+        quota_exhausted = False
+        msg = "OpenRouter upstream model provider is temporarily saturated."
+    elif (
+        "rpm" in limit_source.lower()
+        or "min" in limit_source.lower()
+        or "free-models-per-min" in msg_lower
+        or "per-min" in msg_lower
+        or "per minute" in msg_lower
+        or "rpm" in msg_lower
+        or (effective_wait_s is not None and origin == "client")
+    ):
+        category = "burst_rate_limit"
+        scope = "account"
+        quota_exhausted = False
+        msg = "OpenRouter burst rate limit exceeded."
+    else:
+        category = "rate_limit"
+        scope = "model"
+        quota_exhausted = False
+        msg = "OpenRouter rate limit or quota exceeded."
+
+    logger.warning(
+        "[Timing][%s] OpenRouter rate-limit classified: status=429, model=%s, category=%s, scope=%s, "
+        "limit_source=%s, origin=%s, upstream_provider=%s, rl_limit=%s, rl_remaining=%s, retry_after_s=%s, reset_in_s=%s",
+        get_current_request_id(),
+        _safe_label(model_name, default="unknown"),
+        category,
+        scope,
+        limit_source,
+        origin,
+        provider_name,
+        rl_limit,
+        rl_remaining,
+        f"{retry_after_s:.1f}" if retry_after_s is not None else None,
+        f"{reset_in_s:.1f}" if reset_in_s is not None else None,
+    )
+    return AIRateLimitError(
+        msg,
+        provider="openrouter",
+        code=429,
+        is_quota_exhausted=quota_exhausted,
+        error_category=category,
+        retry_after_seconds=effective_wait_s,
+        limit_scope=scope,
+    )
+
+
 def _strip_hop_and_encoding_headers(headers: Optional[httpx.Headers]) -> httpx.Headers:
     """Drop encoding/length headers after streaming decompression so httpx.Response does not double-decode."""
     if headers is None:
@@ -597,6 +769,9 @@ class OpenRouterProvider(BaseAIProvider):
         self,
         status_code: Optional[int],
         cause: Optional[BaseException] = None,
+        headers: Any = None,
+        error_data: Any = None,
+        model_name: Optional[str] = None,
     ) -> AIServiceError:
         """Map an HTTP or embedded OpenRouter error status code to a normalized domain exception."""
         if status_code in (401, 403):
@@ -613,21 +788,12 @@ class OpenRouterProvider(BaseAIProvider):
                 code=400,
                 error_category="bad_request",
             )
-        if status_code == 402:
-            return AIRateLimitError(
-                "OpenRouter credit balance exhausted. Please add credits or select a free model.",
-                provider=self.name,
-                code=402,
-                is_quota_exhausted=True,
-                error_category="quota_exhausted",
-            )
-        if status_code == 429:
-            return AIRateLimitError(
-                "OpenRouter rate limit or quota exceeded.",
-                provider=self.name,
-                code=429,
-                is_quota_exhausted=True,
-                error_category="rate_limit",
+        if status_code in (402, 429):
+            return classify_openrouter_rate_limit(
+                status_code=status_code,
+                headers=headers,
+                error_data=error_data,
+                model_name=model_name or self._model,
             )
         if status_code in {408, 504}:
             return AITimeoutError(
@@ -748,7 +914,20 @@ class OpenRouterProvider(BaseAIProvider):
             status_code = http_err.response.status_code
             safe_err = f"HTTP {status_code}"
             logger.error("OpenRouter API [%s] HTTP error (model=%s): %s", operation_name, active_model, safe_err)
-            raise self._map_status_code_error(status_code) from http_err
+            err_body = None
+            if status_code in (402, 429):
+                try:
+                    parsed_err_json = http_err.response.json()
+                    if isinstance(parsed_err_json, dict):
+                        err_body = parsed_err_json
+                except Exception:
+                    err_body = None
+            raise self._map_status_code_error(
+                status_code,
+                headers=getattr(http_err.response, "headers", None),
+                error_data=err_body,
+                model_name=active_model,
+            ) from http_err
 
         except AIRequestCancelledError:
             raise
@@ -821,7 +1000,11 @@ class OpenRouterProvider(BaseAIProvider):
                 status_code,
                 duration,
             )
-            raise self._map_status_code_error(status_code)
+            raise self._map_status_code_error(
+                status_code,
+                error_data=data,
+                model_name=requested_model,
+            )
 
         actual_model = _safe_label(data.get("model"), default="unknown")
         usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
@@ -1041,6 +1224,11 @@ class OpenRouterProvider(BaseAIProvider):
         except (ModelOutputValidationError, AITransientError) as exc:
             # Never fall back inside OpenRouter on bad payload (HTTP 400)
             if exc.code == 400 or getattr(exc, "error_category", None) == "bad_request":
+                raise
+            # Never make an extra request to an alternative free model on account-level 429/402
+            if isinstance(exc, AIRateLimitError) and (
+                exc.is_quota_exhausted or getattr(exc, "limit_scope", None) == "account"
+            ):
                 raise
             rem = overall_budget - (time.perf_counter() - t_overall_start)
             if (

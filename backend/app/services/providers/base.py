@@ -40,7 +40,7 @@ class AIUnavailableError(AITransientError):
 
 
 class AIRateLimitError(AITransientError):
-    """Raised when API rate limits or daily quotas are reached."""
+    """Raised when API rate limits, upstream saturation, or daily quotas are reached."""
 
     def __init__(
         self,
@@ -49,9 +49,13 @@ class AIRateLimitError(AITransientError):
         code: int = 429,
         is_quota_exhausted: bool = False,
         error_category: Optional[str] = "rate_limit",
+        retry_after_seconds: Optional[float] = None,
+        limit_scope: str = "model",
     ) -> None:
         super().__init__(message, provider=provider, code=code, error_category=error_category)
         self.is_quota_exhausted = is_quota_exhausted
+        self.retry_after_seconds = retry_after_seconds
+        self.limit_scope = limit_scope
 
 
 class AIAuthenticationError(AIServiceError):

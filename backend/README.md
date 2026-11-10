@@ -33,8 +33,10 @@ Secure, local FastAPI microservice for AI-powered meal recognition and voice foo
 2. **Task-Specific Routing & Vision Safety:**
    - Voice meal parsing uses `nvidia/nemotron-3-ultra-550b-a55b:free` as primary to preserve Gemini daily RPD quota for food photos, with `gemini-3.5-flash` (`thinking_budget=0`) as fast fallback.
    - Photo recognition uses `gemini-3.5-flash` (`thinking_budget=0`, AFC disabled) as primary with verified vision-capable OpenRouter fallback (`nvidia/nemotron-3.5-super-vl:free`). Text-only models are explicitly blocked from receiving image payloads (`error_category="model_vision_unsupported"`).
-3. **Intelligent Failover:**
-   - Daily quota exhaustion (`per day`) triggers immediate failover without wasting retries; transient burst RPM limits (`per minute`) or 503/504 errors fail over within bounded retry/budget rules.
+3. **Quota-Aware Cooldowns & Intelligent Failover:**
+   - OpenRouter `429`/`402` responses inspect documented headers (`Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `X-OpenRouter-Error-Origin`, `X-Provider-Name`) and error metadata (`limit_source`, `provider_name`) to classify `daily_quota_exhausted` (account), `burst_rate_limit` (RPM), and `upstream_provider_saturated` (model upstream).
+   - Bounded cooldowns (`15–60s` burst/upstream, max `300s` daily cap) skip cooled-down providers immediately and route straight to healthy fallbacks without retry storms; a `503` on voice fallback never cools down Gemini photo primary.
+   - Account-wide 429 errors never trigger duplicate calls to alternative OpenRouter models.
    - Authentication errors (HTTP 401/403) and malformed client payloads (HTTP 400) fail fast without retry loops.
 4. **Response Normalization & Review-First Workflow:** Both providers normalize into identical Pydantic schemas (`FoodRecognitionResponse`, `VoiceMealParseResponse`). Results are estimates only, never auto-written to SQLite; users review and edit before saving.
 5. **Offline Independence:** If the backend is unreachable or disabled, local offline SQLite logging and manual catalogue search continue uninterrupted.
@@ -90,6 +92,11 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 OPENROUTER_TIMEOUT_SECONDS=19.0
 OPENROUTER_MAX_TOKENS=2000
 OPENROUTER_MAX_RETRIES=1
+RATE_LIMIT_COOLDOWN_ENABLED=true
+RATE_LIMIT_BURST_COOLDOWN_MIN_SECONDS=15.0
+RATE_LIMIT_BURST_COOLDOWN_MAX_SECONDS=60.0
+RATE_LIMIT_UPSTREAM_COOLDOWN_SECONDS=20.0
+RATE_LIMIT_DAILY_COOLDOWN_MAX_SECONDS=300.0
 
 # ---------------------------------------------------------------------------
 # Server Runtime Settings, Image Optimization & Request Deadlines
@@ -210,7 +217,7 @@ Example response:
 ### 2. Run Automated Tests (Mocked - Zero Quota Consumed)
 All tests run with mocked HTTP/SDK responses and never hit real APIs or consume API quota:
 ```bash
-# Run all backend tests (115 tests)
+# Run all backend tests (122 tests)
 PYTHONPATH=backend backend\.venv\Scripts\python.exe -m pytest backend/tests -v
 
 # Run the timeout & task-routing reliability suite specifically

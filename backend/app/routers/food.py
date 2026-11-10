@@ -55,6 +55,64 @@ class Base64ImagePayload(BaseModel):
     image_base64: str = Field(..., description="Base64-encoded image string")
 
 
+def _bounded_retry_after_header(raw_seconds: Optional[float], default_seconds: int) -> str:
+    """Return safe integer Retry-After string clamped to [2, 60] seconds."""
+    if raw_seconds is None or raw_seconds <= 0:
+        return str(default_seconds)
+    clamped = max(2, min(60, int(round(raw_seconds))))
+    return str(clamped)
+
+
+def _http_exception_for_all_providers_failed(
+    exc: AIAllProvidersFailedError,
+    service_label: str,
+    manual_fallback_hint: str,
+) -> HTTPException:
+    """Map AIAllProvidersFailedError to HTTP 429 when both hit rate limits, else HTTP 503."""
+    p_err = getattr(exc, "primary_error", None)
+    f_err = getattr(exc, "fallback_error", None)
+    raw_retry_after = getattr(f_err, "retry_after_seconds", None) or getattr(
+        p_err, "retry_after_seconds", None
+    )
+    if isinstance(p_err, AIRateLimitError) and isinstance(f_err, AIRateLimitError):
+        return HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                f"The {service_label} providers are temporarily rate-limited or reached free-tier caps. "
+                f"Please wait briefly or {manual_fallback_hint}."
+            ),
+            headers={
+                "Retry-After": _bounded_retry_after_header(raw_retry_after, default_seconds=10),
+                "X-Error-Category": "all_providers_rate_limited",
+            },
+        )
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=(
+            f"The {service_label} is temporarily unavailable. "
+            f"All configured providers failed to process the request. Please try again or {manual_fallback_hint}."
+        ),
+        headers={
+            "Retry-After": _bounded_retry_after_header(raw_retry_after, default_seconds=3),
+            "X-Error-Category": "all_providers_failed",
+        },
+    )
+
+
+def _http_exception_for_rate_limit(exc: BaseException) -> HTTPException:
+    """Map single-provider AIRateLimitError/RateLimitError with bounded Retry-After and category."""
+    raw_ra = getattr(exc, "retry_after_seconds", None)
+    category = getattr(exc, "error_category", None) or "rate_limit"
+    return HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail=str(exc),
+        headers={
+            "Retry-After": _bounded_retry_after_header(raw_ra, default_seconds=5),
+            "X-Error-Category": str(category),
+        },
+    )
+
+
 @router.post(
     "/recognize-food",
     response_model=FoodRecognitionResponse,
@@ -184,17 +242,13 @@ async def recognize_food(
             headers={"X-Error-Category": "configuration"},
         ) from exc
     except AIAllProvidersFailedError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="The AI food recognition service is temporarily unavailable. All configured providers failed to process the request. Please try again or use manual search.",
-            headers={"Retry-After": "3", "X-Error-Category": "all_providers_failed"},
+        raise _http_exception_for_all_providers_failed(
+            exc,
+            service_label="AI food recognition service",
+            manual_fallback_hint="use manual search",
         ) from exc
     except (AIRateLimitError, RateLimitError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=str(exc),
-            headers={"Retry-After": "5", "X-Error-Category": "rate_limit"},
-        ) from exc
+        raise _http_exception_for_rate_limit(exc) from exc
     except (AITimeoutError, GeminiTimeoutError) as exc:
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
@@ -353,17 +407,13 @@ async def recognize_food_base64(
             headers={"X-Error-Category": "configuration"},
         ) from exc
     except AIAllProvidersFailedError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="The AI food recognition service is temporarily unavailable. All configured providers failed to process the request. Please try again or use manual search.",
-            headers={"Retry-After": "3", "X-Error-Category": "all_providers_failed"},
+        raise _http_exception_for_all_providers_failed(
+            exc,
+            service_label="AI food recognition service",
+            manual_fallback_hint="use manual search",
         ) from exc
     except (AIRateLimitError, RateLimitError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=str(exc),
-            headers={"Retry-After": "5", "X-Error-Category": "rate_limit"},
-        ) from exc
+        raise _http_exception_for_rate_limit(exc) from exc
     except (AITimeoutError, GeminiTimeoutError) as exc:
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
@@ -512,17 +562,13 @@ async def parse_voice_meal(
             headers={"X-Error-Category": "configuration"},
         ) from exc
     except AIAllProvidersFailedError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="The AI voice parsing service is temporarily unavailable. All configured providers failed to process the request. Please try again or type your foods manually.",
-            headers={"Retry-After": "3", "X-Error-Category": "all_providers_failed"},
+        raise _http_exception_for_all_providers_failed(
+            exc,
+            service_label="AI voice parsing service",
+            manual_fallback_hint="use offline catalogue matching or type your foods manually",
         ) from exc
     except (AIRateLimitError, RateLimitError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=str(exc),
-            headers={"Retry-After": "5", "X-Error-Category": "rate_limit"},
-        ) from exc
+        raise _http_exception_for_rate_limit(exc) from exc
     except (AITimeoutError, GeminiTimeoutError) as exc:
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,

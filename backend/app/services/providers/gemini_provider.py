@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import time
 from typing import Callable, Optional, TypeVar
 import httpx
@@ -263,7 +264,24 @@ class GeminiProvider(BaseAIProvider):
                 code = getattr(final_exc, "code", None)
                 if code == 429:
                     err_msg = str(final_exc).lower()
-                    quota_hit = "per day" in err_msg or "daily" in err_msg or "retry in" in err_msg
+                    quota_hit = "per day" in err_msg or "daily" in err_msg or "requestsperday" in err_msg
+                    retry_after_s: Optional[float] = None
+                    resp_obj = getattr(final_exc, "response", None)
+                    resp_headers = getattr(resp_obj, "headers", None)
+                    if resp_headers is not None and hasattr(resp_headers, "get"):
+                        raw_ra = resp_headers.get("retry-after") or resp_headers.get("Retry-After")
+                        if raw_ra is not None:
+                            try:
+                                retry_after_s = max(0.0, float(str(raw_ra).strip()))
+                            except ValueError:
+                                retry_after_s = None
+                    if retry_after_s is None:
+                        m = re.search(r"retry in\s+(\d+(?:\.\d+)?)\s*s", err_msg)
+                        if m:
+                            try:
+                                retry_after_s = max(0.0, float(m.group(1)))
+                            except ValueError:
+                                retry_after_s = None
                     raise AIRateLimitError(
                         "Gemini API quota exhausted for today. Using fallback provider."
                         if quota_hit
@@ -271,7 +289,9 @@ class GeminiProvider(BaseAIProvider):
                         provider=self.name,
                         code=429,
                         is_quota_exhausted=quota_hit,
-                        error_category="quota_exhausted" if quota_hit else "rate_limit",
+                        error_category="daily_quota_exhausted" if quota_hit else "burst_rate_limit",
+                        retry_after_seconds=retry_after_s,
+                        limit_scope="account" if quota_hit else "model",
                     ) from final_exc
                 if code in {408, 504}:
                     raise AITimeoutError(

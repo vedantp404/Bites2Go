@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter
 from app.config import get_settings
+from app.services.ai_service import get_active_cooldowns_if_initialized
 
 router = APIRouter(tags=["Health"])
 
@@ -50,5 +51,6 @@ def health_check() -> dict:
             if settings.voice_fallback_provider == "gemini"
             else settings.voice_openrouter_model
         ),
+        "rate_limit_cooldowns": get_active_cooldowns_if_initialized(),
         "commit": settings.git_commit[:8],
     }

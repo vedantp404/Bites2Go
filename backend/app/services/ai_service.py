@@ -1,8 +1,10 @@
 """Dual-provider AI orchestration service with intelligent fallback between Gemini and OpenRouter."""
 
+from dataclasses import dataclass
 import logging
+import threading
 import time
-from typing import Callable, Optional, TypeVar
+from typing import Any, Callable, Optional, TypeVar
 
 from app.config import ConfigurationError, Settings, get_settings
 from app.models.food import FoodRecognitionResponse, VoiceMealParseResponse
@@ -29,6 +31,123 @@ logger = logging.getLogger("bites2go.ai_service")
 T = TypeVar("T")
 
 
+@dataclass(frozen=True)
+class CooldownState:
+    """Active bounded cooldown window after a provider returns HTTP 429/402."""
+
+    until_ts: float
+    category: str
+    scope: str
+    cooldown_seconds: float
+
+
+class ProviderCooldownTracker:
+    """Thread-safe bounded cooldown tracker preventing redundant free-tier 429 storms."""
+
+    def __init__(self, clock: Optional[Callable[[], float]] = None) -> None:
+        self._clock = clock or time.monotonic
+        self._lock = threading.Lock()
+        self._entries: dict[str, CooldownState] = {}
+
+    @staticmethod
+    def _build_key(provider_name: str, model_id: Optional[str], scope: str) -> str:
+        if scope == "account":
+            return f"{provider_name}:account"
+        normalized_model = (model_id or "default").strip().lower()
+        return f"{provider_name}:model:{normalized_model}"
+
+    def compute_cooldown_seconds(
+        self,
+        err: AIRateLimitError,
+        settings: Settings,
+    ) -> float:
+        """Compute bounded cooldown duration strictly from rate-limit evidence and safe bounds."""
+        if err.is_quota_exhausted:
+            max_daily = max(10.0, getattr(settings, "rate_limit_daily_cooldown_max_seconds", 300.0))
+            if err.retry_after_seconds is not None and err.retry_after_seconds > 0:
+                return min(max(err.retry_after_seconds, 5.0), max_daily)
+            return max_daily
+
+        max_burst = max(10.0, getattr(settings, "rate_limit_burst_cooldown_max_seconds", 60.0))
+        min_burst = min(max_burst, max(5.0, getattr(settings, "rate_limit_burst_cooldown_min_seconds", 15.0)))
+        if getattr(err, "error_category", None) == "upstream_provider_saturated":
+            default_up = getattr(settings, "rate_limit_upstream_cooldown_seconds", 20.0)
+            raw = err.retry_after_seconds if err.retry_after_seconds is not None else default_up
+            return min(max(raw, 10.0), max_burst)
+
+        raw = err.retry_after_seconds if err.retry_after_seconds is not None else 30.0
+        return min(max(raw, min_burst), max_burst)
+
+    def record_rate_limit(
+        self,
+        provider_name: str,
+        model_id: Optional[str],
+        err: AIRateLimitError,
+        settings: Settings,
+    ) -> float:
+        """Record bounded cooldown for a rate-limited provider/model without blocking healthy providers."""
+        if not getattr(settings, "rate_limit_cooldown_enabled", True):
+            return 0.0
+        cooldown_s = self.compute_cooldown_seconds(err, settings)
+        scope = getattr(err, "limit_scope", "model") or "model"
+        key = self._build_key(provider_name, model_id, scope)
+        now = self._clock()
+        state = CooldownState(
+            until_ts=now + cooldown_s,
+            category=getattr(err, "error_category", None) or "rate_limit",
+            scope=scope,
+            cooldown_seconds=cooldown_s,
+        )
+        with self._lock:
+            existing = self._entries.get(key)
+            if existing is None or state.until_ts > existing.until_ts:
+                self._entries[key] = state
+        return cooldown_s
+
+    def get_active_cooldown(
+        self,
+        provider_name: str,
+        model_id: Optional[str],
+    ) -> Optional[tuple[float, CooldownState]]:
+        """Return (remaining_seconds, CooldownState) if account or model key is currently cooling down."""
+        now = self._clock()
+        acct_key = self._build_key(provider_name, model_id, "account")
+        model_key = self._build_key(provider_name, model_id, "model")
+        with self._lock:
+            best_rem = 0.0
+            best_state: Optional[CooldownState] = None
+            for key in (acct_key, model_key):
+                state = self._entries.get(key)
+                if state is None:
+                    continue
+                rem = state.until_ts - now
+                if rem <= 0.0:
+                    self._entries.pop(key, None)
+                    continue
+                if rem > best_rem:
+                    best_rem = rem
+                    best_state = state
+            if best_state is not None:
+                return best_rem, best_state
+        return None
+
+    def snapshot(self) -> dict[str, dict[str, Any]]:
+        """Return non-secret summary of active cooldowns (safe for /health diagnostics)."""
+        now = self._clock()
+        active: dict[str, dict[str, Any]] = {}
+        with self._lock:
+            expired = [k for k, st in self._entries.items() if st.until_ts <= now]
+            for k in expired:
+                self._entries.pop(k, None)
+            for k, st in self._entries.items():
+                active[k] = {
+                    "remaining_seconds": round(max(0.0, st.until_ts - now), 1),
+                    "category": st.category,
+                    "scope": st.scope,
+                }
+        return active
+
+
 class DualProviderService:
     """Orchestrates task-specific primary/fallback AI providers with bounded deadlines and failover."""
 
@@ -39,8 +158,10 @@ class DualProviderService:
         settings: Optional[Settings] = None,
         photo_openrouter_provider: Optional[BaseAIProvider] = None,
         voice_openrouter_provider: Optional[BaseAIProvider] = None,
+        cooldown_tracker: Optional[ProviderCooldownTracker] = None,
     ) -> None:
         self._settings = settings or get_settings()
+        self._cooldown_tracker = cooldown_tracker or ProviderCooldownTracker()
 
         photo_fallback_active = bool(
             self._settings.ai_fallback_enabled
@@ -159,6 +280,22 @@ class DualProviderService:
     def is_fallback_enabled(self) -> bool:
         return bool(self._settings.ai_fallback_enabled)
 
+    @property
+    def cooldown_tracker(self) -> ProviderCooldownTracker:
+        return self._cooldown_tracker
+
+    def cooldown_snapshot(self) -> dict[str, dict[str, Any]]:
+        """Expose non-secret active cooldown telemetry."""
+        return self._cooldown_tracker.snapshot()
+
+    def _provider_model_id(self, task: str, provider_name: str) -> str:
+        """Resolve configured model identifier for cooldown scoping."""
+        if provider_name == "openrouter":
+            if task == "voice":
+                return self._settings.voice_openrouter_model
+            return self._settings.photo_openrouter_model
+        return self._settings.gemini_model
+
     def _default_provider_timeout(self, task: str, provider_name: str, is_fallback: bool) -> float:
         """Return configured timeout budget for the specific task/provider role."""
         if task == "voice":
@@ -204,6 +341,9 @@ class DualProviderService:
             fallback.name if fallback_available else "none",
         )
 
+        primary_model_id = self._provider_model_id(task, primary.name)
+        fallback_model_id = self._provider_model_id(task, fallback.name)
+
         def remaining_budget() -> float:
             elapsed = time.perf_counter() - start_time
             local_rem = max(0.0, effective_budget - elapsed)
@@ -215,6 +355,35 @@ class DualProviderService:
                 raise primary_err
             if is_request_cancelled(is_cancelled):
                 raise AIRequestCancelledError("Client disconnected / request cancelled.", provider=fallback.name)
+
+            active_fb_cd = self._cooldown_tracker.get_active_cooldown(fallback.name, fallback_model_id)
+            if active_fb_cd is not None:
+                fb_rem_s, fb_cd_state = active_fb_cd
+                logger.warning(
+                    "[Timing][%s] Fallback provider [%s] skipped due to active rate-limit cooldown "
+                    "(remaining=%.1fs, category=%s, scope=%s).",
+                    get_current_request_id(),
+                    fallback.name,
+                    fb_rem_s,
+                    fb_cd_state.category,
+                    fb_cd_state.scope,
+                )
+                fb_cd_err = AIRateLimitError(
+                    f"Fallback provider [{fallback.name}] is in rate-limit cooldown ({fb_rem_s:.0f}s remaining).",
+                    provider=fallback.name,
+                    code=429,
+                    is_quota_exhausted=fb_cd_state.category in ("daily_quota_exhausted", "quota_exhausted"),
+                    error_category=fb_cd_state.category,
+                    retry_after_seconds=fb_rem_s,
+                    limit_scope=fb_cd_state.scope,
+                )
+                raise AIAllProvidersFailedError(
+                    message=f"Both AI providers unavailable. Primary [{primary.name}] {reason}; fallback [{fallback.name}] is in cooldown.",
+                    primary_provider=primary.name,
+                    primary_error=primary_err,
+                    fallback_provider=fallback.name,
+                    fallback_error=fb_cd_err,
+                ) from fb_cd_err
 
             rem = remaining_budget()
             if rem < 4.0:
@@ -246,6 +415,24 @@ class DualProviderService:
                 return invoke_fn(fallback, fallback_timeout)
             except AIRequestCancelledError:
                 raise
+            except AIRateLimitError as fb_rate_err:
+                fb_cd_s = self._cooldown_tracker.record_rate_limit(
+                    fallback.name, fallback_model_id, fb_rate_err, self._settings
+                )
+                logger.warning(
+                    "[Timing][%s] Fallback provider [%s] rate-limited (%s); activated %.1fs cooldown.",
+                    get_current_request_id(),
+                    fallback.name,
+                    getattr(fb_rate_err, "error_category", None) or "rate_limit",
+                    fb_cd_s,
+                )
+                raise AIAllProvidersFailedError(
+                    message=f"Both AI providers failed. Primary [{primary.name}] {reason}; fallback [{fallback.name}] rate limited.",
+                    primary_provider=primary.name,
+                    primary_error=primary_err,
+                    fallback_provider=fallback.name,
+                    fallback_error=fb_rate_err,
+                ) from fb_rate_err
             except Exception as fb_err:
                 logger.error(
                     "[Timing][%s] Fallback provider [%s] also failed after primary [%s] %s: %s",
@@ -273,21 +460,38 @@ class DualProviderService:
                     task,
                     fallback.name,
                 )
-                rem = remaining_budget()
-                if rem < 4.0:
-                    raise AITimeoutError(
-                        f"Request deadline reached before fallback execution ({total_budget:.1f}s budget exhausted).",
-                        provider=fallback.name,
-                    )
-                fallback_timeout = min(
-                    self._default_provider_timeout(task, fallback.name, is_fallback=True),
-                    rem,
+                return _attempt_fallback(
+                    ConfigurationError(f"Primary provider [{primary.name}] is not configured."),
+                    "unconfigured",
                 )
-                return invoke_fn(fallback, fallback_timeout)
             raise ConfigurationError(
                 f"AI provider [{primary.name}] is not configured. "
                 "Please configure GEMINI_API_KEY or OPENROUTER_API_KEY in backend/.env."
             )
+
+        # Case 1B: Primary provider is in active rate-limit cooldown -> skip straight to fallback without hammering 429s
+        active_primary_cd = self._cooldown_tracker.get_active_cooldown(primary.name, primary_model_id)
+        if active_primary_cd is not None:
+            cd_rem_s, cd_state = active_primary_cd
+            logger.warning(
+                "[Timing][%s] Primary [%s] skipped due to active rate-limit cooldown "
+                "(remaining=%.1fs, category=%s, scope=%s).",
+                get_current_request_id(),
+                primary.name,
+                cd_rem_s,
+                cd_state.category,
+                cd_state.scope,
+            )
+            cd_err = AIRateLimitError(
+                f"Provider [{primary.name}] is in temporary rate-limit cooldown ({cd_rem_s:.0f}s remaining).",
+                provider=primary.name,
+                code=429,
+                is_quota_exhausted=cd_state.category in ("daily_quota_exhausted", "quota_exhausted"),
+                error_category=cd_state.category,
+                retry_after_seconds=cd_rem_s,
+                limit_scope=cd_state.scope,
+            )
+            return _attempt_fallback(cd_err, "rate-limit cooldown active")
 
         # Case 2: Attempt primary provider within bounded budget reserving fallback headroom
         primary_default_timeout = self._default_provider_timeout(task, primary.name, is_fallback=False)
@@ -307,11 +511,15 @@ class DualProviderService:
             raise
 
         except AIRateLimitError as rate_err:
+            cd_s = self._cooldown_tracker.record_rate_limit(
+                primary.name, primary_model_id, rate_err, self._settings
+            )
             logger.warning(
-                "[Timing][%s] Primary [%s] rate limited / quota exhausted (%s).",
+                "[Timing][%s] Primary [%s] rate limited / quota exhausted (%s); cooldown=%.1fs.",
                 get_current_request_id(),
                 primary.name,
                 getattr(rate_err, "error_category", None) or "rate_limit",
+                cd_s,
             )
             return _attempt_fallback(rate_err, "rate limited")
 
@@ -414,6 +622,13 @@ def get_ai_service() -> DualProviderService:
     if _ai_service is None:
         _ai_service = DualProviderService()
     return _ai_service
+
+
+def get_active_cooldowns_if_initialized() -> dict[str, dict[str, Any]]:
+    """Return active non-secret cooldown status if service singleton is running."""
+    if _ai_service is None:
+        return {}
+    return _ai_service.cooldown_snapshot()
 
 
 # Backward compatibility aliases

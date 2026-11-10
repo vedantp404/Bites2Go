@@ -122,6 +122,13 @@ class Settings:
         self.openrouter_max_tokens: int = int(os.getenv("OPENROUTER_MAX_TOKENS", "2000"))
         self.voice_openrouter_max_tokens: int = int(os.getenv("VOICE_OPENROUTER_MAX_TOKENS", "900"))
 
+        # Bounded rate-limit cooldown settings (prevent hammering free-tier 429 endpoints)
+        self.rate_limit_cooldown_enabled: bool = os.getenv("RATE_LIMIT_COOLDOWN_ENABLED", "true").lower() in ("true", "1", "yes")
+        self.rate_limit_burst_cooldown_min_seconds: float = float(os.getenv("RATE_LIMIT_BURST_COOLDOWN_MIN_SECONDS", "15.0"))
+        self.rate_limit_burst_cooldown_max_seconds: float = float(os.getenv("RATE_LIMIT_BURST_COOLDOWN_MAX_SECONDS", "60.0"))
+        self.rate_limit_upstream_cooldown_seconds: float = float(os.getenv("RATE_LIMIT_UPSTREAM_COOLDOWN_SECONDS", "20.0"))
+        self.rate_limit_daily_cooldown_max_seconds: float = float(os.getenv("RATE_LIMIT_DAILY_COOLDOWN_MAX_SECONDS", "300.0"))
+
         # Deployed git commit hash (populated on Render via RENDER_GIT_COMMIT)
         self.git_commit: str = os.getenv("RENDER_GIT_COMMIT", os.getenv("GIT_COMMIT", "dev"))
 

@@ -2509,3 +2509,550 @@ def test_milestone_4b_defaults_preserve_photo_gemini_and_tighten_voice_budget(
     assert clean.voice_server_deadline_seconds < 40.0
     assert clean.voice_openrouter_max_tokens == 900
 
+
+# ---------------------------------------------------------------------------
+# Test 49: OpenRouter 429 evidence-based classification (daily, burst, upstream)
+# ---------------------------------------------------------------------------
+def test_openrouter_429_classification_distinguishes_daily_burst_and_upstream(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """OpenRouter 429 headers and metadata accurately classify daily vs burst vs upstream saturation."""
+    import logging
+    import httpx
+    from app.services.providers.base import current_request_id
+    from app.services.providers.openrouter_provider import OpenRouterProvider
+
+    future_reset_ms = str(int((time.time() + 18000) * 1000))  # 5 hours ahead in ms
+
+    # Case 1: Live OpenRouter free-models-per-day 429 payload & X-RateLimit-* headers
+    daily_resp = httpx.Response(
+        status_code=429,
+        headers={
+            "X-RateLimit-Limit": "50",
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": future_reset_ms,
+            "X-OpenRouter-Error-Origin": "client",
+        },
+        json={
+            "error": {
+                "message": "Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day",
+                "code": 429,
+                "metadata": {
+                    "headers": {
+                        "X-RateLimit-Limit": "50",
+                        "X-RateLimit-Remaining": "0",
+                        "X-RateLimit-Reset": future_reset_ms,
+                    },
+                    "limit_source": "openrouter_free_tier_daily",
+                    "provider_name": None,
+                },
+            }
+        },
+        request=httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions"),
+    )
+
+    # Case 2: Burst RPM 429 with explicit Retry-After
+    burst_resp = httpx.Response(
+        status_code=429,
+        headers={
+            "Retry-After": "42",
+            "X-RateLimit-Limit": "20",
+            "X-RateLimit-Remaining": "0",
+            "X-OpenRouter-Error-Origin": "client",
+        },
+        json={
+            "error": {
+                "message": "Rate limit exceeded: free-models-per-min",
+                "code": 429,
+                "metadata": {
+                    "limit_source": "openrouter_free_tier_rpm",
+                    "provider_name": None,
+                },
+            }
+        },
+        request=httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions"),
+    )
+
+    # Case 3: Upstream provider saturation (embedded in HTTP 200 payload)
+    upstream_embedded_resp = httpx.Response(
+        status_code=200,
+        json={
+            "error": {
+                "message": "Provider returned error: temporarily rate-limited upstream",
+                "code": 429,
+                "metadata": {
+                    "headers": {"Retry-After": "18"},
+                    "provider_name": "nvidia",
+                },
+            }
+        },
+        request=httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions"),
+    )
+
+    mock_client = MagicMock(spec=httpx.Client)
+    mock_client.post.side_effect = [daily_resp, burst_resp, upstream_embedded_resp]
+
+    provider = OpenRouterProvider(
+        api_key="sk-or-secret-never-log",
+        model="nvidia/nemotron-3-ultra-550b-a55b:free",
+        alternative_model=None,
+        max_retries=0,
+        http_client=mock_client,
+    )
+
+    tok = current_request_id.set("req-429-test")
+    try:
+        with caplog.at_level(logging.WARNING):
+            with pytest.raises(AIRateLimitError) as exc_daily:
+                provider.parse_voice_meal("2 rotis")
+            assert exc_daily.value.error_category == "daily_quota_exhausted"
+            assert exc_daily.value.is_quota_exhausted is True
+            assert exc_daily.value.limit_scope == "account"
+            assert exc_daily.value.retry_after_seconds is not None
+            assert exc_daily.value.retry_after_seconds > 1000.0
+
+            with pytest.raises(AIRateLimitError) as exc_burst:
+                provider.parse_voice_meal("2 rotis")
+            assert exc_burst.value.error_category == "burst_rate_limit"
+            assert exc_burst.value.is_quota_exhausted is False
+            assert exc_burst.value.limit_scope == "account"
+            assert exc_burst.value.retry_after_seconds == pytest.approx(42.0, abs=1.0)
+
+            with pytest.raises(AIRateLimitError) as exc_upstream:
+                provider.parse_voice_meal("2 rotis")
+            assert exc_upstream.value.error_category == "upstream_provider_saturated"
+            assert exc_upstream.value.is_quota_exhausted is False
+            assert exc_upstream.value.limit_scope == "provider_upstream"
+            assert exc_upstream.value.retry_after_seconds == pytest.approx(18.0, abs=1.0)
+
+        assert not any("sk-or-secret-never-log" in m for m in caplog.messages)
+    finally:
+        current_request_id.reset(tok)
+
+
+# ---------------------------------------------------------------------------
+# Test 50: OpenRouter skips alternative model on account-level 429 quota/burst
+# ---------------------------------------------------------------------------
+def test_openrouter_photo_skips_alternative_model_on_account_429(
+    sample_jpeg_bytes: bytes,
+) -> None:
+    """Account-wide OpenRouter 429 must not burn a second request to alternative_model; upstream 429 can."""
+    import httpx
+    import json
+    from app.services.providers.openrouter_provider import OpenRouterProvider
+
+    acct_429 = httpx.Response(
+        status_code=429,
+        json={
+            "error": {
+                "message": "Rate limit exceeded: free-models-per-day",
+                "code": 429,
+                "metadata": {"limit_source": "openrouter_free_tier_daily", "provider_name": None},
+            }
+        },
+        request=httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions"),
+    )
+
+    upstream_429 = httpx.Response(
+        status_code=429,
+        json={
+            "error": {
+                "message": "Provider returned error",
+                "code": 429,
+                "metadata": {"provider_name": "nvidia"},
+            }
+        },
+        request=httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions"),
+    )
+    alt_ok = httpx.Response(
+        status_code=200,
+        json={
+            "model": "dots-studio/dots-3-note-preview:free",
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {
+                        "content": json.dumps({
+                            "success": True,
+                            "summary": "Idli",
+                            "items": [
+                                {
+                                    "food_name": "Idli",
+                                    "estimated_quantity": 2.0,
+                                    "unit": "piece",
+                                    "estimated_grams": 120.0,
+                                    "calories": 140.0,
+                                    "protein": 4.0,
+                                    "carbohydrates": 28.0,
+                                    "fat": 1.0,
+                                }
+                            ],
+                        })
+                    },
+                }
+            ],
+        },
+        request=httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions"),
+    )
+
+    mock_client = MagicMock(spec=httpx.Client)
+    provider = OpenRouterProvider(
+        api_key="sk-test",
+        model="nvidia/nemotron-3.5-super-vl:free",
+        alternative_model="dots-studio/dots-3-note-preview:free",
+        max_retries=0,
+        http_client=mock_client,
+    )
+
+    # Part A: Account-wide daily 429 skips alternative_model (only 1 POST)
+    mock_client.post.return_value = acct_429
+    with pytest.raises(AIRateLimitError):
+        provider.recognize_food(sample_jpeg_bytes, timeout_seconds=20.0)
+    assert mock_client.post.call_count == 1
+
+    # Part B: Model upstream saturation can fall back to alternative model once
+    mock_client.post.reset_mock()
+    mock_client.post.side_effect = [upstream_429, alt_ok]
+    res = provider.recognize_food(sample_jpeg_bytes, timeout_seconds=20.0)
+    assert res.success is True
+    assert mock_client.post.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# Test 51: Bounded cooldown skips cooled-down 429 primary and auto-recovers
+# ---------------------------------------------------------------------------
+def test_dual_provider_bounded_cooldown_skips_429_primary_and_routes_directly_to_gemini(
+    sample_voice_item: ParsedVoiceFoodItem,
+) -> None:
+    """After OpenRouter 429, subsequent calls inside bounded cooldown route directly to Gemini with 0 OR calls."""
+    from app.services.ai_service import ProviderCooldownTracker
+
+    now = [1000.0]
+    tracker = ProviderCooldownTracker(clock=lambda: now[0])
+
+    mock_voice_or = MagicMock(spec=BaseAIProvider)
+    mock_voice_or.name = "openrouter"
+    mock_voice_or.is_configured = True
+    # Reset is 6 hours (21600s) away, must be capped to rate_limit_daily_cooldown_max_seconds (300s)
+    mock_voice_or.parse_voice_meal.side_effect = [
+        AIRateLimitError(
+            "OpenRouter free-models-per-day",
+            provider="openrouter",
+            code=429,
+            is_quota_exhausted=True,
+            error_category="daily_quota_exhausted",
+            retry_after_seconds=21600.0,
+            limit_scope="account",
+        ),
+        VoiceMealParseResponse(
+            success=True,
+            transcript="2 rotis",
+            summary="Recovered after cooldown",
+            items=[sample_voice_item],
+        ),
+    ]
+
+    mock_gemini = MagicMock(spec=BaseAIProvider)
+    mock_gemini.name = "gemini"
+    mock_gemini.is_configured = True
+    mock_gemini.parse_voice_meal.return_value = VoiceMealParseResponse(
+        success=True,
+        transcript="2 rotis",
+        summary="Gemini fallback",
+        items=[sample_voice_item],
+    )
+
+    settings = Settings()
+    settings.voice_primary_provider = "openrouter"
+    settings.voice_fallback_provider = "gemini"
+    settings.rate_limit_daily_cooldown_max_seconds = 300.0
+
+    service = DualProviderService(
+        gemini_provider=mock_gemini,
+        voice_openrouter_provider=mock_voice_or,
+        settings=settings,
+        cooldown_tracker=tracker,
+    )
+
+    # Call 1: OpenRouter 429 -> falls back to Gemini -> records bounded 300s cooldown
+    r1 = service.parse_voice_meal("2 rotis")
+    assert r1.summary == "Gemini fallback"
+    assert mock_voice_or.parse_voice_meal.call_count == 1
+    assert mock_gemini.parse_voice_meal.call_count == 1
+    snap = service.cooldown_snapshot()
+    assert snap["openrouter:account"]["remaining_seconds"] == pytest.approx(300.0, abs=0.5)
+
+    # Call 2 (+20s later, inside cooldown): skips OpenRouter cleanly (0 new OR calls)
+    now[0] += 20.0
+    r2 = service.parse_voice_meal("2 rotis")
+    assert r2.summary == "Gemini fallback"
+    assert mock_voice_or.parse_voice_meal.call_count == 1
+    assert mock_gemini.parse_voice_meal.call_count == 2
+
+    # Call 3 (+305s later, past 300s cap): probes OpenRouter cleanly again and succeeds
+    now[0] += 305.0
+    r3 = service.parse_voice_meal("2 rotis")
+    assert r3.summary == "Recovered after cooldown"
+    assert mock_voice_or.parse_voice_meal.call_count == 2
+    assert mock_gemini.parse_voice_meal.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# Test 52: Confirmed live incident (OR 429 + Gemini 503) preserves photo Gemini
+# ---------------------------------------------------------------------------
+def test_confirmed_incident_openrouter_429_plus_gemini_503_preserves_gemini_photo(
+    sample_jpeg_bytes: bytes,
+    sample_candidate: FoodItemCandidate,
+) -> None:
+    """OpenRouter voice 429 + Gemini voice 503 returns HTTP 503 without cooling down Gemini photo."""
+    from app.main import app
+    from app.services.ai_service import ProviderCooldownTracker
+
+    now = [500.0]
+    tracker = ProviderCooldownTracker(clock=lambda: now[0])
+
+    mock_voice_or = MagicMock(spec=BaseAIProvider)
+    mock_voice_or.name = "openrouter"
+    mock_voice_or.is_configured = True
+    mock_voice_or.parse_voice_meal.side_effect = AIRateLimitError(
+        "OpenRouter free-models-per-day",
+        provider="openrouter",
+        code=429,
+        is_quota_exhausted=True,
+        error_category="daily_quota_exhausted",
+        retry_after_seconds=3600.0,
+        limit_scope="account",
+    )
+
+    mock_gemini = MagicMock(spec=BaseAIProvider)
+    mock_gemini.name = "gemini"
+    mock_gemini.is_configured = True
+    mock_gemini.parse_voice_meal.side_effect = AIUnavailableError(
+        "Gemini temporary 503", provider="gemini", code=503
+    )
+    mock_gemini.recognize_food.return_value = FoodRecognitionResponse(
+        success=True,
+        summary="Paneer Butter Masala",
+        items=[sample_candidate],
+    )
+
+    settings = Settings()
+    settings.photo_primary_provider = "gemini"
+    settings.photo_fallback_provider = "openrouter"
+    settings.voice_primary_provider = "openrouter"
+    settings.voice_fallback_provider = "gemini"
+
+    service = DualProviderService(
+        gemini_provider=mock_gemini,
+        photo_openrouter_provider=MagicMock(spec=BaseAIProvider, name="openrouter", is_configured=True),
+        voice_openrouter_provider=mock_voice_or,
+        settings=settings,
+        cooldown_tracker=tracker,
+    )
+
+    app.dependency_overrides[get_ai_service] = lambda: service
+    try:
+        client = TestClient(app)
+
+        # Call 1: OR 429 -> Gemini 503 -> HTTP 503
+        v1 = client.post("/api/v1/parse-voice-meal", json={"transcript": "2 rotis"})
+        assert v1.status_code == 503
+        assert v1.headers.get("X-Error-Category") == "all_providers_failed"
+        assert "Retry-After" in v1.headers
+        assert mock_voice_or.parse_voice_meal.call_count == 1
+        assert mock_gemini.parse_voice_meal.call_count == 1
+
+        # Gemini 503 did NOT trigger a 429 cooldown on Gemini, so photo works normally
+        p1 = client.post(
+            "/api/v1/recognize-food",
+            files={"file": ("meal.jpg", sample_jpeg_bytes, "image/jpeg")},
+        )
+        assert p1.status_code == 200
+        assert mock_gemini.recognize_food.call_count == 1
+
+        # Call 2 (+5s): OR is skipped due to cooldown (still 1 call), only Gemini attempted
+        now[0] += 5.0
+        v2 = client.post("/api/v1/parse-voice-meal", json={"transcript": "2 rotis"})
+        assert v2.status_code == 503
+        assert mock_voice_or.parse_voice_meal.call_count == 1
+        assert mock_gemini.parse_voice_meal.call_count == 2
+    finally:
+        app.dependency_overrides.pop(get_ai_service, None)
+
+
+# ---------------------------------------------------------------------------
+# Test 53: Both providers returning 429 short-circuits cleanly with HTTP 429
+# ---------------------------------------------------------------------------
+def test_both_providers_429_short_circuits_with_429_retry_after_and_zero_calls() -> None:
+    """When both OpenRouter and Gemini return 429, subsequent calls make 0 HTTP calls and return HTTP 429."""
+    from app.main import app
+    from app.services.ai_service import ProviderCooldownTracker
+
+    now = [200.0]
+    tracker = ProviderCooldownTracker(clock=lambda: now[0])
+
+    mock_voice_or = MagicMock(spec=BaseAIProvider)
+    mock_voice_or.name = "openrouter"
+    mock_voice_or.is_configured = True
+    mock_voice_or.parse_voice_meal.side_effect = AIRateLimitError(
+        "OR burst 429",
+        provider="openrouter",
+        code=429,
+        is_quota_exhausted=False,
+        error_category="burst_rate_limit",
+        retry_after_seconds=25.0,
+        limit_scope="account",
+    )
+
+    mock_gemini = MagicMock(spec=BaseAIProvider)
+    mock_gemini.name = "gemini"
+    mock_gemini.is_configured = True
+    mock_gemini.parse_voice_meal.side_effect = AIRateLimitError(
+        "Gemini burst 429",
+        provider="gemini",
+        code=429,
+        is_quota_exhausted=False,
+        error_category="burst_rate_limit",
+        retry_after_seconds=18.0,
+        limit_scope="model",
+    )
+
+    settings = Settings()
+    settings.voice_primary_provider = "openrouter"
+    settings.voice_fallback_provider = "gemini"
+
+    service = DualProviderService(
+        gemini_provider=mock_gemini,
+        voice_openrouter_provider=mock_voice_or,
+        settings=settings,
+        cooldown_tracker=tracker,
+    )
+
+    app.dependency_overrides[get_ai_service] = lambda: service
+    try:
+        client = TestClient(app)
+
+        r1 = client.post("/api/v1/parse-voice-meal", json={"transcript": "2 rotis"})
+        assert r1.status_code == 429
+        assert r1.headers.get("X-Error-Category") == "all_providers_rate_limited"
+        assert "Retry-After" in r1.headers
+        assert mock_voice_or.parse_voice_meal.call_count == 1
+        assert mock_gemini.parse_voice_meal.call_count == 1
+
+        # Request 2 inside both cooldown windows -> 0 calls to either provider!
+        now[0] += 3.0
+        r2 = client.post("/api/v1/parse-voice-meal", json={"transcript": "2 rotis"})
+        assert r2.status_code == 429
+        assert r2.headers.get("X-Error-Category") == "all_providers_rate_limited"
+        assert mock_voice_or.parse_voice_meal.call_count == 1
+        assert mock_gemini.parse_voice_meal.call_count == 1
+    finally:
+        app.dependency_overrides.pop(get_ai_service, None)
+
+
+# ---------------------------------------------------------------------------
+# Test 54: Upstream model-scoped 429 cooldown isolates other OpenRouter models
+# ---------------------------------------------------------------------------
+def test_model_scoped_upstream_cooldown_does_not_block_other_openrouter_models(
+    sample_jpeg_bytes: bytes,
+    sample_candidate: FoodItemCandidate,
+    sample_voice_item: ParsedVoiceFoodItem,
+) -> None:
+    """Upstream model saturation cools down only that model, keeping photo fallback OpenRouter unblocked."""
+    from app.services.ai_service import ProviderCooldownTracker
+
+    now = [300.0]
+    tracker = ProviderCooldownTracker(clock=lambda: now[0])
+
+    mock_voice_or = MagicMock(spec=BaseAIProvider)
+    mock_voice_or.name = "openrouter"
+    mock_voice_or.is_configured = True
+    mock_voice_or.parse_voice_meal.side_effect = AIRateLimitError(
+        "NVIDIA upstream saturated",
+        provider="openrouter",
+        code=429,
+        is_quota_exhausted=False,
+        error_category="upstream_provider_saturated",
+        retry_after_seconds=20.0,
+        limit_scope="provider_upstream",
+    )
+
+    mock_photo_or = MagicMock(spec=BaseAIProvider)
+    mock_photo_or.name = "openrouter"
+    mock_photo_or.is_configured = True
+    mock_photo_or.recognize_food.return_value = FoodRecognitionResponse(
+        success=True,
+        summary="Idli",
+        items=[sample_candidate],
+    )
+
+    mock_gemini = MagicMock(spec=BaseAIProvider)
+    mock_gemini.name = "gemini"
+    mock_gemini.is_configured = True
+    mock_gemini.parse_voice_meal.return_value = VoiceMealParseResponse(
+        success=True,
+        transcript="2 rotis",
+        summary="2 rotis",
+        items=[sample_voice_item],
+    )
+    mock_gemini.recognize_food.side_effect = AIUnavailableError(
+        "Gemini 503", provider="gemini", code=503
+    )
+
+    settings = Settings()
+    settings.voice_openrouter_model = "nvidia/nemotron-3-ultra-550b-a55b:free"
+    settings.photo_openrouter_model = "nvidia/nemotron-3.5-super-vl:free"
+
+    service = DualProviderService(
+        gemini_provider=mock_gemini,
+        photo_openrouter_provider=mock_photo_or,
+        voice_openrouter_provider=mock_voice_or,
+        settings=settings,
+        cooldown_tracker=tracker,
+    )
+
+    # Voice upstream 429 cools down only voice_openrouter_model
+    v_res = service.parse_voice_meal("2 rotis")
+    assert v_res.success is True
+    assert "openrouter:model:nvidia/nemotron-3-ultra-550b-a55b:free" in tracker.snapshot()
+
+    # Photo fallback uses different OpenRouter model and must NOT be blocked
+    p_res = service.recognize_food(sample_jpeg_bytes)
+    assert p_res.success is True
+    assert mock_photo_or.recognize_food.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Test 55: Gemini 429 extracts retry_after_seconds & daily vs burst scope
+# ---------------------------------------------------------------------------
+def test_gemini_429_extracts_retry_in_seconds_and_daily_vs_burst_scope(
+    sample_jpeg_bytes: bytes,
+) -> None:
+    """GeminiProvider parses retry-after delay and classifies daily account vs model burst 429."""
+    from google.genai.errors import APIError
+    from app.services.providers.gemini_provider import GeminiProvider
+
+    mock_client = MagicMock()
+    mock_client.models.generate_content.side_effect = APIError(
+        429,
+        {"error": {"message": "429 RESOURCE_EXHAUSTED: Requests per minute exceeded. Please retry in 42.5s."}},
+    )
+
+    provider = GeminiProvider(client=mock_client, model="gemini-3.5-flash", max_retries=0)
+    with pytest.raises(AIRateLimitError) as exc_burst:
+        provider.recognize_food(sample_jpeg_bytes)
+    assert exc_burst.value.error_category == "burst_rate_limit"
+    assert exc_burst.value.is_quota_exhausted is False
+    assert exc_burst.value.limit_scope == "model"
+    assert exc_burst.value.retry_after_seconds == pytest.approx(42.5, abs=0.1)
+
+    mock_client.models.generate_content.side_effect = APIError(
+        429,
+        {"error": {"message": "429 RESOURCE_EXHAUSTED: GenerateRequestsPerDayPerProjectPerModel requests per day limit"}},
+    )
+    with pytest.raises(AIRateLimitError) as exc_daily:
+        provider.recognize_food(sample_jpeg_bytes)
+    assert exc_daily.value.error_category == "daily_quota_exhausted"
+    assert exc_daily.value.is_quota_exhausted is True
+    assert exc_daily.value.limit_scope == "account"
+
