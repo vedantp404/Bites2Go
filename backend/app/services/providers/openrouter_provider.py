@@ -199,6 +199,29 @@ def _normalize_voice_candidate_dict(item_dict: dict[str, Any]) -> dict[str, Any]
     return normalized
 
 
+def _safe_int(value: Any) -> Optional[int]:
+    """Safely convert numeric token counts without crashing or logging malformed objects."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.isdigit():
+            return int(stripped)
+    return None
+
+
+def _safe_label(value: Any, default: str = "unknown", max_len: int = 120) -> str:
+    """Safely format short string identifiers (model ID, finish_reason) for logs."""
+    if not isinstance(value, str):
+        return default
+    cleaned = " ".join(value.strip().split())
+    if not cleaned:
+        return default
+    return cleaned[:max_len]
+
+
 def _extract_text_from_message(message: dict[str, Any]) -> tuple[str, bool, bool]:
     """Extract final user-facing text content from an OpenRouter message.
 
@@ -515,7 +538,21 @@ class OpenRouterProvider(BaseAIProvider):
         duration: float,
     ) -> tuple[str, Optional[str]]:
         """Validate OpenRouter envelope, emit safe diagnostics, and extract final text content."""
+        req_id = get_current_request_id()
+        configured_model = _safe_label(self._model, default="unknown")
+        req_model_label = _safe_label(requested_model, default="unknown")
+
         if not isinstance(data, dict):
+            logger.warning(
+                "[Timing][%s] OpenRouter [%s] response meta: configured_model=%s, requested_model=%s, "
+                "actual_model=unknown, finish_reason=unknown, prompt_tokens=None, completion_tokens=None, "
+                "reasoning_tokens=None, content_empty=True, duration=%.3fs, failure_category=malformed_schema_shape",
+                req_id,
+                operation_name,
+                configured_model,
+                req_model_label,
+                duration,
+            )
             raise ModelOutputValidationError(
                 "OpenRouter response JSON is not an object.",
                 provider=self.name,
@@ -530,32 +567,46 @@ class OpenRouterProvider(BaseAIProvider):
             except (TypeError, ValueError):
                 status_code = 502
             logger.warning(
-                "[Timing][%s] OpenRouter [%s] embedded error payload (requested_model=%s, code=%s)",
-                get_current_request_id(),
+                "[Timing][%s] OpenRouter [%s] embedded error payload (configured_model=%s, requested_model=%s, code=%s, duration=%.3fs)",
+                req_id,
                 operation_name,
-                requested_model,
+                configured_model,
+                req_model_label,
                 status_code,
+                duration,
             )
             raise self._map_status_code_error(status_code)
 
-        actual_model = str(data.get("model") or requested_model)
+        actual_model = _safe_label(data.get("model"), default="unknown")
         usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
-        prompt_tokens = usage.get("prompt_tokens")
-        completion_tokens = usage.get("completion_tokens")
+        prompt_tokens = _safe_int(usage.get("prompt_tokens"))
+        completion_tokens = _safe_int(usage.get("completion_tokens"))
         comp_details = usage.get("completion_tokens_details")
         if not isinstance(comp_details, dict):
             comp_details = {}
-        reasoning_tokens = comp_details.get("reasoning_tokens")
+        out_details = usage.get("output_tokens_details")
+        if not isinstance(out_details, dict):
+            out_details = {}
+        reasoning_tokens = _safe_int(
+            comp_details.get("reasoning_tokens")
+            if comp_details.get("reasoning_tokens") is not None
+            else (
+                usage.get("reasoning_tokens")
+                if usage.get("reasoning_tokens") is not None
+                else out_details.get("reasoning_tokens")
+            )
+        )
 
         choices = data.get("choices")
         if not isinstance(choices, list) or not choices:
             logger.warning(
-                "[Timing][%s] OpenRouter [%s] response meta: requested_model=%s, actual_model=%s, "
-                "finish_reason=none, prompt_tokens=%s, completion_tokens=%s, reasoning_tokens=%s, "
-                "content_empty=True, duration=%.3fs, failure_category=empty_choices",
-                get_current_request_id(),
+                "[Timing][%s] OpenRouter [%s] response meta: configured_model=%s, requested_model=%s, "
+                "actual_model=%s, finish_reason=none, prompt_tokens=%s, completion_tokens=%s, "
+                "reasoning_tokens=%s, content_empty=True, duration=%.3fs, failure_category=empty_choices",
+                req_id,
                 operation_name,
-                requested_model,
+                configured_model,
+                req_model_label,
                 actual_model,
                 prompt_tokens,
                 completion_tokens,
@@ -569,19 +620,20 @@ class OpenRouterProvider(BaseAIProvider):
             )
 
         first_choice = choices[0] if isinstance(choices[0], dict) else {}
-        finish_reason = first_choice.get("finish_reason")
+        finish_reason = _safe_label(first_choice.get("finish_reason"), default="unknown")
         message = first_choice.get("message") if isinstance(first_choice.get("message"), dict) else {}
 
         extracted_text, has_reasoning, has_refusal = _extract_text_from_message(message)
         content_empty = not bool(extracted_text)
 
         logger.info(
-            "[Timing][%s] OpenRouter [%s] response meta: requested_model=%s, actual_model=%s, "
-            "finish_reason=%s, prompt_tokens=%s, completion_tokens=%s, reasoning_tokens=%s, "
-            "has_reasoning=%s, content_empty=%s, duration=%.3fs",
-            get_current_request_id(),
+            "[Timing][%s] OpenRouter [%s] response meta: configured_model=%s, requested_model=%s, "
+            "actual_model=%s, finish_reason=%s, prompt_tokens=%s, completion_tokens=%s, "
+            "reasoning_tokens=%s, has_reasoning=%s, content_empty=%s, duration=%.3fs",
+            req_id,
             operation_name,
-            requested_model,
+            configured_model,
+            req_model_label,
             actual_model,
             finish_reason,
             prompt_tokens,
@@ -607,15 +659,18 @@ class OpenRouterProvider(BaseAIProvider):
 
             logger.warning(
                 "[Timing][%s] OpenRouter [%s] empty output classified (failure_category=%s, "
-                "actual_model=%s, finish_reason=%s, completion_tokens=%s, reasoning_tokens=%s, has_reasoning=%s)",
-                get_current_request_id(),
+                "configured_model=%s, actual_model=%s, finish_reason=%s, completion_tokens=%s, "
+                "reasoning_tokens=%s, has_reasoning=%s, duration=%.3fs)",
+                req_id,
                 operation_name,
                 failure_category,
+                configured_model,
                 actual_model,
                 finish_reason,
                 completion_tokens,
                 reasoning_tokens,
                 has_reasoning,
+                duration,
             )
             raise ModelOutputValidationError(
                 err_msg,

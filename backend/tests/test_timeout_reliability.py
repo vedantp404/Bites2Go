@@ -1277,4 +1277,152 @@ def test_openrouter_skips_alternative_when_budget_insufficient_or_cancelled(
     assert mock_client.post.call_count == 1
 
 
+# ---------------------------------------------------------------------------
+# Test 31: Safe OpenRouter diagnostics log actual model & tokens without leaking PII/secrets
+# ---------------------------------------------------------------------------
+def test_openrouter_success_diagnostics_log_actual_model_and_suppress_secrets(
+    sample_jpeg_bytes: bytes,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Verify actual_model, configured_model, tokens, finish_reason, duration, and req_id log cleanly without leaking sensitive fields."""
+    import logging
+    import httpx
+    from app.services.providers.base import current_request_id
+    from app.services.providers.openrouter_provider import OpenRouterProvider
+
+    secret_key = "sk-or-secret-test-key-should-never-log"
+    secret_transcript = "SECRET_USER_TRANSCRIPT_TWO_DOSAS"
+    secret_reasoning = "SECRET_HIDDEN_REASONING_TEXT"
+    valid_voice_json = (
+        '{"success": true, "transcript": "2 dosas", "summary": "2 dosas", '
+        '"items": [{"food_description": "SECRET_DISH_OUTPUT", "quantity": 2, '
+        '"unit": "piece", "estimated_grams": 180, "calories": 320, '
+        '"protein": 8, "carbohydrates": 56, "fat": 6}]}'
+    )
+
+    mock_resp = MagicMock(spec=httpx.Response)
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "model": "dots-studio/dots-3-note-preview:free",
+        "choices": [
+            {
+                "finish_reason": "stop",
+                "message": {
+                    "content": valid_voice_json,
+                    "reasoning": secret_reasoning,
+                },
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 512,
+            "completion_tokens": 94,
+            "completion_tokens_details": {"reasoning_tokens": 12},
+        },
+    }
+
+    mock_client = MagicMock(spec=httpx.Client)
+    mock_client.post.return_value = mock_resp
+
+    provider = OpenRouterProvider(
+        api_key=secret_key,
+        model="openrouter/free",
+        alternative_model=None,
+        max_retries=0,
+        http_client=mock_client,
+    )
+
+    token = current_request_id.set("req-diag-31")
+    try:
+        with caplog.at_level(logging.INFO):
+            res = provider.parse_voice_meal(transcript=secret_transcript)
+
+        assert res.success is True
+        assert res.items[0].food_description == "SECRET_DISH_OUTPUT"
+
+        meta_logs = [m for m in caplog.messages if "OpenRouter [parse_voice_meal] response meta:" in m]
+        assert len(meta_logs) == 1
+        meta_msg = meta_logs[0]
+        assert "[req-diag-31]" in meta_msg
+        assert "configured_model=openrouter/free" in meta_msg
+        assert "actual_model=dots-studio/dots-3-note-preview:free" in meta_msg
+        assert "finish_reason=stop" in meta_msg
+        assert "prompt_tokens=512" in meta_msg
+        assert "completion_tokens=94" in meta_msg
+        assert "reasoning_tokens=12" in meta_msg
+        assert "content_empty=False" in meta_msg
+        assert "duration=" in meta_msg
+
+        all_logs = "\n".join(caplog.messages)
+        assert secret_key not in all_logs
+        assert secret_transcript not in all_logs
+        assert secret_reasoning not in all_logs
+        assert "SECRET_DISH_OUTPUT" not in all_logs
+        assert "data:image/jpeg;base64" not in all_logs
+    finally:
+        current_request_id.reset(token)
+
+
+# ---------------------------------------------------------------------------
+# Test 32: Missing or malformed OpenRouter metadata handled cleanly without crashing
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "malformed_payload",
+    [
+        # Top-level non-dict JSON response
+        ["unexpected", "list"],
+        # Missing usage, missing model, non-dict choices entry
+        {"choices": ["not-a-dict"]},
+        # Non-dict usage, invalid token strings, non-string finish_reason/model
+        {
+            "model": {"unexpected": "dict"},
+            "usage": {"prompt_tokens": "bad-int", "completion_tokens": True, "completion_tokens_details": "bad"},
+            "choices": [{"finish_reason": 999, "message": {"content": ""}}],
+        },
+    ],
+)
+def test_openrouter_missing_or_malformed_metadata_logs_safely(
+    sample_jpeg_bytes: bytes,
+    caplog: pytest.LogCaptureFixture,
+    malformed_payload,
+) -> None:
+    """Missing or malformed usage, model, or choice metadata never crash diagnostic logging."""
+    import logging
+    import httpx
+    from app.services.providers.base import ModelOutputValidationError, current_request_id
+    from app.services.providers.openrouter_provider import OpenRouterProvider
+
+    mock_resp = MagicMock(spec=httpx.Response)
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = malformed_payload
+
+    mock_client = MagicMock(spec=httpx.Client)
+    mock_client.post.return_value = mock_resp
+
+    provider = OpenRouterProvider(
+        api_key="sk-or-secret-should-not-leak",
+        model="nvidia/nemotron-3.5-super-vl:free",
+        alternative_model=None,
+        max_retries=0,
+        http_client=mock_client,
+    )
+
+    token = current_request_id.set("req-malformed-32")
+    try:
+        with caplog.at_level(logging.INFO):
+            with pytest.raises(ModelOutputValidationError):
+                provider.recognize_food(sample_jpeg_bytes)
+
+        assert any(
+            "[req-malformed-32]" in m
+            and "configured_model=nvidia/nemotron-3.5-super-vl:free" in m
+            and "actual_model=unknown" in m
+            and "content_empty=True" in m
+            for m in caplog.messages
+        )
+        assert not any("sk-or-secret" in m for m in caplog.messages)
+    finally:
+        current_request_id.reset(token)
+
+
+
 
