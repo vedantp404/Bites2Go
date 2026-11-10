@@ -791,68 +791,101 @@ def test_end_to_end_fastapi_photo_recognition_failover(
 
 
 # ---------------------------------------------------------------------------
-# Test 21: OpenRouter payload includes max_tokens and reasoning effort low
+# Test 21: OpenRouter payloads use model-safe reasoning and bounded max_tokens
 # ---------------------------------------------------------------------------
 def test_openrouter_payload_includes_bounded_tokens_and_reasoning_effort(
     sample_jpeg_bytes: bytes,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify OpenRouter requests include max_tokens and reasoning: {effort: low} to prevent latency spikes."""
+    """Verify fixed models disable reasoning while legacy meta-router uses low effort and >=2500 max_tokens."""
     from app.services.providers.openrouter_provider import OpenRouterProvider
     import httpx
 
+    monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
+    monkeypatch.delenv("OPENROUTER_ALTERNATIVE_MODEL", raising=False)
+
     captured_payloads = []
 
-    def mock_post(url, *args, **kwargs):
-        payload = kwargs.get("json", {})
-        captured_payloads.append(payload)
-        # Return valid mock response
-        mock_resp = MagicMock(spec=httpx.Response)
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = {
-            "choices": [
-                {
-                    "message": {
-                        "content": '{"success": true, "items": [{"food_name": "Roti", "estimated_quantity": 1, "unit": "piece", "estimated_grams": 40, "calories": 100, "protein": 3, "carbohydrates": 20, "fat": 1}]}'
-                    }
-                }
-            ]
-        }
-        return mock_resp
+    def mock_post_factory(body_json: dict):
+        def _post(url, *args, **kwargs):
+            captured_payloads.append(kwargs.get("json", {}))
+            mock_resp = MagicMock(spec=httpx.Response)
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = body_json
+            return mock_resp
+        return _post
 
     mock_client = MagicMock(spec=httpx.Client)
-    mock_client.post.side_effect = mock_post
+    mock_client.post.side_effect = mock_post_factory({
+        "model": "nvidia/nemotron-3.5-super-vl:free",
+        "choices": [
+            {
+                "finish_reason": "stop",
+                "message": {
+                    "content": '{"success": true, "items": [{"food_name": "Roti", "estimated_quantity": 1, "unit": "piece", "estimated_grams": 40, "calories": 100, "protein": 3, "carbohydrates": 20, "fat": 1}]}'
+                },
+            }
+        ],
+    })
 
     settings = Settings()
+    assert settings.openrouter_model == "nvidia/nemotron-3.5-super-vl:free"
+    assert settings.openrouter_alternative_model == "dots-studio/dots-3-note-preview:free"
+
     provider = OpenRouterProvider(
         api_key="sk-test",
         settings=settings,
         http_client=mock_client,
     )
 
-    # 1. Photo recognition
+    # 1. Fixed default vision model disables reasoning
     provider.recognize_food(sample_jpeg_bytes)
     assert len(captured_payloads) == 1
-    assert captured_payloads[0].get("max_tokens") == 1200
-    assert captured_payloads[0].get("reasoning") == {"effort": "low"}
+    assert captured_payloads[0].get("model") == "nvidia/nemotron-3.5-super-vl:free"
+    assert captured_payloads[0].get("max_tokens") == 2000
+    assert captured_payloads[0].get("reasoning") == {"enabled": False}
+    assert captured_payloads[0].get("response_format") == {"type": "json_object"}
 
-    # 2. Voice parsing
-    mock_client.post.side_effect = mock_post
-    mock_resp_voice = MagicMock(spec=httpx.Response)
-    mock_resp_voice.status_code = 200
-    mock_resp_voice.json.return_value = {
+    # 2. Voice parsing with fixed default model
+    mock_client.post.side_effect = mock_post_factory({
+        "model": "nvidia/nemotron-3.5-super-vl:free",
         "choices": [
             {
+                "finish_reason": "stop",
                 "message": {
                     "content": '{"success": true, "transcript": "2 rotis", "summary": "2 rotis", "items": [{"food_description": "2 rotis", "quantity": 2, "unit": "piece", "estimated_grams": 80, "calories": 200, "protein": 6, "carbohydrates": 40, "fat": 2}]}'
-                }
+                },
             }
-        ]
-    }
-    mock_client.post.side_effect = lambda *a, **kw: (captured_payloads.append(kw.get("json", {})), mock_resp_voice)[1]
+        ],
+    })
     provider.parse_voice_meal(transcript="2 rotis")
     assert len(captured_payloads) == 2
-    assert captured_payloads[1].get("max_tokens") == 1200
-    assert captured_payloads[1].get("reasoning") == {"effort": "low"}
+    assert captured_payloads[1].get("max_tokens") == 2000
+    assert captured_payloads[1].get("reasoning") == {"enabled": False}
+
+    # 3. Legacy openrouter/free router uses effort=low and >=2500 tokens to avoid Cohere 400 and truncation
+    legacy_provider = OpenRouterProvider(
+        api_key="sk-test",
+        model="openrouter/free",
+        alternative_model=None,
+        settings=settings,
+        http_client=mock_client,
+    )
+    legacy_provider.parse_voice_meal(transcript="2 rotis")
+    assert len(captured_payloads) == 3
+    assert captured_payloads[2].get("max_tokens") == 2500
+    assert captured_payloads[2].get("reasoning") == {"effort": "low"}
+
+    # 4. Incompatible model omits response_format cleanly
+    lightning_provider = OpenRouterProvider(
+        api_key="sk-test",
+        model="nvidia/nemotron-3.5-lightning:free",
+        alternative_model=None,
+        settings=settings,
+        http_client=mock_client,
+    )
+    lightning_provider.parse_voice_meal(transcript="2 rotis")
+    assert "response_format" not in captured_payloads[3]
 
 
 # ---------------------------------------------------------------------------
@@ -871,6 +904,8 @@ def test_slow_openrouter_response_body_raises_timeout_error(
     settings = Settings()
     provider = OpenRouterProvider(
         api_key="sk-test",
+        alternative_model=None,
+        max_retries=0,
         settings=settings,
         http_client=mock_client,
     )
@@ -880,6 +915,7 @@ def test_slow_openrouter_response_body_raises_timeout_error(
 
     assert "timed out" in str(exc_info.value).lower()
     assert exc_info.value.provider == "openrouter"
+    assert mock_client.post.call_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -916,5 +952,329 @@ def test_both_providers_timing_out_raises_all_providers_failed(
     assert err.fallback_provider == "openrouter"
     assert isinstance(err.primary_error, AITimeoutError)
     assert isinstance(err.fallback_error, AITimeoutError)
+
+
+# ---------------------------------------------------------------------------
+# Test 24: HTTP 200 with empty content and token_budget_exhausted diagnostics
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "raw_content,finish_reason,reasoning_text,expected_category",
+    [
+        ("", "stop", None, "empty_model_content"),
+        (None, "stop", None, "empty_model_content"),
+        ("   \n\t ", "stop", None, "empty_model_content"),
+        ("", "length", "Let me analyze the image step by step...", "token_budget_exhausted"),
+        (None, "content_filter", None, "content_filtered"),
+    ],
+)
+def test_openrouter_empty_content_and_token_budget_exhaustion(
+    sample_jpeg_bytes: bytes,
+    caplog: pytest.LogCaptureFixture,
+    raw_content,
+    finish_reason: str,
+    reasoning_text,
+    expected_category: str,
+) -> None:
+    """Detect empty final output and token-budget exhaustion without leaking or using hidden reasoning."""
+    import logging
+    import httpx
+    from app.services.providers.base import ModelOutputValidationError
+    from app.services.providers.openrouter_provider import OpenRouterProvider
+
+    msg: dict = {"content": raw_content}
+    if reasoning_text:
+        msg["reasoning"] = reasoning_text
+
+    mock_resp = MagicMock(spec=httpx.Response)
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "model": "dots-studio/dots-3-note-preview:free",
+        "choices": [{"finish_reason": finish_reason, "message": msg}],
+        "usage": {
+            "prompt_tokens": 1085,
+            "completion_tokens": 1200,
+            "completion_tokens_details": {"reasoning_tokens": 1200},
+        },
+    }
+    mock_client = MagicMock(spec=httpx.Client)
+    mock_client.post.return_value = mock_resp
+
+    provider = OpenRouterProvider(
+        api_key="sk-test",
+        model="dots-studio/dots-3-note-preview:free",
+        alternative_model=None,
+        max_retries=0,
+        http_client=mock_client,
+    )
+
+    with caplog.at_level(logging.INFO):
+        with pytest.raises(ModelOutputValidationError) as exc_info:
+            provider.recognize_food(sample_jpeg_bytes)
+
+    assert exc_info.value.error_category == expected_category
+    assert any(
+        "actual_model=dots-studio/dots-3-note-preview:free" in log_msg
+        and f"finish_reason={finish_reason}" in log_msg
+        and "content_empty=True" in log_msg
+        for log_msg in caplog.messages
+    )
+    # Never log hidden reasoning text
+    if reasoning_text:
+        assert not any(reasoning_text in log_msg for log_msg in caplog.messages)
+
+
+# ---------------------------------------------------------------------------
+# Test 25: Never substitute hidden reasoning JSON for empty final content
+# ---------------------------------------------------------------------------
+def test_openrouter_never_substitutes_hidden_reasoning_json(
+    sample_jpeg_bytes: bytes,
+) -> None:
+    """Even if reasoning contains JSON-looking text, empty final content must still fail validation."""
+    import httpx
+    from app.services.providers.base import ModelOutputValidationError
+    from app.services.providers.openrouter_provider import OpenRouterProvider
+
+    mock_resp = MagicMock(spec=httpx.Response)
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "model": "nvidia/nemotron-3.5-super-vl:free",
+        "choices": [
+            {
+                "finish_reason": "length",
+                "message": {
+                    "content": "",
+                    "reasoning": '{"items": [{"food_name": "Fake Roti", "calories": 100}]}',
+                },
+            }
+        ],
+    }
+    mock_client = MagicMock(spec=httpx.Client)
+    mock_client.post.return_value = mock_resp
+
+    provider = OpenRouterProvider(
+        api_key="sk-test",
+        alternative_model=None,
+        max_retries=0,
+        http_client=mock_client,
+    )
+
+    with pytest.raises(ModelOutputValidationError) as exc_info:
+        provider.recognize_food(sample_jpeg_bytes)
+    assert exc_info.value.error_category == "token_budget_exhausted"
+
+
+# ---------------------------------------------------------------------------
+# Test 26: Valid content block list shapes parsed safely while ignoring thinking blocks
+# ---------------------------------------------------------------------------
+def test_openrouter_parses_structured_content_block_shapes(
+    sample_jpeg_bytes: bytes,
+) -> None:
+    """Handle list content parts while stripping any reasoning/thinking content blocks."""
+    import httpx
+    from app.services.providers.openrouter_provider import OpenRouterProvider
+
+    valid_json_str = '{"success": true, "summary": "Idli Sambar", "items": [{"food_name": "Idli", "estimated_quantity": 2, "unit": "piece", "estimated_grams": 100, "calories": 130, "protein": 4, "carbohydrates": 26, "fat": 0.5}]}'
+    mock_resp = MagicMock(spec=httpx.Response)
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "model": "nvidia/nemotron-3.5-super-vl:free",
+        "choices": [
+            {
+                "finish_reason": "stop",
+                "message": {
+                    "content": [
+                        {"type": "reasoning", "text": "invalid non-json thinking {foo"},
+                        {"type": "text", "text": valid_json_str},
+                    ]
+                },
+            }
+        ],
+    }
+    mock_client = MagicMock(spec=httpx.Client)
+    mock_client.post.return_value = mock_resp
+
+    provider = OpenRouterProvider(
+        api_key="sk-test",
+        alternative_model=None,
+        max_retries=0,
+        http_client=mock_client,
+    )
+    res = provider.recognize_food(sample_jpeg_bytes)
+    assert res.success is True
+    assert len(res.items) == 1
+    assert res.items[0].food_name == "Idli"
+
+
+# ---------------------------------------------------------------------------
+# Test 27: Bounded single alternative-model attempt after empty content or 429
+# ---------------------------------------------------------------------------
+def test_openrouter_bounded_alternative_model_recovers_after_token_exhaustion(
+    sample_jpeg_bytes: bytes,
+) -> None:
+    """If primary OpenRouter hits token exhaustion with >=7s left, switch once to alternative model."""
+    import httpx
+    from app.services.providers.openrouter_provider import OpenRouterProvider
+
+    models_called = []
+    valid_json = '{"success": true, "summary": "Dal Rice", "items": [{"food_name": "Dal Rice", "estimated_quantity": 1, "unit": "plate", "estimated_grams": 300, "calories": 380, "protein": 12, "carbohydrates": 65, "fat": 7}]}'
+
+    resp_empty_length = MagicMock(spec=httpx.Response)
+    resp_empty_length.status_code = 200
+    resp_empty_length.json.return_value = {
+        "model": "nvidia/nemotron-3.5-super-vl:free",
+        "choices": [{"finish_reason": "length", "message": {"content": "", "reasoning": "thought"}}],
+        "usage": {"completion_tokens": 2000, "completion_tokens_details": {"reasoning_tokens": 2000}},
+    }
+
+    resp_alt_success = MagicMock(spec=httpx.Response)
+    resp_alt_success.status_code = 200
+    resp_alt_success.json.return_value = {
+        "model": "dots-studio/dots-3-note-preview:free",
+        "choices": [{"finish_reason": "stop", "message": {"content": valid_json}}],
+        "usage": {"completion_tokens": 120, "completion_tokens_details": {"reasoning_tokens": 0}},
+    }
+
+    def side_effect(url, *args, **kwargs):
+        models_called.append(kwargs["json"]["model"])
+        if len(models_called) == 1:
+            return resp_empty_length
+        return resp_alt_success
+
+    mock_client = MagicMock(spec=httpx.Client)
+    mock_client.post.side_effect = side_effect
+
+    provider = OpenRouterProvider(
+        api_key="sk-test",
+        model="nvidia/nemotron-3.5-super-vl:free",
+        alternative_model="dots-studio/dots-3-note-preview:free",
+        max_retries=0,
+        http_client=mock_client,
+    )
+
+    result = provider.recognize_food(sample_jpeg_bytes, timeout_seconds=18.0)
+    assert result.success is True
+    assert result.items[0].food_name == "Dal Rice"
+    assert models_called == [
+        "nvidia/nemotron-3.5-super-vl:free",
+        "dots-studio/dots-3-note-preview:free",
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Test 28: Permanent 400/401/403 errors NEVER retry or trigger alternative model
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("status_code", [400, 401, 403])
+def test_openrouter_permanent_client_errors_do_not_switch_or_retry(
+    sample_jpeg_bytes: bytes,
+    status_code: int,
+) -> None:
+    """HTTP 400, 401, and 403 fail fast after 1 attempt without alternative model failover."""
+    import httpx
+    from app.services.providers.base import AIServiceError
+    from app.services.providers.openrouter_provider import OpenRouterProvider
+
+    mock_resp = MagicMock(spec=httpx.Response)
+    mock_resp.status_code = status_code
+    mock_resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+        f"HTTP {status_code}", request=MagicMock(), response=mock_resp
+    )
+    mock_client = MagicMock(spec=httpx.Client)
+    mock_client.post.return_value = mock_resp
+
+    provider = OpenRouterProvider(
+        api_key="sk-test",
+        model="nvidia/nemotron-3.5-super-vl:free",
+        alternative_model="dots-studio/dots-3-note-preview:free",
+        max_retries=1,
+        http_client=mock_client,
+    )
+
+    with pytest.raises(AIServiceError):
+        provider.recognize_food(sample_jpeg_bytes, timeout_seconds=18.0)
+
+    assert mock_client.post.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Test 29: Embedded HTTP 200 error payload is classified and bounded
+# ---------------------------------------------------------------------------
+def test_openrouter_embedded_200_error_payload_handled_cleanly(
+    sample_jpeg_bytes: bytes,
+) -> None:
+    """When OpenRouter returns HTTP 200 containing an upstream error dict, classify and handle safely."""
+    import httpx
+    from app.services.providers.openrouter_provider import OpenRouterProvider
+
+    resp_err = MagicMock(spec=httpx.Response)
+    resp_err.status_code = 200
+    resp_err.json.return_value = {
+        "error": {"code": 429, "message": "Provider rate limited upstream"}
+    }
+    mock_client = MagicMock(spec=httpx.Client)
+    mock_client.post.return_value = resp_err
+
+    provider = OpenRouterProvider(
+        api_key="sk-test",
+        model="nvidia/nemotron-3.5-super-vl:free",
+        alternative_model=None,
+        max_retries=0,
+        http_client=mock_client,
+    )
+
+    with pytest.raises(AIRateLimitError):
+        provider.recognize_food(sample_jpeg_bytes, timeout_seconds=18.0)
+
+
+# ---------------------------------------------------------------------------
+# Test 30: Skips alternative model when remaining budget < 7.0s or cancelled
+# ---------------------------------------------------------------------------
+def test_openrouter_skips_alternative_when_budget_insufficient_or_cancelled(
+    sample_jpeg_bytes: bytes,
+) -> None:
+    """Do not start an alternative model attempt when remaining budget < 7.0s or request cancelled."""
+    import httpx
+    from app.services.providers.base import ModelOutputValidationError
+    from app.services.providers.openrouter_provider import OpenRouterProvider
+
+    resp_empty = MagicMock(spec=httpx.Response)
+    resp_empty.status_code = 200
+    resp_empty.json.return_value = {
+        "model": "nvidia/nemotron-3.5-super-vl:free",
+        "choices": [{"finish_reason": "stop", "message": {"content": ""}}],
+    }
+
+    mock_client = MagicMock(spec=httpx.Client)
+    mock_client.post.return_value = resp_empty
+
+    provider = OpenRouterProvider(
+        api_key="sk-test",
+        model="nvidia/nemotron-3.5-super-vl:free",
+        alternative_model="dots-studio/dots-3-note-preview:free",
+        max_retries=0,
+        http_client=mock_client,
+    )
+
+    # Case 1: Only 6.5s total budget -> alternative skipped
+    with pytest.raises(ModelOutputValidationError):
+        provider.recognize_food(sample_jpeg_bytes, timeout_seconds=6.5)
+    assert mock_client.post.call_count == 1
+
+    # Case 2: Cancelled mid-flight -> alternative skipped
+    mock_client.post.reset_mock()
+    cancelled_flag = [False]
+
+    def cancel_during_primary(*args, **kwargs):
+        cancelled_flag[0] = True
+        return resp_empty
+
+    mock_client.post.side_effect = cancel_during_primary
+    with pytest.raises(ModelOutputValidationError):
+        provider.recognize_food(
+            sample_jpeg_bytes,
+            timeout_seconds=18.0,
+            is_cancelled=lambda: cancelled_flag[0],
+        )
+    assert mock_client.post.call_count == 1
+
 
 

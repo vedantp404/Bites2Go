@@ -24,6 +24,7 @@ from app.services.providers.base import (
     AIRequestCancelledError,
     AIServiceError,
     AITimeoutError,
+    AITransientError,
     AIUnavailableError,
     BaseAIProvider,
     ModelOutputValidationError,
@@ -36,6 +37,23 @@ from app.services.providers.base import (
 logger = logging.getLogger("bites2go.openrouter")
 
 T = TypeVar("T")
+
+_UNSET = object()
+_MIN_ALTERNATIVE_BUDGET_SECONDS = 7.0
+
+# Models verified not to support OpenAI-style `response_format={"type": "json_object"}`
+_MODELS_WITHOUT_RESPONSE_FORMAT = frozenset({
+    "nvidia/nemotron-3.5-lightning:free",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    "thinkingmachines/inkling-2-small:free",
+})
+
+# Routers or endpoints that may reject `reasoning.enabled=False` with HTTP 400
+_REASONING_REQUIRED_PREFIXES = (
+    "openrouter/free",
+    "cohere/",
+    "recursive/flint",
+)
 
 
 def is_retryable_openrouter_error(exc: BaseException) -> bool:
@@ -181,6 +199,72 @@ def _normalize_voice_candidate_dict(item_dict: dict[str, Any]) -> dict[str, Any]
     return normalized
 
 
+def _extract_text_from_message(message: dict[str, Any]) -> tuple[str, bool, bool]:
+    """Extract final user-facing text content from an OpenRouter message.
+
+    Never substitutes hidden reasoning/thinking text for final JSON output.
+    Returns (extracted_text, has_reasoning_output, has_refusal).
+    """
+    has_reasoning_output = bool(message.get("reasoning")) or bool(message.get("reasoning_details"))
+    has_refusal = bool(message.get("refusal"))
+    raw_content = message.get("content")
+
+    if isinstance(raw_content, str):
+        return raw_content.strip(), has_reasoning_output, has_refusal
+
+    if isinstance(raw_content, list):
+        parts: list[str] = []
+        for item in raw_content:
+            if isinstance(item, str):
+                stripped = item.strip()
+                if stripped:
+                    parts.append(stripped)
+            elif isinstance(item, dict):
+                part_type = item.get("type")
+                if part_type in ("reasoning", "thinking"):
+                    has_reasoning_output = True
+                    continue
+                if part_type in (None, "text", "output_text") and isinstance(item.get("text"), str):
+                    stripped = item["text"].strip()
+                    if stripped:
+                        parts.append(stripped)
+        return "\n".join(parts).strip(), has_reasoning_output, has_refusal
+
+    if isinstance(raw_content, dict):
+        if raw_content.get("type") in ("reasoning", "thinking"):
+            return "", True, has_refusal
+        if isinstance(raw_content.get("text"), str):
+            return raw_content["text"].strip(), has_reasoning_output, has_refusal
+
+    return "", has_reasoning_output, has_refusal
+
+
+def _build_model_payload(
+    model_id: str,
+    messages: list[dict[str, Any]],
+    max_tokens: int,
+) -> dict[str, Any]:
+    """Build a model-compatible OpenRouter payload without reasoning starvation."""
+    lower_id = model_id.lower()
+    if any(lower_id == pat or lower_id.startswith(pat) for pat in _REASONING_REQUIRED_PREFIXES):
+        reasoning_cfg: dict[str, Any] = {"effort": "low"}
+        effective_max_tokens = max(max_tokens, 2500)
+    else:
+        reasoning_cfg = {"enabled": False}
+        effective_max_tokens = max_tokens
+
+    payload: dict[str, Any] = {
+        "model": model_id,
+        "messages": messages,
+        "temperature": 0.2,
+        "max_tokens": effective_max_tokens,
+        "reasoning": reasoning_cfg,
+    }
+    if model_id not in _MODELS_WITHOUT_RESPONSE_FORMAT:
+        payload["response_format"] = {"type": "json_object"}
+    return payload
+
+
 class OpenRouterProvider(BaseAIProvider):
     """OpenRouter fallback AI provider using the Chat Completions endpoint."""
 
@@ -193,10 +277,20 @@ class OpenRouterProvider(BaseAIProvider):
         max_retries: Optional[int] = None,
         settings: Optional[Settings] = None,
         http_client: Optional[httpx.Client] = None,
+        alternative_model: Any = _UNSET,
+        max_tokens: Optional[int] = None,
     ) -> None:
         self._settings = settings or get_settings()
         self._api_key = api_key or self._settings.openrouter_api_key
         self._model = model or self._settings.openrouter_model
+        if alternative_model is _UNSET:
+            self._alternative_model: Optional[str] = getattr(
+                self._settings, "openrouter_alternative_model", None
+            )
+        else:
+            self._alternative_model = alternative_model or None
+        if self._alternative_model == self._model:
+            self._alternative_model = None
         self._base_url = (base_url or self._settings.openrouter_base_url).rstrip("/")
         self._timeout_seconds = (
             timeout_seconds if timeout_seconds is not None else self._settings.openrouter_timeout_seconds
@@ -205,7 +299,7 @@ class OpenRouterProvider(BaseAIProvider):
             max_retries if max_retries is not None else self._settings.openrouter_max_retries
         )
         self._max_tokens = (
-            getattr(self._settings, "openrouter_max_tokens", 1200)
+            max_tokens if max_tokens is not None else getattr(self._settings, "openrouter_max_tokens", 2000)
         )
         self._client = http_client
 
@@ -233,17 +327,77 @@ class OpenRouterProvider(BaseAIProvider):
             )
         return self._client
 
+    def _map_status_code_error(
+        self,
+        status_code: Optional[int],
+        cause: Optional[BaseException] = None,
+    ) -> AIServiceError:
+        """Map an HTTP or embedded OpenRouter error status code to a normalized domain exception."""
+        if status_code in (401, 403):
+            return AIAuthenticationError(
+                "OpenRouter authentication failed. Please verify OPENROUTER_API_KEY.",
+                provider=self.name,
+                code=status_code,
+                error_category="auth_failed",
+            )
+        if status_code == 400:
+            return AIServiceError(
+                "OpenRouter request failed with HTTP 400.",
+                provider=self.name,
+                code=400,
+                error_category="bad_request",
+            )
+        if status_code == 402:
+            return AIRateLimitError(
+                "OpenRouter credit balance exhausted. Please add credits or select a free model.",
+                provider=self.name,
+                code=402,
+                is_quota_exhausted=True,
+                error_category="quota_exhausted",
+            )
+        if status_code == 429:
+            return AIRateLimitError(
+                "OpenRouter rate limit or quota exceeded.",
+                provider=self.name,
+                code=429,
+                is_quota_exhausted=True,
+                error_category="rate_limit",
+            )
+        if status_code in {408, 504}:
+            return AITimeoutError(
+                "OpenRouter request timed out after multiple attempts.",
+                provider=self.name,
+                code=status_code,
+                error_category="upstream_timeout",
+            )
+        if status_code in {500, 502, 503}:
+            return AIUnavailableError(
+                f"OpenRouter service is temporarily unavailable (HTTP {status_code}).",
+                provider=self.name,
+                code=status_code,
+                error_category="upstream_unavailable",
+            )
+        return AIServiceError(
+            f"OpenRouter request failed with HTTP {status_code}.",
+            provider=self.name,
+            code=status_code,
+            error_category="upstream_error",
+        )
+
     def _execute_with_retry(
         self,
         operation_name: str,
         fn: Callable[[], httpx.Response],
         is_cancelled: Optional[Callable[[], bool]] = None,
-    ) -> dict[str, Any]:
-        """Execute OpenRouter HTTP call with bounded retries for transient errors."""
+        model_name: Optional[str] = None,
+        max_retries_override: Optional[int] = None,
+    ) -> tuple[dict[str, Any], float]:
+        """Execute OpenRouter HTTP call with bounded retries and return (json_data, duration_s)."""
         if is_request_cancelled(is_cancelled):
             raise AIRequestCancelledError("Client disconnected / request cancelled.", provider=self.name)
 
-        retries = self._max_retries
+        active_model = model_name or self._model
+        retries = max_retries_override if max_retries_override is not None else self._max_retries
         total_attempts = retries + 1
 
         attempt_start_times: dict[int, float] = {}
@@ -260,7 +414,7 @@ class OpenRouterProvider(BaseAIProvider):
                 operation_name,
                 attempt_num,
                 total_attempts,
-                self._model,
+                active_model,
             )
 
         def _before_sleep(retry_state: tenacity.RetryCallState) -> None:
@@ -308,7 +462,14 @@ class OpenRouterProvider(BaseAIProvider):
             )
             response.raise_for_status()
             t_body_start = time.perf_counter()
-            data = response.json()
+            try:
+                data = response.json()
+            except ValueError as json_err:
+                raise ModelOutputValidationError(
+                    f"OpenRouter HTTP response body could not be decoded as JSON: {str(json_err)}",
+                    provider=self.name,
+                    error_category="malformed_json",
+                ) from json_err
             t_body_elapsed = time.perf_counter() - t_body_start
             logger.info(
                 "[Timing][%s] OpenRouter [%s] response body read and JSON decoding took %.4fs",
@@ -316,61 +477,25 @@ class OpenRouterProvider(BaseAIProvider):
                 operation_name,
                 t_body_elapsed,
             )
-            return data
+            return data, time.perf_counter() - overall_start_time
         except httpx.HTTPStatusError as http_err:
             status_code = http_err.response.status_code
             safe_err = f"HTTP {status_code}"
-            logger.error("OpenRouter API [%s] HTTP error: %s", operation_name, safe_err)
-
-            if status_code in (401, 403):
-                raise AIAuthenticationError(
-                    "OpenRouter authentication failed. Please verify OPENROUTER_API_KEY.",
-                    provider=self.name,
-                    code=status_code,
-                ) from http_err
-            if status_code == 402:
-                raise AIRateLimitError(
-                    "OpenRouter credit balance exhausted. Please add credits or select a free model.",
-                    provider=self.name,
-                    code=402,
-                    is_quota_exhausted=True,
-                ) from http_err
-            if status_code == 429:
-                raise AIRateLimitError(
-                    "OpenRouter rate limit or quota exceeded.",
-                    provider=self.name,
-                    code=429,
-                    is_quota_exhausted=True,
-                ) from http_err
-            if status_code in {408, 504}:
-                raise AITimeoutError(
-                    "OpenRouter request timed out after multiple attempts.",
-                    provider=self.name,
-                    code=status_code,
-                ) from http_err
-            if status_code in {500, 502, 503}:
-                raise AIUnavailableError(
-                    f"OpenRouter service is temporarily unavailable (HTTP {status_code}).",
-                    provider=self.name,
-                    code=status_code,
-                ) from http_err
-
-            raise AIServiceError(
-                f"OpenRouter request failed with HTTP {status_code}.",
-                provider=self.name,
-                code=status_code,
-            ) from http_err
+            logger.error("OpenRouter API [%s] HTTP error (model=%s): %s", operation_name, active_model, safe_err)
+            raise self._map_status_code_error(status_code) from http_err
 
         except (httpx.TimeoutException, TimeoutError) as timeout_err:
             raise AITimeoutError(
                 "OpenRouter request timed out after multiple attempts.",
                 provider=self.name,
+                error_category="upstream_timeout",
             ) from timeout_err
 
         except (httpx.ConnectError, httpx.RemoteProtocolError) as net_err:
             raise AIUnavailableError(
                 "Cannot establish connection to OpenRouter API.",
                 provider=self.name,
+                error_category="upstream_unavailable",
             ) from net_err
 
         except Exception as exc:
@@ -379,7 +504,259 @@ class OpenRouterProvider(BaseAIProvider):
             raise AIServiceError(
                 f"Unexpected error communicating with OpenRouter: {str(exc)}",
                 provider=self.name,
+                error_category="unexpected_error",
             ) from exc
+
+    def _extract_and_log_response_text(
+        self,
+        operation_name: str,
+        requested_model: str,
+        data: dict[str, Any],
+        duration: float,
+    ) -> tuple[str, Optional[str]]:
+        """Validate OpenRouter envelope, emit safe diagnostics, and extract final text content."""
+        if not isinstance(data, dict):
+            raise ModelOutputValidationError(
+                "OpenRouter response JSON is not an object.",
+                provider=self.name,
+                error_category="malformed_schema_shape",
+            )
+
+        if "error" in data and isinstance(data["error"], dict) and not data.get("choices"):
+            embedded_err = data["error"]
+            raw_code = embedded_err.get("code")
+            try:
+                status_code = int(raw_code) if raw_code is not None else 502
+            except (TypeError, ValueError):
+                status_code = 502
+            logger.warning(
+                "[Timing][%s] OpenRouter [%s] embedded error payload (requested_model=%s, code=%s)",
+                get_current_request_id(),
+                operation_name,
+                requested_model,
+                status_code,
+            )
+            raise self._map_status_code_error(status_code)
+
+        actual_model = str(data.get("model") or requested_model)
+        usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+        prompt_tokens = usage.get("prompt_tokens")
+        completion_tokens = usage.get("completion_tokens")
+        comp_details = usage.get("completion_tokens_details")
+        if not isinstance(comp_details, dict):
+            comp_details = {}
+        reasoning_tokens = comp_details.get("reasoning_tokens")
+
+        choices = data.get("choices")
+        if not isinstance(choices, list) or not choices:
+            logger.warning(
+                "[Timing][%s] OpenRouter [%s] response meta: requested_model=%s, actual_model=%s, "
+                "finish_reason=none, prompt_tokens=%s, completion_tokens=%s, reasoning_tokens=%s, "
+                "content_empty=True, duration=%.3fs, failure_category=empty_choices",
+                get_current_request_id(),
+                operation_name,
+                requested_model,
+                actual_model,
+                prompt_tokens,
+                completion_tokens,
+                reasoning_tokens,
+                duration,
+            )
+            raise ModelOutputValidationError(
+                "OpenRouter returned empty choices in response.",
+                provider=self.name,
+                error_category="empty_choices",
+            )
+
+        first_choice = choices[0] if isinstance(choices[0], dict) else {}
+        finish_reason = first_choice.get("finish_reason")
+        message = first_choice.get("message") if isinstance(first_choice.get("message"), dict) else {}
+
+        extracted_text, has_reasoning, has_refusal = _extract_text_from_message(message)
+        content_empty = not bool(extracted_text)
+
+        logger.info(
+            "[Timing][%s] OpenRouter [%s] response meta: requested_model=%s, actual_model=%s, "
+            "finish_reason=%s, prompt_tokens=%s, completion_tokens=%s, reasoning_tokens=%s, "
+            "has_reasoning=%s, content_empty=%s, duration=%.3fs",
+            get_current_request_id(),
+            operation_name,
+            requested_model,
+            actual_model,
+            finish_reason,
+            prompt_tokens,
+            completion_tokens,
+            reasoning_tokens,
+            has_reasoning,
+            content_empty,
+            duration,
+        )
+
+        if content_empty:
+            if finish_reason == "length":
+                failure_category = "token_budget_exhausted"
+                err_msg = (
+                    "OpenRouter exhausted completion token budget before producing final message content."
+                )
+            elif finish_reason == "content_filter" or has_refusal:
+                failure_category = "content_filtered"
+                err_msg = "OpenRouter response was withheld by content filter or refusal."
+            else:
+                failure_category = "empty_model_content"
+                err_msg = "OpenRouter message content was empty."
+
+            logger.warning(
+                "[Timing][%s] OpenRouter [%s] empty output classified (failure_category=%s, "
+                "actual_model=%s, finish_reason=%s, completion_tokens=%s, reasoning_tokens=%s, has_reasoning=%s)",
+                get_current_request_id(),
+                operation_name,
+                failure_category,
+                actual_model,
+                finish_reason,
+                completion_tokens,
+                reasoning_tokens,
+                has_reasoning,
+            )
+            raise ModelOutputValidationError(
+                err_msg,
+                provider=self.name,
+                error_category=failure_category,
+            )
+
+        return extracted_text, finish_reason
+
+    def _decode_json_object(
+        self,
+        operation_name: str,
+        raw_text: str,
+        finish_reason: Optional[str],
+    ) -> dict[str, Any]:
+        """Strip markdown/think blocks and parse final JSON object with explicit failure classification."""
+        cleaned_json_str = _clean_markdown_and_reasoning(raw_text)
+        try:
+            parsed_raw = json.loads(cleaned_json_str)
+        except json.JSONDecodeError as json_err:
+            failure_category = "token_budget_exhausted" if finish_reason == "length" else "malformed_json"
+            logger.warning(
+                "[Timing][%s] OpenRouter [%s] JSON decode failed (failure_category=%s, finish_reason=%s)",
+                get_current_request_id(),
+                operation_name,
+                failure_category,
+                finish_reason,
+            )
+            raise ModelOutputValidationError(
+                f"OpenRouter response could not be parsed as JSON: {str(json_err)}",
+                provider=self.name,
+                error_category=failure_category,
+            ) from json_err
+
+        if not isinstance(parsed_raw, dict):
+            logger.warning(
+                "[Timing][%s] OpenRouter [%s] decoded JSON is not an object (failure_category=malformed_schema_shape)",
+                get_current_request_id(),
+                operation_name,
+            )
+            raise ModelOutputValidationError(
+                "OpenRouter JSON response is not a valid object.",
+                provider=self.name,
+                error_category="malformed_schema_shape",
+            )
+        return parsed_raw
+
+    def _run_with_optional_alternative_model(
+        self,
+        operation_name: str,
+        messages: list[dict[str, Any]],
+        parse_and_validate_fn: Callable[[dict[str, Any], float, str], T],
+        timeout_seconds: Optional[float] = None,
+        is_cancelled: Optional[Callable[[], bool]] = None,
+    ) -> T:
+        """Execute primary OpenRouter model and allow at most one bounded alternative-model attempt."""
+        api_key = self._get_api_key()
+        url = f"{self._base_url}/chat/completions"
+        client = self._get_client()
+        overall_budget = timeout_seconds if timeout_seconds is not None else self._timeout_seconds
+        t_overall_start = time.perf_counter()
+
+        has_alternative = bool(self._alternative_model and self._alternative_model != self._model)
+        if has_alternative and overall_budget >= 16.0:
+            primary_timeout = min(
+                overall_budget,
+                max(overall_budget - _MIN_ALTERNATIVE_BUDGET_SECONDS, 11.5),
+            )
+        else:
+            primary_timeout = overall_budget
+
+        def _invoke_model(
+            model_id: str,
+            attempt_budget: float,
+            max_retries_override: Optional[int],
+        ) -> T:
+            payload = _build_model_payload(model_id, messages, self._max_tokens)
+            connect_timeout = min(5.0, max(attempt_budget, 0.5))
+            req_timeout = (
+                attempt_budget
+                if attempt_budget <= 5.0
+                else httpx.Timeout(attempt_budget, connect=connect_timeout)
+            )
+
+            def _call_openrouter() -> httpx.Response:
+                t_req_start = time.perf_counter()
+                resp = client.post(
+                    url,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json=payload,
+                    timeout=req_timeout,
+                )
+                t_req_elapsed = time.perf_counter() - t_req_start
+                logger.info(
+                    "[Timing][%s] OpenRouter [%s] HTTP request completed in %.3fs (status: %d, model=%s)",
+                    get_current_request_id(),
+                    operation_name,
+                    t_req_elapsed,
+                    resp.status_code,
+                    model_id,
+                )
+                return resp
+
+            data, call_duration = self._execute_with_retry(
+                operation_name,
+                _call_openrouter,
+                is_cancelled=is_cancelled,
+                model_name=model_id,
+                max_retries_override=max_retries_override,
+            )
+            return parse_and_validate_fn(data, call_duration, model_id)
+
+        try:
+            return _invoke_model(self._model, primary_timeout, None)
+        except (AIRequestCancelledError, AIAuthenticationError):
+            raise
+        except (ModelOutputValidationError, AITransientError) as exc:
+            # Never fall back inside OpenRouter on bad payload (HTTP 400)
+            if exc.code == 400 or getattr(exc, "error_category", None) == "bad_request":
+                raise
+            rem = overall_budget - (time.perf_counter() - t_overall_start)
+            if (
+                not has_alternative
+                or is_request_cancelled(is_cancelled)
+                or rem < _MIN_ALTERNATIVE_BUDGET_SECONDS
+            ):
+                raise
+
+            reason_cat = getattr(exc, "error_category", None) or type(exc).__name__
+            logger.warning(
+                "[Timing][%s] OpenRouter [%s] switching to alternative model [%s] from [%s] "
+                "(failure_category=%s, remaining_budget=%.2fs)",
+                get_current_request_id(),
+                operation_name,
+                self._alternative_model,
+                self._model,
+                reason_cat,
+                rem,
+            )
+            assert self._alternative_model is not None
+            return _invoke_model(self._alternative_model, rem, 0)
 
     def recognize_food(
         self,
@@ -389,7 +766,6 @@ class OpenRouterProvider(BaseAIProvider):
         is_cancelled: Optional[Callable[[], bool]] = None,
     ) -> FoodRecognitionResponse:
         """Recognize food items from an image using OpenRouter vision chat completion."""
-        api_key = self._get_api_key()
         b64_image = base64.b64encode(image_bytes).decode("utf-8")
         data_url = f"data:{mime_type};base64,{b64_image}"
 
@@ -437,119 +813,82 @@ class OpenRouterProvider(BaseAIProvider):
             },
         ]
 
-        payload = {
-            "model": self._model,
-            "messages": messages,
-            "response_format": {"type": "json_object"},
-            "temperature": 0.2,
-            "max_tokens": self._max_tokens,
-            "reasoning": {"effort": "low"},
-        }
-
-        url = f"{self._base_url}/chat/completions"
-        client = self._get_client()
-        effective_timeout = timeout_seconds if timeout_seconds is not None else self._timeout_seconds
-
-        def _call_openrouter() -> httpx.Response:
-            t_req_start = time.perf_counter()
-            resp = client.post(
-                url,
-                headers={"Authorization": f"Bearer {api_key}"},
-                json=payload,
-                timeout=effective_timeout,
+        def _parse_and_validate_photo(
+            data: dict[str, Any],
+            call_duration: float,
+            requested_model: str,
+        ) -> FoodRecognitionResponse:
+            content_text, finish_reason = self._extract_and_log_response_text(
+                "recognize_food", requested_model, data, call_duration
             )
-            t_req_elapsed = time.perf_counter() - t_req_start
+            t_parse_start = time.perf_counter()
+            parsed_raw = self._decode_json_object("recognize_food", content_text, finish_reason)
+
+            raw_items = parsed_raw.get("items")
+            if raw_items is None:
+                if "candidates" in parsed_raw:
+                    raw_items = parsed_raw.pop("candidates")
+                elif "foods" in parsed_raw:
+                    raw_items = parsed_raw.pop("foods")
+                elif "food_items" in parsed_raw:
+                    raw_items = parsed_raw.pop("food_items")
+                else:
+                    raw_items = []
+
+            if not isinstance(raw_items, list):
+                raise ModelOutputValidationError(
+                    "OpenRouter response 'items' field is not a list.",
+                    provider=self.name,
+                    error_category="malformed_schema_shape",
+                )
+
+            parsed_raw["items"] = [
+                _normalize_food_candidate_dict(it) for it in raw_items if isinstance(it, dict)
+            ]
+            if "success" not in parsed_raw:
+                parsed_raw["success"] = True
+            if "summary" not in parsed_raw:
+                parsed_raw["summary"] = ""
+            if "warnings" not in parsed_raw or not isinstance(parsed_raw["warnings"], list):
+                parsed_raw["warnings"] = []
+            t_parse_elapsed = time.perf_counter() - t_parse_start
             logger.info(
-                "[Timing][%s] OpenRouter [%s] HTTP request completed in %.3fs (status: %d)",
+                "[Timing][%s] OpenRouter [%s] response JSON parsing took %.4fs",
                 get_current_request_id(),
                 "recognize_food",
-                t_req_elapsed,
-                resp.status_code,
-            )
-            return resp
-
-        data = self._execute_with_retry("recognize_food", _call_openrouter, is_cancelled=is_cancelled)
-
-        t_parse_start = time.perf_counter()
-        choices = data.get("choices", [])
-        if not choices:
-            raise ModelOutputValidationError(
-                "OpenRouter returned empty choices in response.",
-                provider=self.name,
+                t_parse_elapsed,
             )
 
-        content = choices[0].get("message", {}).get("content", "")
-        if not content:
-            raise ModelOutputValidationError(
-                "OpenRouter message content was empty.",
-                provider=self.name,
-            )
+            t_val_start = time.perf_counter()
+            try:
+                validated = FoodRecognitionResponse.model_validate(parsed_raw)
+                t_val_elapsed = time.perf_counter() - t_val_start
+                logger.info(
+                    "[Timing][%s] OpenRouter [%s] Pydantic validation took %.4fs",
+                    get_current_request_id(),
+                    "recognize_food",
+                    t_val_elapsed,
+                )
+                return validated
+            except ValidationError as val_err:
+                logger.warning(
+                    "[Timing][%s] OpenRouter [%s] Pydantic validation failed (failure_category=pydantic_validation_failed)",
+                    get_current_request_id(),
+                    "recognize_food",
+                )
+                raise ModelOutputValidationError(
+                    f"OpenRouter response failed validation schema: {str(val_err)}",
+                    provider=self.name,
+                    error_category="pydantic_validation_failed",
+                ) from val_err
 
-        cleaned_json_str = _clean_markdown_and_reasoning(content)
-
-        try:
-            parsed_raw = json.loads(cleaned_json_str)
-        except json.JSONDecodeError as json_err:
-            raise ModelOutputValidationError(
-                f"OpenRouter response could not be parsed as JSON: {str(json_err)}",
-                provider=self.name,
-            ) from json_err
-
-        if not isinstance(parsed_raw, dict):
-            raise ModelOutputValidationError(
-                "OpenRouter JSON response is not a valid object.",
-                provider=self.name,
-            )
-
-        # Normalize items list
-        raw_items = parsed_raw.get("items")
-        if raw_items is None:
-            if "candidates" in parsed_raw:
-                raw_items = parsed_raw.pop("candidates")
-            elif "foods" in parsed_raw:
-                raw_items = parsed_raw.pop("foods")
-            elif "food_items" in parsed_raw:
-                raw_items = parsed_raw.pop("food_items")
-            else:
-                raw_items = []
-
-        if not isinstance(raw_items, list):
-            raise ModelOutputValidationError(
-                "OpenRouter response 'items' field is not a list.",
-                provider=self.name,
-            )
-
-        parsed_raw["items"] = [_normalize_food_candidate_dict(it) for it in raw_items if isinstance(it, dict)]
-        if "success" not in parsed_raw:
-            parsed_raw["success"] = True
-        if "summary" not in parsed_raw:
-            parsed_raw["summary"] = ""
-        if "warnings" not in parsed_raw or not isinstance(parsed_raw["warnings"], list):
-            parsed_raw["warnings"] = []
-        t_parse_elapsed = time.perf_counter() - t_parse_start
-        logger.info(
-            "[Timing][%s] OpenRouter [%s] response JSON parsing took %.4fs",
-            get_current_request_id(),
-            "recognize_food",
-            t_parse_elapsed,
+        return self._run_with_optional_alternative_model(
+            operation_name="recognize_food",
+            messages=messages,
+            parse_and_validate_fn=_parse_and_validate_photo,
+            timeout_seconds=timeout_seconds,
+            is_cancelled=is_cancelled,
         )
-
-        t_val_start = time.perf_counter()
-        try:
-            validated = FoodRecognitionResponse.model_validate(parsed_raw)
-            t_val_elapsed = time.perf_counter() - t_val_start
-            logger.info(
-                "[Timing][%s] OpenRouter [%s] Pydantic validation took %.4fs",
-                get_current_request_id(),
-                "recognize_food",
-                t_val_elapsed,
-            )
-            return validated
-        except ValidationError as val_err:
-            raise ModelOutputValidationError(
-                f"OpenRouter response failed validation schema: {str(val_err)}",
-                provider=self.name,
-            ) from val_err
 
     def parse_voice_meal(
         self,
@@ -559,9 +898,8 @@ class OpenRouterProvider(BaseAIProvider):
         is_cancelled: Optional[Callable[[], bool]] = None,
     ) -> VoiceMealParseResponse:
         """Parse spoken food description using OpenRouter chat completion."""
-        api_key = self._get_api_key()
-
-        user_content = f"Spoken food transcript: {transcript.strip()}"
+        cleaned_transcript = transcript.strip()
+        user_content = f"Spoken food transcript: {cleaned_transcript}"
         if meal_context:
             user_content += f"\nMeal context: {meal_context.strip()}"
 
@@ -569,7 +907,7 @@ class OpenRouterProvider(BaseAIProvider):
             "\n\nYou MUST respond ONLY with a valid JSON object matching this schema:\n"
             "{\n"
             '  "success": true,\n'
-            f'  "transcript": "{transcript.strip()}",\n'
+            f'  "transcript": "{cleaned_transcript}",\n'
             '  "summary": "Brief summary",\n'
             '  "items": [\n'
             "    {\n"
@@ -594,115 +932,79 @@ class OpenRouterProvider(BaseAIProvider):
             {"role": "user", "content": user_content},
         ]
 
-        payload = {
-            "model": self._model,
-            "messages": messages,
-            "response_format": {"type": "json_object"},
-            "temperature": 0.2,
-            "max_tokens": self._max_tokens,
-            "reasoning": {"effort": "low"},
-        }
-
-        url = f"{self._base_url}/chat/completions"
-        client = self._get_client()
-        effective_timeout = timeout_seconds if timeout_seconds is not None else self._timeout_seconds
-
-        def _call_openrouter() -> httpx.Response:
-            t_req_start = time.perf_counter()
-            resp = client.post(
-                url,
-                headers={"Authorization": f"Bearer {api_key}"},
-                json=payload,
-                timeout=effective_timeout,
+        def _parse_and_validate_voice(
+            data: dict[str, Any],
+            call_duration: float,
+            requested_model: str,
+        ) -> VoiceMealParseResponse:
+            content_text, finish_reason = self._extract_and_log_response_text(
+                "parse_voice_meal", requested_model, data, call_duration
             )
-            t_req_elapsed = time.perf_counter() - t_req_start
+            t_parse_start = time.perf_counter()
+            parsed_raw = self._decode_json_object("parse_voice_meal", content_text, finish_reason)
+
+            raw_items = parsed_raw.get("items")
+            if raw_items is None:
+                if "candidates" in parsed_raw:
+                    raw_items = parsed_raw.pop("candidates")
+                elif "foods" in parsed_raw:
+                    raw_items = parsed_raw.pop("foods")
+                else:
+                    raw_items = []
+
+            if not isinstance(raw_items, list):
+                raise ModelOutputValidationError(
+                    "OpenRouter response 'items' field is not a list.",
+                    provider=self.name,
+                    error_category="malformed_schema_shape",
+                )
+
+            parsed_raw["items"] = [
+                _normalize_voice_candidate_dict(it) for it in raw_items if isinstance(it, dict)
+            ]
+            parsed_raw["transcript"] = cleaned_transcript
+            if "success" not in parsed_raw:
+                parsed_raw["success"] = True
+            if "summary" not in parsed_raw:
+                parsed_raw["summary"] = ""
+            if "warnings" not in parsed_raw or not isinstance(parsed_raw["warnings"], list):
+                parsed_raw["warnings"] = []
+            t_parse_elapsed = time.perf_counter() - t_parse_start
             logger.info(
-                "[Timing][%s] OpenRouter [%s] HTTP request completed in %.3fs (status: %d)",
+                "[Timing][%s] OpenRouter [%s] response JSON parsing took %.4fs",
                 get_current_request_id(),
                 "parse_voice_meal",
-                t_req_elapsed,
-                resp.status_code,
-            )
-            return resp
-
-        data = self._execute_with_retry("parse_voice_meal", _call_openrouter, is_cancelled=is_cancelled)
-
-        t_parse_start = time.perf_counter()
-        choices = data.get("choices", [])
-        if not choices:
-            raise ModelOutputValidationError(
-                "OpenRouter returned empty choices in response.",
-                provider=self.name,
+                t_parse_elapsed,
             )
 
-        content = choices[0].get("message", {}).get("content", "")
-        if not content:
-            raise ModelOutputValidationError(
-                "OpenRouter message content was empty.",
-                provider=self.name,
-            )
+            t_val_start = time.perf_counter()
+            try:
+                validated = VoiceMealParseResponse.model_validate(parsed_raw)
+                t_val_elapsed = time.perf_counter() - t_val_start
+                logger.info(
+                    "[Timing][%s] OpenRouter [%s] Pydantic validation took %.4fs",
+                    get_current_request_id(),
+                    "parse_voice_meal",
+                    t_val_elapsed,
+                )
+                return validated
+            except ValidationError as val_err:
+                logger.warning(
+                    "[Timing][%s] OpenRouter [%s] Pydantic validation failed (failure_category=pydantic_validation_failed)",
+                    get_current_request_id(),
+                    "parse_voice_meal",
+                )
+                raise ModelOutputValidationError(
+                    f"OpenRouter voice parsing failed validation schema: {str(val_err)}",
+                    provider=self.name,
+                    error_category="pydantic_validation_failed",
+                ) from val_err
 
-        cleaned_json_str = _clean_markdown_and_reasoning(content)
-
-        try:
-            parsed_raw = json.loads(cleaned_json_str)
-        except json.JSONDecodeError as json_err:
-            raise ModelOutputValidationError(
-                f"OpenRouter response could not be parsed as JSON: {str(json_err)}",
-                provider=self.name,
-            ) from json_err
-
-        if not isinstance(parsed_raw, dict):
-            raise ModelOutputValidationError(
-                "OpenRouter JSON response is not a valid object.",
-                provider=self.name,
-            )
-
-        raw_items = parsed_raw.get("items")
-        if raw_items is None:
-            if "candidates" in parsed_raw:
-                raw_items = parsed_raw.pop("candidates")
-            elif "foods" in parsed_raw:
-                raw_items = parsed_raw.pop("foods")
-            else:
-                raw_items = []
-
-        if not isinstance(raw_items, list):
-            raise ModelOutputValidationError(
-                "OpenRouter response 'items' field is not a list.",
-                provider=self.name,
-            )
-
-        parsed_raw["items"] = [_normalize_voice_candidate_dict(it) for it in raw_items if isinstance(it, dict)]
-        parsed_raw["transcript"] = transcript.strip()
-        if "success" not in parsed_raw:
-            parsed_raw["success"] = True
-        if "summary" not in parsed_raw:
-            parsed_raw["summary"] = ""
-        if "warnings" not in parsed_raw or not isinstance(parsed_raw["warnings"], list):
-            parsed_raw["warnings"] = []
-        t_parse_elapsed = time.perf_counter() - t_parse_start
-        logger.info(
-            "[Timing][%s] OpenRouter [%s] response JSON parsing took %.4fs",
-            get_current_request_id(),
-            "parse_voice_meal",
-            t_parse_elapsed,
+        return self._run_with_optional_alternative_model(
+            operation_name="parse_voice_meal",
+            messages=messages,
+            parse_and_validate_fn=_parse_and_validate_voice,
+            timeout_seconds=timeout_seconds,
+            is_cancelled=is_cancelled,
         )
-
-        t_val_start = time.perf_counter()
-        try:
-            validated = VoiceMealParseResponse.model_validate(parsed_raw)
-            t_val_elapsed = time.perf_counter() - t_val_start
-            logger.info(
-                "[Timing][%s] OpenRouter [%s] Pydantic validation took %.4fs",
-                get_current_request_id(),
-                "parse_voice_meal",
-                t_val_elapsed,
-            )
-            return validated
-        except ValidationError as val_err:
-            raise ModelOutputValidationError(
-                f"OpenRouter voice parsing failed validation schema: {str(val_err)}",
-                provider=self.name,
-            ) from val_err
 

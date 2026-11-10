@@ -57,18 +57,29 @@ class Settings:
         
         # Global server-side request deadline budgets (must complete before mobile AbortController timeouts: 45s photo / 40s voice)
         self.server_deadline_seconds: float = float(os.getenv("SERVER_DEADLINE_SECONDS", "35.0"))
-        self.voice_server_deadline_seconds: float = float(os.getenv("VOICE_SERVER_DEADLINE_SECONDS", "32.0"))
+        self.voice_server_deadline_seconds: float = float(os.getenv("VOICE_SERVER_DEADLINE_SECONDS", "33.0"))
 
         # Provider architecture configuration
         self.ai_primary_provider: str = os.getenv("AI_PRIMARY_PROVIDER", "gemini").lower()
         self.ai_fallback_enabled: bool = os.getenv("AI_FALLBACK_ENABLED", "true").lower() in ("true", "1", "yes")
 
-        # OpenRouter fallback configuration
-        self.openrouter_model: str = os.getenv("OPENROUTER_MODEL", "openrouter/free")
+        # OpenRouter fallback configuration (fixed vision + JSON free models avoiding reasoning starvation)
+        self.openrouter_model: str = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3.5-super-vl:free").strip()
+        alt_model_env = os.getenv("OPENROUTER_ALTERNATIVE_MODEL")
+        if alt_model_env is not None:
+            cleaned_alt = alt_model_env.strip()
+            self.openrouter_alternative_model: Optional[str] = (
+                None if cleaned_alt.lower() in ("", "none", "off") else cleaned_alt
+            )
+        else:
+            if self.openrouter_model == "nvidia/nemotron-3.5-super-vl:free":
+                self.openrouter_alternative_model = "dots-studio/dots-3-note-preview:free"
+            else:
+                self.openrouter_alternative_model = "nvidia/nemotron-3.5-super-vl:free"
         self.openrouter_base_url: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
-        self.openrouter_timeout_seconds: float = float(os.getenv("OPENROUTER_TIMEOUT_SECONDS", "18.0"))
+        self.openrouter_timeout_seconds: float = float(os.getenv("OPENROUTER_TIMEOUT_SECONDS", "19.0"))
         self.openrouter_max_retries: int = int(os.getenv("OPENROUTER_MAX_RETRIES", "1"))
-        self.openrouter_max_tokens: int = int(os.getenv("OPENROUTER_MAX_TOKENS", "1200"))
+        self.openrouter_max_tokens: int = int(os.getenv("OPENROUTER_MAX_TOKENS", "2000"))
 
         # Deployed git commit hash (populated on Render via RENDER_GIT_COMMIT)
         self.git_commit: str = os.getenv("RENDER_GIT_COMMIT", os.getenv("GIT_COMMIT", "dev"))

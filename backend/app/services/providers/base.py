@@ -15,10 +15,12 @@ class AIServiceError(RuntimeError):
         message: str,
         provider: Optional[str] = None,
         code: Optional[int] = None,
+        error_category: Optional[str] = None,
     ) -> None:
         super().__init__(message)
         self.provider = provider
         self.code = code
+        self.error_category = error_category
 
 
 class AITransientError(AIServiceError):
@@ -45,8 +47,9 @@ class AIRateLimitError(AITransientError):
         provider: Optional[str] = None,
         code: int = 429,
         is_quota_exhausted: bool = False,
+        error_category: Optional[str] = "rate_limit",
     ) -> None:
-        super().__init__(message, provider=provider, code=code)
+        super().__init__(message, provider=provider, code=code, error_category=error_category)
         self.is_quota_exhausted = is_quota_exhausted
 
 

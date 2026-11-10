@@ -64,7 +64,7 @@ AI_FALLBACK_ENABLED=true
 # Obtain your free API key at: https://aistudio.google.com/
 GEMINI_API_KEY=your_gemini_api_key_here
 GEMINI_MODEL=gemini-3.5-flash
-GEMINI_TIMEOUT_SECONDS=12.0
+GEMINI_TIMEOUT_SECONDS=14.0
 GEMINI_MAX_RETRIES=2
 
 # ---------------------------------------------------------------------------
@@ -73,13 +73,12 @@ GEMINI_MAX_RETRIES=2
 # Obtain an OpenRouter key at: https://openrouter.ai/settings/keys
 OPENROUTER_API_KEY=your_openrouter_api_key_here
 
-# OpenRouter Model identifier:
-# "openrouter/free" is the official smart router that automatically routes to
-# active free multimodal vision models (e.g. Gemma 4, Nemotron Super VL).
-# Alternatively specify a fixed model identifier (e.g. google/gemma-4-31b-it:free).
-OPENROUTER_MODEL=openrouter/free
+# Fixed vision-capable + JSON-compatible free model + single bounded alternative:
+OPENROUTER_MODEL=nvidia/nemotron-3.5-super-vl:free
+OPENROUTER_ALTERNATIVE_MODEL=dots-studio/dots-3-note-preview:free
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-OPENROUTER_TIMEOUT_SECONDS=15.0
+OPENROUTER_TIMEOUT_SECONDS=19.0
+OPENROUTER_MAX_TOKENS=2000
 OPENROUTER_MAX_RETRIES=1
 
 # ---------------------------------------------------------------------------
@@ -89,7 +88,7 @@ HOST=127.0.0.1
 PORT=8000
 ENVIRONMENT=development
 SERVER_DEADLINE_SECONDS=35.0
-VOICE_SERVER_DEADLINE_SECONDS=30.0
+VOICE_SERVER_DEADLINE_SECONDS=33.0
 MAX_IMAGE_SIZE_BYTES=10485760
 ALLOWED_ORIGINS=*
 ```
@@ -183,15 +182,16 @@ Example response:
   "gemini_configured": true,
   "openrouter_configured": true,
   "model": "gemini-3.5-flash",
-  "fallback_model": "openrouter/free",
-  "commit": "df210795"
+  "fallback_model": "nvidia/nemotron-3.5-super-vl:free",
+  "fallback_alternative_model": "dots-studio/dots-3-note-preview:free",
+  "commit": "40762db"
 }
 ```
 
 ### 2. Run Automated Tests (Mocked - Zero Quota Consumed)
 All tests run with mocked HTTP responses and never hit real APIs or consume API quota:
 ```bash
-# Run all backend tests (56 tests)
+# Run all backend tests (92 tests)
 backend\.venv\Scripts\pytest.exe backend/tests -v
 
 # Run the dual-provider fallback suite specifically
