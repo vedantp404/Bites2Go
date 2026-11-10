@@ -1,5 +1,21 @@
 # Project memory
 
+## Current handoff: Milestone 4C — Quota-Aware Voice Reliability & Offline Catalogue Fallback
+
+Hardened cloud 429/503 handling and added a deterministic mobile offline voice catalogue fallback while keeping Nemotron Ultra voice primary, Gemini voice fallback, and Gemini photo recognition intact.
+
+Key Engineering Highlights:
+- Live 429 Evidence & Taxonomy (`openrouter_provider.py`, `gemini_provider.py`, `base.py`):
+  - Verified `/key` showed unpurchased free-tier cap (`52/50` RPD used, `remaining=0`) and HTTP `429` returned `X-RateLimit-Limit: 50`, `X-RateLimit-Remaining: 0`, `X-RateLimit-Reset` epoch-ms, `X-OpenRouter-Error-Origin: client`, and `error.metadata.limit_source: openrouter_free_tier_daily` (no `Retry-After` on daily cap).
+  - Implemented `classify_openrouter_rate_limit` + `AIRateLimitError(retry_after_seconds, limit_scope)` distinguishing `daily_quota_exhausted` (`scope=account`), `burst_rate_limit` (`scope=account`), `upstream_provider_saturated` (`scope=provider_upstream` when `metadata.provider_name`/`X-Provider-Name` present), and Gemini `retry in Xs` extraction.
+- Bounded Cooldowns & Retry Elimination (`ai_service.py`, `config.py`, `food.py`, `health.py`):
+  - Added `ProviderCooldownTracker` (`15–60s` burst/upstream, `20s` upstream default, max `300s` daily cap) cleanly scoping `account` vs `provider_upstream` limits. Cooled-down primaries route straight to fallback (`0` wasted primary calls); both providers in cooldown short-circuit with HTTP `429` + bounded `Retry-After`.
+  - Gemini `503` voice fallback never triggers a cooldown on Gemini photo primary; OpenRouter account-wide 429 skips `alternative_model`. `/health` exposes non-secret `rate_limit_cooldowns` only when singleton initialized.
+- Mobile Offline Voice Catalogue Fallback (`voiceFoodLogging.ts`, `VoiceFoodLoggingModal.tsx`):
+  - Added pure `matchVoiceTranscriptOffline(transcript, availableFoods)` using `searchFoods`, `scaleNutrients`, `formatNutrient`, `sumNutrients`, and `createEntry` across unified + custom/recipe foods.
+  - Preserves editable `transcript`, `meal`, and `targetDate` on cloud failure, surfaces `Match Offline from Catalogue`, forbids switching offline items to synthetic AI estimates, leaves unmatched clauses out with honest warnings, keeps `null` unknown nutrients strictly `null` (`Unknown`), and requires user confirmation before calling `diary.saveAll()`.
+- Deployment Note: Backend commit applies cleanly to existing installed Android APKs without rebuilding; mobile offline voice UI fallback requires a future APK build to reach physical devices. No push, deploy, Render config change, or APK build performed.
+
 ## Current handoff: Milestone 4B — Enforceable Voice Deadlines & Socket Cancellation
 
 Resolved HTTP 504 voice timeouts (`7f59355e`: 35s FastAPI deadline expiring while OpenRouter kept streaming until 50.978s without triggering Gemini fallback) while leaving Gemini photo configuration completely unchanged (`gemini-3.5-flash`, `thinking_budget=0`, `1024px@q82`).

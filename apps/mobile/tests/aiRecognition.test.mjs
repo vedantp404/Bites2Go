@@ -5,7 +5,7 @@ import {
   checkBackendHealth,
   recognizeFoodFromImage,
 } from '../src/services/aiFoodRecognition.ts';
-import { parseVoiceMeal } from '../src/services/voiceFoodLogging.ts';
+import { parseVoiceMeal, VoiceCloudError } from '../src/services/voiceFoodLogging.ts';
 
 test('getBackendBaseUrl: resolves default and custom URL values', () => {
   const originalEnv = process.env.EXPO_PUBLIC_AI_BACKEND_URL;
@@ -180,6 +180,33 @@ test('parseVoiceMeal: parses structured 504 and 503 error details from backend',
           err instanceof Error &&
             err.message.includes('temporarily overloaded or unavailable'),
         );
+        return true;
+      },
+    );
+    // Mock 429 Too Many Requests with Retry-After and X-Error-Category headers
+    const mockHeaders = new Headers({
+      'Retry-After': '25',
+      'X-Error-Category': 'daily_quota_exhausted',
+    });
+    globalThis.fetch = async () => ({
+      ok: false,
+      status: 429,
+      headers: mockHeaders,
+      json: async () => ({
+        detail: 'OpenRouter free-tier daily quota exhausted.',
+      }),
+    });
+
+    await assert.rejects(
+      async () => {
+        await parseVoiceMeal('two rotis and dal');
+      },
+      (err) => {
+        assert.ok(err instanceof VoiceCloudError);
+        assert.equal(err.status, 429);
+        assert.equal(err.retryAfterSeconds, 25);
+        assert.equal(err.errorCategory, 'daily_quota_exhausted');
+        assert.ok(err.message.includes('daily quota exhausted'));
         return true;
       },
     );

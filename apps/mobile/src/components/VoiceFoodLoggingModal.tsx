@@ -41,13 +41,22 @@ import { Action } from './FoodControls';
 import { useDiary } from '../state/DiaryProvider';
 import { useLibrary } from '../state/LibraryProvider';
 import { localDateKey, validDateKey } from '../domain/diary';
-import { scaleNutrients, type Food, type Meal } from '../domain/food';
+import {
+  formatNutrient,
+  scaleNutrients,
+  sumNutrients,
+  type Food,
+  type Meal,
+} from '../domain/food';
 import { unifiedFoods } from '../data/unifiedFoods';
 import {
   parseVoiceMeal,
   matchVoiceItemsToCatalogue,
+  matchVoiceTranscriptOffline,
+  scaleFoodNutrientsNullable,
   buildAvailableFoodPool,
   buildDiaryEntriesFromVoiceCandidates,
+  VoiceCloudError,
   type MatchedVoiceFoodCandidate,
 } from '../services/voiceFoodLogging';
 
@@ -85,6 +94,7 @@ export function VoiceFoodLoggingModal({
   const [warnings, setWarnings] = useState<string[]>([]);
   const [clarifyingQuestions, setClarifyingQuestions] = useState<string[]>([]);
   const [candidates, setCandidates] = useState<MatchedVoiceFoodCandidate[]>([]);
+  const [analysisSource, setAnalysisSource] = useState<'ai' | 'offline'>('ai');
 
   const targetDate = useMemo(() => {
     return date && validDateKey(date) ? date : localDateKey();
@@ -150,6 +160,7 @@ export function VoiceFoodLoggingModal({
     setWarnings([]);
     setClarifyingQuestions([]);
     setCandidates([]);
+    setAnalysisSource('ai');
   };
 
   const handleClose = () => {
@@ -251,13 +262,60 @@ export function VoiceFoodLoggingModal({
       setWarnings(response.warnings || []);
       setClarifyingQuestions(response.clarifying_questions || []);
       setCandidates(matched);
+      setAnalysisSource('ai');
       setStep('review');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
+      let msg = err instanceof Error ? err.message : String(err);
+      if (
+        err instanceof VoiceCloudError &&
+        err.status === 429 &&
+        err.retryAfterSeconds
+      ) {
+        msg = `${msg} You can wait ~${Math.round(err.retryAfterSeconds)}s or use Offline Catalogue Matching below without losing your text.`;
+      } else {
+        msg = `${msg} Your transcript is preserved below — you can retry or use Offline Catalogue Matching.`;
+      }
       setErrorMessage(msg);
     } finally {
       setInterimInterpreting(false);
     }
+  };
+
+  // Deterministic offline catalogue fallback when cloud AI fails or device is offline
+  const handleOfflineMatch = () => {
+    const textToMatch = transcript.trim() || interimText.trim();
+    if (!textToMatch) {
+      Alert.alert(
+        'Empty Description',
+        'Please speak or type a food description first (e.g. "2 rotis, 1 bowl dal, 150g rice").',
+      );
+      return;
+    }
+
+    if (isListening) {
+      handleStopListening();
+    }
+
+    const availablePool = buildAvailableFoodPool(library.data, unifiedFoods);
+    const offlineResult = matchVoiceTranscriptOffline(
+      textToMatch,
+      availablePool,
+    );
+
+    if (offlineResult.candidates.length === 0) {
+      setErrorMessage(
+        'No local catalogue foods matched that description cleanly. Edit the wording (e.g. "2 roti, 1 bowl dal, 150g rice") and try again — no nutrition was guessed.',
+      );
+      return;
+    }
+
+    setErrorMessage(null);
+    setMealSummary(offlineResult.summary);
+    setWarnings(offlineResult.warnings);
+    setClarifyingQuestions([]);
+    setCandidates(offlineResult.candidates);
+    setAnalysisSource('offline');
+    setStep('review');
   };
 
   // Candidate adjustments
@@ -270,20 +328,22 @@ export function VoiceFoodLoggingModal({
           return {
             ...item,
             estimated_grams: 0,
-            calories: 0,
-            protein: 0,
-            carbohydrates: 0,
-            fat: 0,
+            calories: item.calories === null ? null : 0,
+            protein: item.protein === null ? null : 0,
+            carbohydrates: item.carbohydrates === null ? null : 0,
+            fat: item.fat === null ? null : 0,
+            fiber: item.fiber === null ? null : 0,
           };
         }
-        const scaled = scaleNutrients(item.reference, nextGrams);
+        const scaled = scaleFoodNutrientsNullable(item.reference, nextGrams);
         return {
           ...item,
           estimated_grams: Math.round(nextGrams * 10) / 10,
-          calories: Math.round((scaled.calories ?? 0) * 10) / 10,
-          protein: Math.round((scaled.protein ?? 0) * 10) / 10,
-          carbohydrates: Math.round((scaled.carbs ?? 0) * 10) / 10,
-          fat: Math.round((scaled.fat ?? 0) * 10) / 10,
+          calories: scaled.calories,
+          protein: scaled.protein,
+          carbohydrates: scaled.carbohydrates,
+          fat: scaled.fat,
+          fiber: scaled.fiber,
         };
       }),
     );
@@ -302,12 +362,15 @@ export function VoiceFoodLoggingModal({
       prev.map((item) => {
         if (item.id !== id) return item;
         if (!item.matchedCatalogueFood) return item;
+        if (item.origin === 'offline_catalogue' || analysisSource === 'offline') {
+          return item;
+        }
 
         const nextMode = item.sourceMode === 'catalogue' ? 'ai' : 'catalogue';
         const grams = item.estimated_grams > 0 ? item.estimated_grams : 100;
 
         if (nextMode === 'catalogue') {
-          const scaled = scaleNutrients(
+          const scaled = scaleFoodNutrientsNullable(
             item.matchedCatalogueFood.nutrients,
             grams,
           );
@@ -316,10 +379,11 @@ export function VoiceFoodLoggingModal({
             sourceMode: 'catalogue',
             food_name: item.matchedCatalogueFood.name,
             reference: { ...item.matchedCatalogueFood.nutrients },
-            calories: Math.round((scaled.calories ?? 0) * 10) / 10,
-            protein: Math.round((scaled.protein ?? 0) * 10) / 10,
-            carbohydrates: Math.round((scaled.carbs ?? 0) * 10) / 10,
-            fat: Math.round((scaled.fat ?? 0) * 10) / 10,
+            calories: scaled.calories,
+            protein: scaled.protein,
+            carbohydrates: scaled.carbohydrates,
+            fat: scaled.fat,
+            fiber: scaled.fiber,
           };
         } else {
           // Revert to original AI estimate
@@ -333,16 +397,17 @@ export function VoiceFoodLoggingModal({
             },
             10000 / (item.originalParsedItem.estimated_grams || 100),
           );
-          const scaled = scaleNutrients(aiRef, grams);
+          const scaled = scaleFoodNutrientsNullable(aiRef, grams);
           return {
             ...item,
             sourceMode: 'ai',
             food_name: item.originalParsedItem.food_description,
             reference: aiRef,
-            calories: Math.round((scaled.calories ?? 0) * 10) / 10,
-            protein: Math.round((scaled.protein ?? 0) * 10) / 10,
-            carbohydrates: Math.round((scaled.carbs ?? 0) * 10) / 10,
-            fat: Math.round((scaled.fat ?? 0) * 10) / 10,
+            calories: scaled.calories,
+            protein: scaled.protein,
+            carbohydrates: scaled.carbohydrates,
+            fat: scaled.fat,
+            fiber: scaled.fiber,
           };
         }
       }),
@@ -354,7 +419,7 @@ export function VoiceFoodLoggingModal({
       prev.map((item) => {
         if (item.id !== candidateId) return item;
         const grams = item.estimated_grams > 0 ? item.estimated_grams : 100;
-        const scaled = scaleNutrients(food.nutrients, grams);
+        const scaled = scaleFoodNutrientsNullable(food.nutrients, grams);
         return {
           ...item,
           matchedCatalogueFood: food,
@@ -362,10 +427,11 @@ export function VoiceFoodLoggingModal({
           food_name: food.name,
           preparation: food.preparation,
           reference: { ...food.nutrients },
-          calories: Math.round((scaled.calories ?? 0) * 10) / 10,
-          protein: Math.round((scaled.protein ?? 0) * 10) / 10,
-          carbohydrates: Math.round((scaled.carbs ?? 0) * 10) / 10,
-          fat: Math.round((scaled.fat ?? 0) * 10) / 10,
+          calories: scaled.calories,
+          protein: scaled.protein,
+          carbohydrates: scaled.carbohydrates,
+          fat: scaled.fat,
+          fiber: scaled.fiber,
         };
       }),
     );
@@ -415,18 +481,26 @@ export function VoiceFoodLoggingModal({
     setCandidates((prev) => [...prev, newCandidate]);
   };
 
-  // Total meal nutrition calculation
+  // Total meal nutrition calculation (preserves null unknown nutrients honestly via sumNutrients)
   const totals = useMemo(() => {
-    return candidates.reduce(
-      (acc, item) => ({
-        calories: acc.calories + item.calories,
-        protein: acc.protein + item.protein,
-        carbs: acc.carbs + item.carbohydrates,
-        fat: acc.fat + item.fat,
-        grams: acc.grams + item.estimated_grams,
-      }),
-      { calories: 0, protein: 0, carbs: 0, fat: 0, grams: 0 },
+    const summed = sumNutrients(
+      candidates.map((c) => ({
+        calories: c.calories,
+        protein: c.protein,
+        carbs: c.carbohydrates,
+        fat: c.fat,
+        fiber: c.fiber ?? null,
+      })),
     );
+    const grams = candidates.reduce((acc, item) => acc + item.estimated_grams, 0);
+    return {
+      calories: summed.values.calories,
+      protein: summed.values.protein,
+      carbs: summed.values.carbs,
+      fat: summed.values.fat,
+      partial: summed.partial,
+      grams,
+    };
   }, [candidates]);
 
   // Confirm and log to diary atomically
@@ -506,7 +580,7 @@ export function VoiceFoodLoggingModal({
             </Text>
           </View>
 
-          {/* Error notice */}
+          {/* Error notice with direct offline catalogue fallback trigger */}
           {errorMessage ? (
             <View
               style={[
@@ -514,6 +588,7 @@ export function VoiceFoodLoggingModal({
                 {
                   backgroundColor: '#FDEDEC',
                   borderColor: '#E74C3C',
+                  gap: 10,
                 },
               ]}
             >
@@ -522,6 +597,32 @@ export function VoiceFoodLoggingModal({
               >
                 {errorMessage}
               </Text>
+              {step === 'capture' &&
+                !interpreting &&
+                Boolean(transcript.trim() || interimText.trim()) && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Match offline using local food catalogue"
+                    onPress={handleOfflineMatch}
+                    style={[
+                      styles.offlineFallbackBtn,
+                      {
+                        borderColor: t.colors.primary,
+                        backgroundColor: t.colors.surface,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        color: t.colors.primary,
+                        fontSize: 13,
+                        fontWeight: '700',
+                      }}
+                    >
+                      📚 Match Offline from Catalogue (No Cloud AI)
+                    </Text>
+                  </Pressable>
+                )}
             </View>
           ) : null}
 
@@ -728,12 +829,12 @@ export function VoiceFoodLoggingModal({
                   editable={!interpreting}
                 />
 
-                <View style={{ marginTop: 12 }}>
+                <View style={{ marginTop: 12, gap: 8 }}>
                   <Action
                     variant="primary"
                     label={
                       interpreting
-                        ? 'Analyzing Speech with Gemini...'
+                        ? 'Analyzing Speech with AI...'
                         : 'Interpret Spoken Meal'
                     }
                     onPress={handleInterpretMeal}
@@ -742,6 +843,38 @@ export function VoiceFoodLoggingModal({
                       (!transcript.trim() && !interimText.trim())
                     }
                   />
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Match meal offline from local catalogue"
+                    onPress={handleOfflineMatch}
+                    disabled={
+                      interpreting ||
+                      (!transcript.trim() && !interimText.trim())
+                    }
+                    style={({ pressed }) => [
+                      styles.offlineSecondaryBtn,
+                      {
+                        borderColor: t.colors.border,
+                        opacity:
+                          interpreting ||
+                          (!transcript.trim() && !interimText.trim())
+                            ? 0.45
+                            : pressed
+                              ? 0.7
+                              : 1,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        color: t.colors.primary,
+                        fontSize: 13,
+                        fontWeight: '600',
+                      }}
+                    >
+                      Match Offline from Local Catalogue
+                    </Text>
+                  </Pressable>
                 </View>
               </View>
             </View>
@@ -806,24 +939,28 @@ export function VoiceFoodLoggingModal({
                 <Text
                   style={[styles.candidatesHeading, { color: t.colors.text }]}
                 >
-                  Detected Food Items ({candidates.length})
+                  {analysisSource === 'offline'
+                    ? `Catalogue Matches (${candidates.length})`
+                    : `Detected Food Items (${candidates.length})`}
                 </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Add an extra food item"
-                  onPress={addBlankCandidate}
-                  style={styles.addCandidateBtn}
-                >
-                  <Text
-                    style={{
-                      color: t.colors.primary,
-                      fontWeight: '700',
-                      fontSize: 13,
-                    }}
+                {analysisSource !== 'offline' && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Add an extra food item"
+                    onPress={addBlankCandidate}
+                    style={styles.addCandidateBtn}
                   >
-                    + Add Item
-                  </Text>
-                </Pressable>
+                    <Text
+                      style={{
+                        color: t.colors.primary,
+                        fontWeight: '700',
+                        fontSize: 13,
+                      }}
+                    >
+                      + Add Item
+                    </Text>
+                  </Pressable>
+                )}
               </View>
 
               {candidates.map((item, idx) => (
@@ -849,6 +986,7 @@ export function VoiceFoodLoggingModal({
                           },
                         ]}
                         value={item.food_name}
+                        editable={analysisSource !== 'offline'}
                         onChangeText={(name) =>
                           updateCandidateName(item.id, name)
                         }
@@ -893,40 +1031,63 @@ export function VoiceFoodLoggingModal({
                     )}
 
                     {item.matchedCatalogueFood ? (
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel={`Switch nutrition source for ${item.food_name}`}
-                        onPress={() => toggleCandidateSourceMode(item.id)}
-                        style={[
-                          styles.sourceModeChip,
-                          {
-                            backgroundColor:
-                              item.sourceMode === 'catalogue'
-                                ? '#E8F8F5'
-                                : '#FEF9E7',
-                            borderColor:
-                              item.sourceMode === 'catalogue'
-                                ? '#1ABC9C'
-                                : '#F1C40F',
-                          },
-                        ]}
-                      >
-                        <Text
+                      item.origin === 'offline_catalogue' ||
+                      analysisSource === 'offline' ? (
+                        <View
                           style={[
-                            styles.sourceModeText,
+                            styles.sourceModeChip,
                             {
-                              color:
-                                item.sourceMode === 'catalogue'
-                                  ? '#0E6251'
-                                  : '#7D6608',
+                              backgroundColor: '#E8F8F5',
+                              borderColor: '#1ABC9C',
                             },
                           ]}
                         >
-                          {item.sourceMode === 'catalogue'
-                            ? `✓ Catalogue (${item.matchedCatalogueFood.status}): ${item.matchedCatalogueFood.name}`
-                            : 'AI Estimate (tap to use catalogue)'}
-                        </Text>
-                      </Pressable>
+                          <Text
+                            style={[
+                              styles.sourceModeText,
+                              { color: '#0E6251' },
+                            ]}
+                          >
+                            ✓ Offline Catalogue ({item.matchedCatalogueFood.status}):{' '}
+                            {item.matchedCatalogueFood.name}
+                          </Text>
+                        </View>
+                      ) : (
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={`Switch nutrition source for ${item.food_name}`}
+                          onPress={() => toggleCandidateSourceMode(item.id)}
+                          style={[
+                            styles.sourceModeChip,
+                            {
+                              backgroundColor:
+                                item.sourceMode === 'catalogue'
+                                  ? '#E8F8F5'
+                                  : '#FEF9E7',
+                              borderColor:
+                                item.sourceMode === 'catalogue'
+                                  ? '#1ABC9C'
+                                  : '#F1C40F',
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.sourceModeText,
+                              {
+                                color:
+                                  item.sourceMode === 'catalogue'
+                                    ? '#0E6251'
+                                    : '#7D6608',
+                              },
+                            ]}
+                          >
+                            {item.sourceMode === 'catalogue'
+                              ? `✓ Catalogue (${item.matchedCatalogueFood.status}): ${item.matchedCatalogueFood.name}`
+                              : 'AI Estimate (tap to use catalogue)'}
+                          </Text>
+                        </Pressable>
+                      )
                     ) : (
                       <View
                         style={[
@@ -1058,7 +1219,7 @@ export function VoiceFoodLoggingModal({
                       <Text
                         style={[styles.macroValue, { color: t.colors.text }]}
                       >
-                        {Math.round(item.calories)} kcal
+                        {formatNutrient(item.calories, 'kcal')}
                       </Text>
                     </View>
 
@@ -1076,7 +1237,9 @@ export function VoiceFoodLoggingModal({
                       <Text
                         style={[styles.macroValue, { color: t.colors.text }]}
                       >
-                        {item.protein.toFixed(1)}g
+                        {item.protein === null
+                          ? 'Unknown'
+                          : `${item.protein.toFixed(1)}g`}
                       </Text>
                     </View>
 
@@ -1094,7 +1257,9 @@ export function VoiceFoodLoggingModal({
                       <Text
                         style={[styles.macroValue, { color: t.colors.text }]}
                       >
-                        {item.carbohydrates.toFixed(1)}g
+                        {item.carbohydrates === null
+                          ? 'Unknown'
+                          : `${item.carbohydrates.toFixed(1)}g`}
                       </Text>
                     </View>
 
@@ -1112,7 +1277,9 @@ export function VoiceFoodLoggingModal({
                       <Text
                         style={[styles.macroValue, { color: t.colors.text }]}
                       >
-                        {item.fat.toFixed(1)}g
+                        {item.fat === null
+                          ? 'Unknown'
+                          : `${item.fat.toFixed(1)}g`}
                       </Text>
                     </View>
                   </View>
@@ -1138,14 +1305,28 @@ export function VoiceFoodLoggingModal({
                 <Text
                   style={[styles.footerTotalsTitle, { color: t.colors.text }]}
                 >
-                  Meal Total: {Math.round(totals.calories)} kcal
+                  Meal Total:{' '}
+                  {totals.calories === null
+                    ? 'Unknown'
+                    : `${Math.round(totals.calories)} kcal`}
+                  {totals.partial.calories ? ' (partial)' : ''}
                 </Text>
                 <Text
                   style={[styles.footerTotalsSub, { color: t.colors.muted }]}
                 >
-                  P: {totals.protein.toFixed(1)}g · C: {totals.carbs.toFixed(1)}
-                  g · F: {totals.fat.toFixed(1)}g ({Math.round(totals.grams)}g
-                  total)
+                  P:{' '}
+                  {totals.protein === null
+                    ? 'Unknown'
+                    : `${totals.protein.toFixed(1)}g`}{' '}
+                  · C:{' '}
+                  {totals.carbs === null
+                    ? 'Unknown'
+                    : `${totals.carbs.toFixed(1)}g`}{' '}
+                  · F:{' '}
+                  {totals.fat === null
+                    ? 'Unknown'
+                    : `${totals.fat.toFixed(1)}g`}{' '}
+                  ({Math.round(totals.grams)}g total)
                 </Text>
               </View>
             </View>
@@ -1210,6 +1391,24 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 8,
     borderWidth: 1,
+  },
+  offlineFallbackBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  offlineSecondaryBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
   },
   micAreaCard: {
     padding: 18,

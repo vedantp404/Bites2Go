@@ -1,5 +1,13 @@
 # Ordered roadmap
 
+## Milestone 4C — Quota-Aware Voice Reliability & Offline Catalogue Fallback — implemented
+
+- [x] Inspected live OpenRouter `/key` (`is_free_tier=true`, `free_model_daily_requests={used:52, limit:50, remaining:0}`) and actual HTTP `429` headers/payload (`X-RateLimit-Limit: 50`, `X-RateLimit-Remaining: 0`, `X-RateLimit-Reset` ms timestamp, `limit_source: openrouter_free_tier_daily`, `metadata.provider_name`).
+- [x] Implemented evidence-based `429`/`402` taxonomy (`daily_quota_exhausted`, `burst_rate_limit`, `upstream_provider_saturated`, `rate_limit`) in `backend/app/services/providers/openrouter_provider.py` (`classify_openrouter_rate_limit`) and `gemini_provider.py` (`retry in Xs` extraction).
+- [x] Built thread-safe bounded `ProviderCooldownTracker` in `backend/app/services/ai_service.py` + `backend/app/config.py` (`15–60s` burst/upstream, max `300s` daily cap) skipping cooled-down providers with zero wasted HTTP calls, isolating 503 voice fallback from Gemini photo primary, never switching alternative OpenRouter models on account-wide 429s, and surfacing safe `rate_limit_cooldowns` on `/health` and bounded `Retry-After` headers on `/api/v1/*`.
+- [x] Added deterministic offline voice catalogue fallback (`matchVoiceTranscriptOffline`) in `apps/mobile/src/services/voiceFoodLogging.ts` and `VoiceFoodLoggingModal.tsx`: retains editable `transcript`, `meal`, and `targetDate` on cloud failure, uses existing `searchFoods`/`scaleNutrients`/`sumNutrients` and `createEntry`, preserves `null` unknown macros without inventing `0`, omits unmatched items cleanly, and requires explicit user confirmation before logging.
+- [x] Verified `122/122` backend tests, `166/166` mobile tests, and `0` TypeScript errors cleanly in focused commits on `master` (no push, deploy, Render config change, or APK build).
+
 ## Milestone 4B — Fix NVIDIA Voice Timeout & Enforceable Cancellation — implemented
 
 - [x] Diagnosed live HTTP 504 on request `7f59355e` (OpenRouter completing at `50.978s` past `35.0s` server deadline without reaching Gemini fallback): `httpx.Timeout` only bounds per-read idle gaps while OpenRouter streams `200 OK` headers + periodic keepalive chunks, and synchronous `client.post(...)` inside `asyncio.to_thread` could not abort on wall-clock timeout or `cancel_event`.

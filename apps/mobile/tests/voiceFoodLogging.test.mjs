@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   matchVoiceItemsToCatalogue,
+  matchVoiceTranscriptOffline,
   buildDiaryEntriesFromVoiceCandidates,
   buildAvailableFoodPool,
 } from '../src/services/voiceFoodLogging.ts';
@@ -479,4 +480,99 @@ test('atomic repository saveAll: saves all voice entries or aborts without parti
   const verifyOriginal = await repo.loadDate('2026-10-31');
   assert.equal(verifyOriginal.length, 2);
   assert.ok(!verifyOriginal.some((e) => e.id === 'extra-fail-entry'));
+});
+
+test('matchVoiceTranscriptOffline: matches real local catalogue foods cleanly without inventing unknown items', () => {
+  const pool = buildAvailableFoodPool(null, unifiedFoods);
+
+  const result = matchVoiceTranscriptOffline(
+    '2 rotis, 150g white rice, and xylophoneunicornmysteryfood',
+    pool,
+  );
+
+  assert.equal(
+    result.transcript,
+    '2 rotis, 150g white rice, and xylophoneunicornmysteryfood',
+  );
+  assert.equal(result.candidates.length, 2);
+  assert.equal(result.unmatchedClauses.length, 1);
+  assert.equal(result.unmatchedClauses[0], 'xylophoneunicornmysteryfood');
+  assert.ok(
+    result.warnings.some((w) => w.includes('no nutrition was invented')),
+  );
+
+  const rotiCand = result.candidates[0];
+  assert.equal(rotiCand.sourceMode, 'catalogue');
+  assert.equal(rotiCand.origin, 'offline_catalogue');
+  assert.ok(rotiCand.matchedCatalogueFood);
+  assert.ok(
+    rotiCand.food_name.toLowerCase().includes('roti') ||
+      rotiCand.food_name.toLowerCase().includes('chapati'),
+  );
+
+  const riceCand = result.candidates[1];
+  assert.equal(riceCand.estimated_grams, 150);
+  assert.equal(riceCand.sourceMode, 'catalogue');
+  assert.ok(riceCand.food_name.toLowerCase().includes('rice'));
+});
+
+test('matchVoiceTranscriptOffline: handles Hinglish quantities and correction warnings without auto-saving', () => {
+  const pool = buildAvailableFoodPool(null, unifiedFoods);
+
+  const result = matchVoiceTranscriptOffline(
+    'do banana aur ek roti actually two roti',
+    pool,
+  );
+
+  assert.ok(result.candidates.length >= 2);
+  assert.ok(
+    result.warnings.some((w) => w.includes('correction words detected')),
+  );
+  assert.equal(result.candidates[0].quantity, 2);
+});
+
+test('matchVoiceTranscriptOffline: preserves null unknown nutrients strictly through save without inventing zero', () => {
+  const customUnknownFood = {
+    id: 'custom:mystery-protein-bar',
+    name: 'Verified Partial Label Food',
+    aliases: ['partial food'],
+    category: 'Custom',
+    preparation: 'packaged',
+    referenceGrams: 100,
+    nutrients: {
+      calories: 250,
+      protein: null,
+      carbs: 30,
+      fat: 10,
+      fiber: null,
+    },
+    status: 'verified',
+    source: 'User Verified Partial Entry',
+  };
+
+  const result = matchVoiceTranscriptOffline(
+    '100g partial food',
+    [customUnknownFood],
+  );
+  assert.equal(result.candidates.length, 1);
+  const cand = result.candidates[0];
+  assert.equal(cand.calories, 250);
+  assert.equal(cand.protein, null); // MUST remain null, never 0!
+  assert.equal(cand.carbohydrates, 30);
+  assert.equal(cand.fat, 10);
+  assert.equal(cand.fiber, null);
+
+  // Explicit user confirmation builds verified catalogue entry preserving null protein & fiber
+  const entries = buildDiaryEntriesFromVoiceCandidates(
+    [cand],
+    'Snacks',
+    '2026-11-10',
+  );
+  assert.equal(entries.length, 1);
+  assert.doesNotThrow(() => assertEntry(entries[0]));
+  assert.equal(entries[0].foodId, 'custom:mystery-protein-bar');
+  assert.equal(entries[0].nutrients.protein, null);
+  assert.equal(entries[0].nutrients.fiber, null);
+  assert.equal(entries[0].meal, 'Snacks');
+  assert.equal(entries[0].date, '2026-11-10');
 });
