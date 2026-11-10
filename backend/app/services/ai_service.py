@@ -18,6 +18,7 @@ from app.services.providers.base import (
     BaseAIProvider,
     ModelOutputValidationError,
     get_current_request_id,
+    get_remaining_request_deadline,
     is_request_cancelled,
 )
 from app.services.providers.gemini_provider import GeminiProvider
@@ -99,6 +100,7 @@ class DualProviderService:
                 alternative_model=self._settings.voice_openrouter_alternative_model,
                 timeout_seconds=self._settings.voice_primary_timeout_seconds,
                 max_retries=voice_or_retries,
+                max_tokens=getattr(self._settings, "voice_openrouter_max_tokens", 900),
             )
         )
         # Preserve .openrouter attribute pointing to photo_openrouter for backward test compatibility
@@ -185,6 +187,9 @@ class DualProviderService:
         if is_request_cancelled(is_cancelled):
             raise AIRequestCancelledError("Client disconnected / request cancelled.", provider="ai_service")
 
+        ctx_remaining = get_remaining_request_deadline()
+        effective_budget = min(total_budget, ctx_remaining) if ctx_remaining is not None else total_budget
+
         primary, fallback = self._resolve_task_providers(task)
         fallback_available = self.is_fallback_enabled and fallback.is_configured
 
@@ -194,14 +199,16 @@ class DualProviderService:
             get_current_request_id(),
             operation_name,
             task,
-            total_budget,
+            effective_budget,
             primary.name,
             fallback.name if fallback_available else "none",
         )
 
         def remaining_budget() -> float:
             elapsed = time.perf_counter() - start_time
-            return max(0.0, total_budget - elapsed)
+            local_rem = max(0.0, effective_budget - elapsed)
+            live_ctx_rem = get_remaining_request_deadline()
+            return min(local_rem, live_ctx_rem) if live_ctx_rem is not None else local_rem
 
         def _attempt_fallback(primary_err: Exception, reason: str) -> T:
             if not fallback_available:
@@ -286,7 +293,7 @@ class DualProviderService:
         primary_default_timeout = self._default_provider_timeout(task, primary.name, is_fallback=False)
         rem = remaining_budget()
         max_primary_budget = (
-            max(total_budget - reserve_fallback_seconds, 5.0)
+            max(effective_budget - reserve_fallback_seconds, 5.0)
             if fallback_available
             else rem
         )
@@ -387,7 +394,7 @@ class DualProviderService:
             task="voice",
             operation_name="parse_voice_meal",
             total_budget=total_budget,
-            reserve_fallback_seconds=10.0,
+            reserve_fallback_seconds=14.0,
             invoke_fn=lambda provider, timeout_s: provider.parse_voice_meal(
                 transcript=transcript,
                 meal_context=meal_context,

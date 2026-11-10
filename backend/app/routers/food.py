@@ -31,6 +31,7 @@ from app.services.providers.base import (
     ModelOutputValidationError,
     RateLimitError,
     current_cancellation_check,
+    current_request_deadline,
     current_request_id,
 )
 from app.services.image import (
@@ -130,6 +131,7 @@ async def recognize_food(
     monitor_task = asyncio.create_task(_monitor_disconnect())
     token = current_cancellation_check.set(cancel_event.is_set)
     server_deadline = settings.server_deadline_seconds
+    deadline_token = current_request_deadline.set(time.monotonic() + server_deadline)
 
     try:
         response = await asyncio.wait_for(
@@ -224,6 +226,7 @@ async def recognize_food(
         ) from exc
     finally:
         t_cleanup_start = time.perf_counter()
+        current_request_deadline.reset(deadline_token)
         current_cancellation_check.reset(token)
         cancel_event.set()
         monitor_task.cancel()
@@ -297,6 +300,7 @@ async def recognize_food_base64(
     monitor_task = asyncio.create_task(_monitor_disconnect())
     token = current_cancellation_check.set(cancel_event.is_set)
     server_deadline = settings.server_deadline_seconds
+    deadline_token = current_request_deadline.set(time.monotonic() + server_deadline)
 
     try:
         response = await asyncio.wait_for(
@@ -391,6 +395,7 @@ async def recognize_food_base64(
         ) from exc
     finally:
         t_cleanup_start = time.perf_counter()
+        current_request_deadline.reset(deadline_token)
         current_cancellation_check.reset(token)
         cancel_event.set()
         monitor_task.cancel()
@@ -454,6 +459,7 @@ async def parse_voice_meal(
     monitor_task = asyncio.create_task(_monitor_disconnect())
     token = current_cancellation_check.set(cancel_event.is_set)
     server_deadline = settings.voice_server_deadline_seconds
+    deadline_token = current_request_deadline.set(time.monotonic() + server_deadline)
 
     try:
         response = await asyncio.wait_for(
@@ -548,6 +554,7 @@ async def parse_voice_meal(
         ) from exc
     finally:
         t_cleanup_start = time.perf_counter()
+        current_request_deadline.reset(deadline_token)
         current_cancellation_check.reset(token)
         cancel_event.set()
         monitor_task.cancel()

@@ -1936,3 +1936,576 @@ def test_health_endpoint_reports_task_specific_routing_without_secrets(
     finally:
         app.dependency_overrides.pop(get_settings, None)
 
+
+# ---------------------------------------------------------------------------
+# Test 41: Slow HTTP 200 keepalive stream aborts at wall-clock deadline -> Gemini fallback
+# ---------------------------------------------------------------------------
+def test_openrouter_streaming_keepalive_wall_clock_deadline_triggers_gemini_fallback(
+    sample_voice_item: ParsedVoiceFoodItem,
+) -> None:
+    """Slow OpenRouter keepalive chunks must abort at wall-clock deadline and fall back to Gemini."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from app.main import app
+    from app.services.providers.openrouter_provider import OpenRouterProvider
+
+    socket_closed_evt = threading.Event()
+
+    class KeepaliveSlowHandler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            content_len = int(self.headers.get("Content-Length", "0") or 0)
+            if content_len:
+                _ = self.rfile.read(content_len)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            # Stream keepalive bytes every 0.1s for 6.0s (defeats idle ReadTimeout, must hit wall-clock!)
+            for _ in range(60):
+                try:
+                    self.wfile.write(b" ")
+                    self.wfile.flush()
+                    time.sleep(0.1)
+                except OSError:
+                    socket_closed_evt.set()
+                    return
+
+        def log_message(self, format, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), KeepaliveSlowHandler)
+    port = server.server_address[1]
+    srv_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    srv_thread.start()
+
+    try:
+        settings = Settings()
+        settings.voice_primary_provider = "openrouter"
+        settings.voice_fallback_provider = "gemini"
+        settings.voice_primary_timeout_seconds = 0.7
+        settings.voice_server_deadline_seconds = 8.0
+        settings.gemini_timeout_seconds = 5.0
+
+        # Use http_client=None so the production streaming watchdog path runs end-to-end
+        real_or = OpenRouterProvider(
+            api_key="sk-or-test-key",
+            model="nvidia/nemotron-3-ultra-550b-a55b:free",
+            alternative_model=None,
+            base_url=f"http://127.0.0.1:{port}",
+            timeout_seconds=0.7,
+            max_retries=0,
+            max_tokens=900,
+        )
+
+        mock_gemini = MagicMock(spec=BaseAIProvider)
+        mock_gemini.name = "gemini"
+        mock_gemini.is_configured = True
+        mock_gemini.parse_voice_meal.return_value = VoiceMealParseResponse(
+            success=True,
+            transcript="2 rotis",
+            summary="2 rotis via Gemini fallback",
+            items=[sample_voice_item],
+        )
+
+        service = DualProviderService(
+            gemini_provider=mock_gemini,
+            voice_openrouter_provider=real_or,
+            settings=settings,
+        )
+
+        app.dependency_overrides[get_ai_service] = lambda: service
+        t0 = time.perf_counter()
+        try:
+            client = TestClient(app)
+            resp = client.post("/api/v1/parse-voice-meal", json={"transcript": "2 rotis"})
+        finally:
+            app.dependency_overrides.pop(get_ai_service, None)
+
+        elapsed = time.perf_counter() - t0
+        assert resp.status_code == 200
+        assert resp.json()["summary"] == "2 rotis via Gemini fallback"
+        assert mock_gemini.parse_voice_meal.call_count == 1
+        # Must abort primary near 0.7s + finish fast, NOT stall for 6.0s or 504!
+        assert elapsed < 2.2
+        assert socket_closed_evt.wait(timeout=1.0)
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+# ---------------------------------------------------------------------------
+# Test 42: Genuine in-flight cancellation aborts socket immediately without fallback
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("send_keepalives", [True, False])
+def test_openrouter_in_flight_cancellation_closes_socket_and_skips_fallback(
+    send_keepalives: bool,
+) -> None:
+    """In-flight cancel_event must tear down OpenRouter socket immediately without calling Gemini."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from app.services.providers.openrouter_provider import OpenRouterProvider
+
+    request_started = threading.Event()
+    socket_aborted = threading.Event()
+
+    class HungOrKeepaliveHandler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            content_len = int(self.headers.get("Content-Length", "0") or 0)
+            if content_len:
+                _ = self.rfile.read(content_len)
+            request_started.set()
+            if send_keepalives:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                for _ in range(80):
+                    try:
+                        self.wfile.write(b" ")
+                        self.wfile.flush()
+                        time.sleep(0.1)
+                    except OSError:
+                        socket_aborted.set()
+                        return
+            else:
+                # Stalled upstream before sending any HTTP headers
+                if socket_aborted.wait(timeout=8.0):
+                    return
+
+        def log_message(self, format, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), HungOrKeepaliveHandler)
+    port = server.server_address[1]
+    srv_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    srv_thread.start()
+
+    try:
+        cancel_evt = threading.Event()
+        real_or = OpenRouterProvider(
+            api_key="sk-or-test-key",
+            model="nvidia/nemotron-3-ultra-550b-a55b:free",
+            alternative_model=None,
+            base_url=f"http://127.0.0.1:{port}",
+            timeout_seconds=10.0,
+            max_retries=0,
+        )
+
+        mock_gemini = MagicMock(spec=BaseAIProvider)
+        mock_gemini.name = "gemini"
+        mock_gemini.is_configured = True
+
+        settings = Settings()
+        settings.voice_primary_provider = "openrouter"
+        settings.voice_fallback_provider = "gemini"
+        settings.voice_primary_timeout_seconds = 10.0
+        settings.voice_server_deadline_seconds = 25.0
+
+        service = DualProviderService(
+            gemini_provider=mock_gemini,
+            voice_openrouter_provider=real_or,
+            settings=settings,
+        )
+
+        def _cancel_shortly():
+            request_started.wait(timeout=2.0)
+            time.sleep(0.25)
+            cancel_evt.set()
+            if not send_keepalives:
+                # Signal handler cleanup when socket tears down
+                socket_aborted.set()
+
+        threading.Thread(target=_cancel_shortly, daemon=True).start()
+
+        t0 = time.perf_counter()
+        with pytest.raises(AIRequestCancelledError):
+            service.parse_voice_meal(
+                transcript="2 rotis",
+                deadline_seconds=25.0,
+                is_cancelled=cancel_evt.is_set,
+            )
+        elapsed = time.perf_counter() - t0
+        assert elapsed < 1.2
+        mock_gemini.parse_voice_meal.assert_not_called()
+        if send_keepalives:
+            assert socket_aborted.wait(timeout=1.0)
+    finally:
+        socket_aborted.set()
+        server.shutdown()
+        server.server_close()
+
+
+# ---------------------------------------------------------------------------
+# Test 43: FastAPI server deadline expiration tears down OpenRouter worker socket
+# ---------------------------------------------------------------------------
+def test_router_voice_server_deadline_terminates_openrouter_worker_socket() -> None:
+    """When router server deadline expires, cancel_event closes upstream OpenRouter TCP socket."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from app.config import get_settings
+    from app.main import app
+    from app.services.providers.openrouter_provider import OpenRouterProvider
+
+    worker_socket_closed = threading.Event()
+
+    class LongKeepaliveHandler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            content_len = int(self.headers.get("Content-Length", "0") or 0)
+            if content_len:
+                _ = self.rfile.read(content_len)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            for _ in range(100):
+                try:
+                    self.wfile.write(b" ")
+                    self.wfile.flush()
+                    time.sleep(0.1)
+                except OSError:
+                    worker_socket_closed.set()
+                    return
+
+        def log_message(self, format, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), LongKeepaliveHandler)
+    port = server.server_address[1]
+    srv_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    srv_thread.start()
+
+    try:
+        custom_settings = Settings()
+        custom_settings.ai_fallback_enabled = False
+        custom_settings.voice_primary_provider = "openrouter"
+        custom_settings.voice_primary_timeout_seconds = 10.0
+        custom_settings.voice_server_deadline_seconds = 0.55
+
+        real_or = OpenRouterProvider(
+            api_key="sk-or-test",
+            model="nvidia/nemotron-3-ultra-550b-a55b:free",
+            alternative_model=None,
+            base_url=f"http://127.0.0.1:{port}",
+            timeout_seconds=10.0,
+            max_retries=0,
+        )
+        service = DualProviderService(
+            gemini_provider=MagicMock(spec=BaseAIProvider),
+            voice_openrouter_provider=real_or,
+            settings=custom_settings,
+        )
+
+        app.dependency_overrides[get_settings] = lambda: custom_settings
+        app.dependency_overrides[get_ai_service] = lambda: service
+        try:
+            t0 = time.perf_counter()
+            client = TestClient(app)
+            resp = client.post("/api/v1/parse-voice-meal", json={"transcript": "2 rotis"})
+            elapsed = time.perf_counter() - t0
+            assert resp.status_code == 504
+            assert elapsed < 1.3
+            assert worker_socket_closed.wait(timeout=1.0)
+        finally:
+            app.dependency_overrides.clear()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+# ---------------------------------------------------------------------------
+# Test 44: Gzip streaming decompression does not double-decode in httpx.Response
+# ---------------------------------------------------------------------------
+def test_openrouter_gzip_streaming_response_decodes_cleanly() -> None:
+    """OpenRouter streaming path must strip content-encoding after decompression to prevent DecodingError."""
+    import gzip
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from app.services.providers.openrouter_provider import OpenRouterProvider
+
+    payload_dict = {
+        "id": "or-gzip-44",
+        "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "usage": {"prompt_tokens": 120, "completion_tokens": 85},
+        "choices": [
+            {
+                "finish_reason": "stop",
+                "message": {
+                    "content": json.dumps({
+                        "success": True,
+                        "summary": "2 boiled eggs",
+                        "items": [
+                            {
+                                "food_description": "Boiled Egg",
+                                "quantity": 2.0,
+                                "unit": "piece",
+                                "state": "cooked",
+                                "estimated_grams": 100.0,
+                                "calories": 155.0,
+                                "protein": 13.0,
+                                "carbohydrates": 1.1,
+                                "fat": 11.0,
+                            }
+                        ],
+                        "warnings": [],
+                    })
+                },
+            }
+        ],
+    }
+    gz_body = gzip.compress(json.dumps(payload_dict).encode("utf-8"))
+
+    class GzipHandler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            content_len = int(self.headers.get("Content-Length", "0") or 0)
+            if content_len:
+                _ = self.rfile.read(content_len)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Content-Length", str(len(gz_body)))
+            self.end_headers()
+            self.wfile.write(gz_body)
+            self.wfile.flush()
+
+        def log_message(self, format, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), GzipHandler)
+    port = server.server_address[1]
+    srv_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    srv_thread.start()
+
+    try:
+        provider = OpenRouterProvider(
+            api_key="sk-or-test",
+            model="nvidia/nemotron-3-ultra-550b-a55b:free",
+            alternative_model=None,
+            base_url=f"http://127.0.0.1:{port}",
+            timeout_seconds=5.0,
+            max_retries=0,
+        )
+        parsed = provider.parse_voice_meal("2 boiled eggs")
+        assert parsed.success is True
+        assert parsed.transcript == "2 boiled eggs"
+        assert len(parsed.items) == 1
+        assert parsed.items[0].food_description == "Boiled Egg"
+        assert parsed.items[0].calories == 155.0
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+# ---------------------------------------------------------------------------
+# Test 45: Compact voice prompt, 900-token cap vs 2000-token photo cap, and full API schema
+# ---------------------------------------------------------------------------
+def test_voice_compact_prompt_token_budget_and_full_api_schema_compatibility(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Voice OpenRouter uses 900 max_tokens & omits transcript echo while returning full response schema."""
+    import httpx
+    import json
+
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-gem")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "fake-or")
+    settings = Settings()
+    service = DualProviderService(settings=settings)
+
+    assert service.voice_openrouter._max_tokens == 900
+    assert service.photo_openrouter._max_tokens == 2000
+
+    # Simulate compact response where LLM omits optional default keys (transcript, preparation, confidence, etc.)
+    compact_resp = httpx.Response(
+        status_code=200,
+        json={
+            "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+            "usage": {"prompt_tokens": 330, "completion_tokens": 175},
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {
+                        "content": json.dumps({
+                            "success": True,
+                            "summary": "2 rotis and dal",
+                            "items": [
+                                {
+                                    "food_description": "Whole Wheat Roti",
+                                    "quantity": 2,
+                                    "unit": "piece",
+                                    "state": "cooked",
+                                    "estimated_grams": 70,
+                                    "calories": 182,
+                                    "protein": 6.0,
+                                    "carbohydrates": 36.0,
+                                    "fat": 1.6,
+                                }
+                            ],
+                        })
+                    },
+                }
+            ],
+        },
+        request=httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions"),
+    )
+
+    mock_client = MagicMock(spec=httpx.Client)
+    mock_client.post.return_value = compact_resp
+    service.voice_openrouter._client = mock_client
+
+    res = service.parse_voice_meal("do roti aur dal")
+    dumped = res.model_dump()
+
+    sent_payload = mock_client.post.call_args.kwargs["json"]
+    assert sent_payload["max_tokens"] == 900
+    assert sent_payload["reasoning"] == {"enabled": False}
+    assert '"transcript"' not in sent_payload["messages"][1]["content"]
+
+    assert dumped["transcript"] == "do roti aur dal"
+    assert set(dumped.keys()) == {
+        "success",
+        "transcript",
+        "summary",
+        "items",
+        "warnings",
+        "clarifying_questions",
+    }
+    assert set(dumped["items"][0].keys()) == {
+        "food_description",
+        "quantity",
+        "unit",
+        "preparation",
+        "state",
+        "estimated_grams",
+        "calories",
+        "protein",
+        "carbohydrates",
+        "fat",
+        "confidence",
+        "confidence_level",
+        "alternatives",
+        "notes",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Test 46: Malformed OpenRouter voice output fails over cleanly to Gemini
+# ---------------------------------------------------------------------------
+def test_openrouter_malformed_voice_json_fails_over_to_gemini(
+    sample_voice_item: ParsedVoiceFoodItem,
+) -> None:
+    """Malformed voice JSON from OpenRouter must trigger Gemini fallback cleanly."""
+    import httpx
+    from app.services.providers.openrouter_provider import OpenRouterProvider
+
+    bad_resp = httpx.Response(
+        status_code=200,
+        json={
+            "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+            "choices": [{"finish_reason": "stop", "message": {"content": "Not JSON at all: sorry!"}}],
+        },
+        request=httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions"),
+    )
+    mock_client = MagicMock(spec=httpx.Client)
+    mock_client.post.return_value = bad_resp
+
+    voice_or = OpenRouterProvider(
+        api_key="sk-or-test",
+        model="nvidia/nemotron-3-ultra-550b-a55b:free",
+        alternative_model=None,
+        max_retries=0,
+        http_client=mock_client,
+    )
+    mock_gemini = MagicMock(spec=BaseAIProvider)
+    mock_gemini.name = "gemini"
+    mock_gemini.is_configured = True
+    mock_gemini.parse_voice_meal.return_value = VoiceMealParseResponse(
+        success=True,
+        transcript="2 chapatis",
+        summary="2 chapatis",
+        items=[sample_voice_item],
+    )
+
+    settings = Settings()
+    settings.voice_primary_provider = "openrouter"
+    settings.voice_fallback_provider = "gemini"
+
+    service = DualProviderService(
+        gemini_provider=mock_gemini,
+        voice_openrouter_provider=voice_or,
+        settings=settings,
+    )
+    res = service.parse_voice_meal("2 chapatis")
+    assert res.success is True
+    assert res.items[0].food_description == "2 chapatis"
+    mock_gemini.parse_voice_meal.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Test 47: ContextVar request deadline fails fast without upstream call when expired
+# ---------------------------------------------------------------------------
+def test_context_request_deadline_fails_fast_without_upstream_call() -> None:
+    """Expired current_request_deadline ContextVar must raise AITimeoutError without HTTP POST."""
+    import httpx
+    from app.services.providers.base import current_request_deadline
+    from app.services.providers.openrouter_provider import OpenRouterProvider
+
+    mock_client = MagicMock(spec=httpx.Client)
+    provider = OpenRouterProvider(
+        api_key="sk-or-test",
+        model="nvidia/nemotron-3-ultra-550b-a55b:free",
+        alternative_model=None,
+        max_retries=0,
+        http_client=mock_client,
+    )
+
+    tok = current_request_deadline.set(time.monotonic() - 0.1)
+    try:
+        with pytest.raises(AITimeoutError):
+            provider.parse_voice_meal("2 rotis")
+        mock_client.post.assert_not_called()
+    finally:
+        current_request_deadline.reset(tok)
+
+
+# ---------------------------------------------------------------------------
+# Test 48: Milestone 4B defaults keep Gemini photo unchanged & tighten voice budgets
+# ---------------------------------------------------------------------------
+def test_milestone_4b_defaults_preserve_photo_gemini_and_tighten_voice_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify photo Gemini configuration is completely preserved while voice budgets tighten cleanly."""
+    for env_key in (
+        "PHOTO_PRIMARY_PROVIDER",
+        "GEMINI_MODEL",
+        "GEMINI_THINKING_BUDGET",
+        "GEMINI_MAX_OUTPUT_TOKENS",
+        "OPENROUTER_MAX_TOKENS",
+        "SERVER_DEADLINE_SECONDS",
+        "MAX_IMAGE_DIMENSION",
+        "IMAGE_JPEG_QUALITY",
+        "VOICE_PRIMARY_PROVIDER",
+        "VOICE_FALLBACK_PROVIDER",
+        "VOICE_OPENROUTER_MODEL",
+        "VOICE_PRIMARY_TIMEOUT_SECONDS",
+        "VOICE_SERVER_DEADLINE_SECONDS",
+        "VOICE_OPENROUTER_MAX_TOKENS",
+    ):
+        monkeypatch.delenv(env_key, raising=False)
+
+    clean = Settings()
+    # Photo recognition untouched
+    assert clean.photo_primary_provider == "gemini"
+    assert clean.gemini_model == "gemini-3.5-flash"
+    assert clean.gemini_thinking_budget == 0
+    assert clean.gemini_max_output_tokens == 1500
+    assert clean.openrouter_max_tokens == 2000
+    assert clean.server_deadline_seconds == 35.0
+    assert clean.max_image_dimension == 1024
+    assert clean.image_jpeg_quality == 82
+
+    # Voice tightened within mobile's 40s timeout without switching default Ultra model prematurely
+    assert clean.voice_primary_provider == "openrouter"
+    assert clean.voice_fallback_provider == "gemini"
+    assert clean.voice_openrouter_model == "nvidia/nemotron-3-ultra-550b-a55b:free"
+    assert clean.voice_primary_timeout_seconds == 14.0
+    assert clean.voice_server_deadline_seconds == 32.0
+    assert clean.voice_server_deadline_seconds < 40.0
+    assert clean.voice_openrouter_max_tokens == 900
+

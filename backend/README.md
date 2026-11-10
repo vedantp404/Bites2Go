@@ -20,11 +20,12 @@ Secure, local FastAPI microservice for AI-powered meal recognition and voice foo
        │                                      * Text-only models are strictly rejected before HTTP send *
        │
        └──► POST /api/v1/parse-voice-meal (Text transcripts; Indian + Hinglish + raw/cooked)
-              │  - Server deadline: 35.0s (leaves 5s margin before mobile 40.0s timeout)
+              │  - Server deadline: 32.0s (leaves 8s margin before mobile 40.0s timeout)
+              │  - Enforceable wall-clock timeout (14.0s) + socket cancellation abort watchdog
               ▼
             [Voice Primary: NVIDIA Nemotron 3 Ultra Free (nvidia/nemotron-3-ultra-550b-a55b:free)]
-              ├─► Success: Returns VoiceMealParseResponse (omits unsupported response_format)
-              └─► Error/429/503/Timeout ─► [Fallback: Google Gemini Text (gemini-3.5-flash, tb=0)]
+              ├─► Success (~5s–9.2s): Returns compact VoiceMealParseResponse (max 900 tokens)
+              └─► Error/429/Timeout (>14s) ─► [Fallback: Google Gemini Text (gemini-3.5-flash, tb=0)]
 ```
 
 ### Core Architecture Guarantees
@@ -79,7 +80,8 @@ OPENROUTER_API_KEY=your_openrouter_api_key_here
 
 VOICE_OPENROUTER_MODEL=nvidia/nemotron-3-ultra-550b-a55b:free
 VOICE_OPENROUTER_ALTERNATIVE_MODEL=
-VOICE_PRIMARY_TIMEOUT_SECONDS=24.0
+VOICE_PRIMARY_TIMEOUT_SECONDS=14.0
+VOICE_OPENROUTER_MAX_TOKENS=900
 
 PHOTO_OPENROUTER_MODEL=nvidia/nemotron-3.5-super-vl:free
 PHOTO_OPENROUTER_ALTERNATIVE_MODEL=dots-studio/dots-3-note-preview:free
@@ -98,7 +100,7 @@ ENVIRONMENT=development
 MAX_IMAGE_DIMENSION=1024
 IMAGE_JPEG_QUALITY=82
 SERVER_DEADLINE_SECONDS=35.0
-VOICE_SERVER_DEADLINE_SECONDS=35.0
+VOICE_SERVER_DEADLINE_SECONDS=32.0
 MAX_IMAGE_SIZE_BYTES=10485760
 ALLOWED_ORIGINS=*
 ```
@@ -143,7 +145,7 @@ PHOTO_PRIMARY_PROVIDER=openrouter
    - Routing voice transcripts to Nemotron on OpenRouter by default preserves Gemini daily quota for photo vision requests.
    - Setting `GEMINI_THINKING_BUDGET=0` disables default reasoning tokens on `gemini-3.5-flash`, reducing photo latency from ~17.5s to ~3.5s–8.5s. Note: `gemini-3.5-flash-lite` rejects `thinking_budget`; the provider skips it automatically on `-lite` models.
 2. **OpenRouter Free Models (`:free`):**
-   - `nvidia/nemotron-3-ultra-550b-a55b:free` is text-only (`response_format` unsupported, omitted automatically) and serves as voice primary. Real multi-item/Hinglish transcripts typically complete in 19s–32s depending on output length (`VOICE_SERVER_DEADLINE_SECONDS=35.0`).
+   - `nvidia/nemotron-3-ultra-550b-a55b:free` is text-only (`response_format` unsupported, omitted automatically) and serves as voice primary with compact JSON schema (`VOICE_OPENROUTER_MAX_TOKENS=900`), typically completing in 5s–9.2s (or safely aborting via wall-clock socket teardown at `VOICE_PRIMARY_TIMEOUT_SECONDS=14.0` to reach Gemini fallback inside `VOICE_SERVER_DEADLINE_SECONDS=32.0`).
    - `nvidia/nemotron-3.5-super-vl:free` (plus single alternative `dots-studio/dots-3-note-preview:free`) provides vision-capable fallback for photos.
    - Strict upstream rate limits or empty responses may still occur under heavy free-tier load; genuine failures surface safe retryable errors without hallucinated results.
 
@@ -208,7 +210,7 @@ Example response:
 ### 2. Run Automated Tests (Mocked - Zero Quota Consumed)
 All tests run with mocked HTTP/SDK responses and never hit real APIs or consume API quota:
 ```bash
-# Run all backend tests (106 tests)
+# Run all backend tests (115 tests)
 PYTHONPATH=backend backend\.venv\Scripts\python.exe -m pytest backend/tests -v
 
 # Run the timeout & task-routing reliability suite specifically
@@ -220,7 +222,7 @@ PYTHONPATH=backend backend\.venv\Scripts\python.exe -m pytest backend/tests/test
 ## Connecting the Mobile App & APK Compatibility
 
 - **Installed Android APK Compatibility:** All endpoint paths (`/api/v1/recognize-food`, `/api/v1/recognize-food/base64`, `/api/v1/parse-voice-meal`, `/health`) and Pydantic response schemas remain unchanged. Installed APKs work seamlessly without rebuilding once the updated backend is deployed.
-- **Timeout Margin Alignment:** Mobile uses `45000ms` (photo) and `40000ms` (voice). Backend enforces `35.0s` server deadlines for both paths, leaving `5.0s–10.0s` transport margin so Render timeouts return structured backend JSON errors rather than raw client aborts.
+- **Timeout Margin Alignment:** Mobile uses `45000ms` (photo) and `40000ms` (voice). Backend enforces `35.0s` (photo) and `32.0s` (voice) server deadlines, leaving `8.0s–10.0s` transport margin so timeouts or fallbacks complete cleanly instead of triggering raw client aborts or HTTP 504s.
 - **Render Environment Note:** When deploying to Render, unset legacy `OPENROUTER_MODEL=openrouter/free` (or update `PHOTO_OPENROUTER_MODEL=nvidia/nemotron-3.5-super-vl:free` and `VOICE_OPENROUTER_MODEL=nvidia/nemotron-3-ultra-550b-a55b:free`).
 
 1. **Android Emulator:**

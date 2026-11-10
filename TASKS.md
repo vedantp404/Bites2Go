@@ -1,5 +1,13 @@
 # Ordered roadmap
 
+## Milestone 4B — Fix NVIDIA Voice Timeout & Enforceable Cancellation — implemented
+
+- [x] Diagnosed live HTTP 504 on request `7f59355e` (OpenRouter completing at `50.978s` past `35.0s` server deadline without reaching Gemini fallback): `httpx.Timeout` only bounds per-read idle gaps while OpenRouter streams `200 OK` headers + periodic keepalive chunks, and synchronous `client.post(...)` inside `asyncio.to_thread` could not abort on wall-clock timeout or `cancel_event`.
+- [x] Implemented enforceable wall-clock deadlines and genuine socket cancellation in `backend/app/services/providers/openrouter_provider.py` (`_post_with_wall_clock_deadline`, `_strip_hop_and_encoding_headers`), `backend/app/routers/food.py` (`current_request_deadline` ContextVar), and `backend/app/services/ai_service.py`: real HTTP calls now stream via a request-scoped `httpx.Client` with a `0.15s` daemon watchdog closing the TCP socket immediately upon `cancel_event` or wall-clock expiration.
+- [x] Benchmarked `nvidia/nemotron-3-ultra-550b-a55b:free` vs `nvidia/nemotron-3.5-lightning:free` across 5 controlled Indian/Hinglish/correction transcripts (`task-6645`, `task-6658`, `$0` cost): kept `nvidia/nemotron-3-ultra-550b-a55b:free` as default pending user choice, documenting accuracy-vs-speed evidence.
+- [x] Optimized voice prompt & token budgets (`VOICE_OPENROUTER_MAX_TOKENS=900`, removed redundant transcript echo/null bloat, compact `VOICE_PARSER_SYSTEM_INSTRUCTION`) and tightened voice deadlines (`VOICE_PRIMARY_TIMEOUT_SECONDS=14.0`, `VOICE_SERVER_DEADLINE_SECONDS=32.0`, `reserve_fallback_seconds=14.0`) while leaving Gemini photo configuration completely unchanged.
+- [x] Verified with real TCP keepalive/hung socket abort tests, Gzip streaming test, Gemini fallback tests (`115` backend pytest tests total), mobile tests, and TypeScript check (`0` errors). Do not push/deploy or auto-switch production model without approval.
+
 ## Milestone 4 — Reliable AI Voice and Image Recognition — implemented
 
 - [x] Inspected live Render deployment (`40762dbc`) and mobile/backend timeout budgets (`45.0s` mobile photo / `40.0s` mobile voice vs `35.0s` server deadline).

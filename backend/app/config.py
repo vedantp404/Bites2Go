@@ -61,7 +61,7 @@ class Settings:
         
         # Global server-side request deadline budgets (must finish ahead of mobile AbortControllers: 45s photo / 40s voice)
         self.server_deadline_seconds: float = float(os.getenv("SERVER_DEADLINE_SECONDS", "35.0"))
-        self.voice_server_deadline_seconds: float = float(os.getenv("VOICE_SERVER_DEADLINE_SECONDS", "35.0"))
+        self.voice_server_deadline_seconds: float = float(os.getenv("VOICE_SERVER_DEADLINE_SECONDS", "32.0"))
 
         # Master fallback switch
         self.ai_fallback_enabled: bool = os.getenv("AI_FALLBACK_ENABLED", "true").lower() in ("true", "1", "yes")
@@ -116,9 +116,11 @@ class Settings:
 
         self.openrouter_base_url: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
         self.openrouter_timeout_seconds: float = float(os.getenv("OPENROUTER_TIMEOUT_SECONDS", "19.0"))
-        self.voice_primary_timeout_seconds: float = float(os.getenv("VOICE_PRIMARY_TIMEOUT_SECONDS", "24.0"))
+        # 14.0s enforceable wall-clock cap for voice primary reserves >=14.0s for Gemini fallback inside 32.0s deadline
+        self.voice_primary_timeout_seconds: float = float(os.getenv("VOICE_PRIMARY_TIMEOUT_SECONDS", "14.0"))
         self.openrouter_max_retries: int = int(os.getenv("OPENROUTER_MAX_RETRIES", "1"))
         self.openrouter_max_tokens: int = int(os.getenv("OPENROUTER_MAX_TOKENS", "2000"))
+        self.voice_openrouter_max_tokens: int = int(os.getenv("VOICE_OPENROUTER_MAX_TOKENS", "900"))
 
         # Deployed git commit hash (populated on Render via RENDER_GIT_COMMIT)
         self.git_commit: str = os.getenv("RENDER_GIT_COMMIT", os.getenv("GIT_COMMIT", "dev"))

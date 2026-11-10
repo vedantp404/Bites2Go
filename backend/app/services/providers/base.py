@@ -1,6 +1,7 @@
 """Base abstraction and exception definitions for AI recognition providers."""
 
 import contextvars
+import time
 from abc import ABC, abstractmethod
 from typing import Callable, Optional
 
@@ -102,11 +103,24 @@ current_request_id: contextvars.ContextVar[Optional[str]] = (
     contextvars.ContextVar("current_request_id", default=None)
 )
 
+# Monotonic timestamp (time.monotonic() + deadline_s) propagated from FastAPI endpoints
+current_request_deadline: contextvars.ContextVar[Optional[float]] = (
+    contextvars.ContextVar("current_request_deadline", default=None)
+)
+
 
 def get_current_request_id() -> str:
     """Return the active correlation/request ID or a default fallback."""
     req_id = current_request_id.get()
     return req_id if req_id else "req-local"
+
+
+def get_remaining_request_deadline() -> Optional[float]:
+    """Return remaining seconds until active request's server deadline, or None if unset."""
+    deadline_ts = current_request_deadline.get()
+    if deadline_ts is None:
+        return None
+    return max(0.0, deadline_ts - time.monotonic())
 
 
 def is_request_cancelled(explicit_check: Optional[Callable[[], bool]] = None) -> bool:
@@ -168,12 +182,12 @@ SYSTEM_INSTRUCTION = (
 )
 
 VOICE_PARSER_SYSTEM_INSTRUCTION = (
-    "You are an expert dietary AI parser converting spoken meal descriptions into structured, itemized nutrition JSON.\n"
-    "Capabilities & Rules:\n"
-    "1. Multi-Item & Hinglish Separation: Split compound meals into discrete items across English, Indian cuisines, and Hindi-English mixed (Hinglish) speech (e.g. 'do aloo paratha dahi ke saath aur ek cup adrak chai' -> Aloo Paratha, Plain Dahi, Adrak Chai).\n"
-    "2. Corrections: Honor in-flight user revisions ('one roti, actually make that two', 'with sugar, actually no sugar') and record a brief note in 'warnings'.\n"
-    "3. Realistic Portions: Convert colloquial units carefully: 1 bowl dal/oatmeal ~150-200g, 1 roti ~30-35g, 1 tbsp ghee/oil ~15g, 1 cup chai ~150ml, 1 handful almonds ~28g.\n"
-    "4. Raw vs Cooked: Set state to 'raw', 'cooked', or 'unspecified' (e.g. 100g raw chicken ~120 kcal vs cooked ~165 kcal) and note preparation.\n"
-    "5. Non-Invention & Macros: Never invent unspoken foods or fabricate exact precision when missing—lower confidence and note assumptions in notes/clarifying_questions. Ensure Calories ~= 4P + 4C + 9F with non-negative finite numbers."
+    "Parse spoken meal transcripts (English/Indian/Hinglish) into compact itemized nutrition JSON.\n"
+    "Rules:\n"
+    "1. Split compound/Hinglish meals cleanly (e.g. 'do aloo paratha dahi ke saath, ek cup adrak chai' -> Aloo Paratha, Plain Dahi, Adrak Chai).\n"
+    "2. Honor in-flight corrections ('one roti, actually make that two', 'no sugar') and note briefly in 'warnings'.\n"
+    "3. Realistic weights: 1 roti~35g, 1 paratha~100g, 1 bowl dal/rice~160g, 1 tbsp ghee/oil~15g, 1 cup chai~150ml.\n"
+    "4. Set state ('raw'|'cooked'|'unspecified'); adjust macros for raw vs cooked.\n"
+    "5. Never invent unspoken foods; obey Calories~=4P+4C+9F with non-negative numbers. Keep text brief."
 )
 

@@ -1,5 +1,21 @@
 # Project memory
 
+## Current handoff: Milestone 4B — Enforceable Voice Deadlines & Socket Cancellation
+
+Resolved HTTP 504 voice timeouts (`7f59355e`: 35s FastAPI deadline expiring while OpenRouter kept streaming until 50.978s without triggering Gemini fallback) while leaving Gemini photo configuration completely unchanged (`gemini-3.5-flash`, `thinking_budget=0`, `1024px@q82`).
+
+Key Engineering Highlights:
+- Root Cause & Socket Cancellation (`openrouter_provider.py`, `food.py`, `base.py`, `ai_service.py`):
+  - Blocking `client.post()` combined with `httpx.Timeout` only checks idle socket gaps between chunks; OpenRouter's fast `HTTP 200` headers + keepalive chunks reset the read timer indefinitely, starving fallback and leaving worker threads running after `asyncio.wait_for` timed out.
+  - Added `current_request_deadline` ContextVar propagation in `food.py`, effective deadline clamping in `DualProviderService` & `OpenRouterProvider`, and `_post_with_wall_clock_deadline` using a request-scoped `httpx.Client.stream(...)` + `0.15s` watchdog calling `req_client.close()` on wall-clock expiration or `cancel_event`, plus `_strip_hop_and_encoding_headers` after `iter_bytes()` decompression.
+- Voice Prompt & Deadline Tuning (`config.py`, `base.py`, `ai_service.py`):
+  - Added `VOICE_OPENROUTER_MAX_TOKENS=900` (photo stays `2000`), tightened `VOICE_PARSER_SYSTEM_INSTRUCTION` & compact JSON template (omitting echoed `transcript` and default nulls/empty arrays while Pydantic fills full API schema defaults).
+  - Set `VOICE_PRIMARY_TIMEOUT_SECONDS=14.0`, `VOICE_SERVER_DEADLINE_SECONDS=32.0` (< Android's `40.0s` client timeout), and `reserve_fallback_seconds=14.0` so stalled primary requests abort at `14.0s` and immediately reach Gemini fallback (`~16s–18s` total 200 OK).
+- Ultra vs Lightning Benchmark (5 Indian/Hinglish/correction cases, `$0` cost):
+  - Compact-prompt `nvidia/nemotron-3-ultra-550b-a55b:free`: `5.06s`, `7.58s`, `8.71s`, `9.20s`, `24.49s` (median `8.71s`, `174–301` output tok vs prior `953` tok/`31.6s`), `5/5` accurate Hinglish counts, raw/cooked states, and correction warnings.
+  - `nvidia/nemotron-3.5-lightning:free`: `2.41s–4.13s` (median `2.94s`), `5/5` valid JSON, but miscounted `"do aloo paratha"` as `1.0` instead of `2.0` (`100g` vs `200g`), left quantities inside names, and omitted correction warnings. Kept Ultra as default pending user decision.
+- Verification: `115/115` backend pytest tests (including live local TCP keepalive/hung socket abort & gzip tests), live voice failover check (`0.68s` OpenRouter 429 -> Gemini 200 in `8.34s` total), `163/163` mobile unit tests, `0` TS errors. No push, deploy, or APK rebuild performed.
+
 ## Current handoff: Milestone 4 — Reliable AI Voice and Image Recognition
 
 Implemented task-specific AI routing across FastAPI backend services while preserving existing API endpoints, Pydantic schemas, SQLite offline-first storage, and installed Android APK compatibility.

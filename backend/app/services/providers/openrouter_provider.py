@@ -4,6 +4,7 @@ import base64
 import json
 import logging
 import re
+import threading
 import time
 from typing import Any, Callable, Optional, TypeVar
 import httpx
@@ -31,6 +32,7 @@ from app.services.providers.base import (
     SYSTEM_INSTRUCTION,
     VOICE_PARSER_SYSTEM_INSTRUCTION,
     get_current_request_id,
+    get_remaining_request_deadline,
     is_request_cancelled,
 )
 
@@ -320,6 +322,14 @@ def _build_model_payload(
     return payload
 
 
+def _strip_hop_and_encoding_headers(headers: Optional[httpx.Headers]) -> httpx.Headers:
+    """Drop encoding/length headers after streaming decompression so httpx.Response does not double-decode."""
+    if headers is None:
+        return httpx.Headers()
+    excluded = {b"content-encoding", b"content-length", b"transfer-encoding"}
+    return httpx.Headers([(k, v) for k, v in headers.raw if k.lower() not in excluded])
+
+
 class OpenRouterProvider(BaseAIProvider):
     """OpenRouter fallback AI provider using the Chat Completions endpoint."""
 
@@ -371,16 +381,217 @@ class OpenRouterProvider(BaseAIProvider):
             return self._api_key
         return self._settings.require_openrouter_api_key()
 
+    def _default_headers(self) -> dict[str, str]:
+        return {
+            "HTTP-Referer": "https://bites2go.app",
+            "X-Title": "Bites2Go Food Recognition",
+        }
+
     def _get_client(self) -> httpx.Client:
         if self._client is None:
             self._client = httpx.Client(
                 timeout=httpx.Timeout(self._timeout_seconds, connect=10.0),
-                headers={
-                    "HTTP-Referer": "https://bites2go.app",
-                    "X-Title": "Bites2Go Food Recognition",
-                },
+                headers=self._default_headers(),
             )
         return self._client
+
+    def _post_with_wall_clock_deadline(
+        self,
+        operation_name: str,
+        model_id: str,
+        url: str,
+        api_key: str,
+        payload: dict[str, Any],
+        attempt_budget: float,
+        is_cancelled: Optional[Callable[[], bool]] = None,
+    ) -> httpx.Response:
+        """Execute POST with enforceable wall-clock deadline and real socket cancellation.
+
+        When a custom http_client (e.g. unit test MagicMock) is injected, uses client.post()
+        directly plus a post-call wall-clock deadline check. For real production requests
+        (http_client is None), uses a request-scoped streaming httpx.Client paired with a
+        watchdog thread so both slow keepalive responses and stalled sockets abort cleanly
+        on deadline or client cancellation.
+        """
+        t_req_start = time.perf_counter()
+        hard_deadline = t_req_start + max(0.05, attempt_budget)
+        connect_timeout = min(5.0, max(attempt_budget, 0.5))
+        timeout_cfg = (
+            attempt_budget
+            if attempt_budget <= 5.0
+            else httpx.Timeout(
+                attempt_budget,
+                connect=connect_timeout,
+                read=attempt_budget,
+                write=min(10.0, attempt_budget),
+                pool=connect_timeout,
+            )
+        )
+
+        # Injected client path (unit tests / custom pooling)
+        if self._client is not None:
+            resp = self._client.post(
+                url,
+                headers={"Authorization": f"Bearer {api_key}"},
+                json=payload,
+                timeout=timeout_cfg,
+            )
+            t_req_elapsed = time.perf_counter() - t_req_start
+            logger.info(
+                "[Timing][%s] OpenRouter [%s] HTTP request completed in %.3fs (status: %d, model=%s)",
+                get_current_request_id(),
+                operation_name,
+                t_req_elapsed,
+                resp.status_code,
+                model_id,
+            )
+            if time.perf_counter() >= hard_deadline:
+                raise httpx.ReadTimeout(
+                    f"OpenRouter request exceeded {attempt_budget:.1f}s wall-clock deadline."
+                )
+            return resp
+
+        # Production path: per-request cancelable streaming client + watchdog timer
+        done_event = threading.Event()
+        abort_reason: dict[str, bool] = {"cancelled": False, "timed_out": False}
+        req_client = httpx.Client(timeout=timeout_cfg, headers=self._default_headers())
+
+        def _watchdog() -> None:
+            while not done_event.is_set():
+                if is_request_cancelled(is_cancelled):
+                    abort_reason["cancelled"] = True
+                    try:
+                        req_client.close()
+                    except Exception:
+                        pass
+                    return
+                rem_s = hard_deadline - time.perf_counter()
+                if rem_s <= 0.0:
+                    abort_reason["timed_out"] = True
+                    try:
+                        req_client.close()
+                    except Exception:
+                        pass
+                    return
+                done_event.wait(min(0.15, rem_s))
+
+        watcher = threading.Thread(
+            target=_watchdog,
+            name=f"or-watchdog-{get_current_request_id()}",
+            daemon=True,
+        )
+        watcher.start()
+
+        chunks: list[bytes] = []
+        status_code = 0
+        resp_headers: Optional[httpx.Headers] = None
+        resp_request: Optional[httpx.Request] = None
+        headers_elapsed: Optional[float] = None
+
+        try:
+            with req_client.stream(
+                "POST",
+                url,
+                headers={"Authorization": f"Bearer {api_key}"},
+                json=payload,
+            ) as stream_resp:
+                status_code = stream_resp.status_code
+                resp_headers = stream_resp.headers
+                resp_request = stream_resp.request
+                headers_elapsed = time.perf_counter() - t_req_start
+                logger.info(
+                    "[Timing][%s] OpenRouter [%s] HTTP headers received in %.3fs (status: %d, model=%s)",
+                    get_current_request_id(),
+                    operation_name,
+                    headers_elapsed,
+                    status_code,
+                    model_id,
+                )
+                for chunk in stream_resp.iter_bytes():
+                    if is_request_cancelled(is_cancelled):
+                        abort_reason["cancelled"] = True
+                        break
+                    if time.perf_counter() >= hard_deadline:
+                        abort_reason["timed_out"] = True
+                        break
+                    if chunk:
+                        chunks.append(chunk)
+        except (httpx.RequestError, httpx.StreamError, ValueError, OSError) as io_exc:
+            if abort_reason["cancelled"] or is_request_cancelled(is_cancelled):
+                logger.info(
+                    "[Timing][%s] OpenRouter [%s] socket aborted on cancellation after %.3fs (model=%s)",
+                    get_current_request_id(),
+                    operation_name,
+                    time.perf_counter() - t_req_start,
+                    model_id,
+                )
+                raise AIRequestCancelledError(
+                    "Client disconnected / request cancelled.", provider=self.name
+                ) from io_exc
+            if abort_reason["timed_out"] or time.perf_counter() >= hard_deadline:
+                logger.warning(
+                    "[Timing][%s] OpenRouter [%s] aborted at wall-clock deadline (elapsed=%.3fs, budget=%.2fs, headers=%.3fs, chunks=%d, model=%s)",
+                    get_current_request_id(),
+                    operation_name,
+                    time.perf_counter() - t_req_start,
+                    attempt_budget,
+                    headers_elapsed if headers_elapsed is not None else -1.0,
+                    len(chunks),
+                    model_id,
+                )
+                raise httpx.ReadTimeout(
+                    f"OpenRouter request exceeded {attempt_budget:.1f}s wall-clock deadline."
+                ) from io_exc
+            raise
+        finally:
+            done_event.set()
+            watcher.join(timeout=0.05)
+            try:
+                req_client.close()
+            except Exception:
+                pass
+
+        t_req_elapsed = time.perf_counter() - t_req_start
+        if abort_reason["cancelled"] or is_request_cancelled(is_cancelled):
+            logger.info(
+                "[Timing][%s] OpenRouter [%s] aborted on cancellation after %.3fs (model=%s)",
+                get_current_request_id(),
+                operation_name,
+                t_req_elapsed,
+                model_id,
+            )
+            raise AIRequestCancelledError(
+                "Client disconnected / request cancelled.", provider=self.name
+            )
+        if abort_reason["timed_out"] or time.perf_counter() >= hard_deadline:
+            logger.warning(
+                "[Timing][%s] OpenRouter [%s] aborted at wall-clock deadline (elapsed=%.3fs, budget=%.2fs, headers=%.3fs, chunks=%d, model=%s)",
+                get_current_request_id(),
+                operation_name,
+                t_req_elapsed,
+                attempt_budget,
+                headers_elapsed if headers_elapsed is not None else -1.0,
+                len(chunks),
+                model_id,
+            )
+            raise httpx.ReadTimeout(
+                f"OpenRouter request exceeded {attempt_budget:.1f}s wall-clock deadline."
+            )
+
+        logger.info(
+            "[Timing][%s] OpenRouter [%s] HTTP request completed in %.3fs (status: %d, model=%s)",
+            get_current_request_id(),
+            operation_name,
+            t_req_elapsed,
+            status_code,
+            model_id,
+        )
+        return httpx.Response(
+            status_code=status_code,
+            headers=_strip_hop_and_encoding_headers(resp_headers),
+            content=b"".join(chunks),
+            request=resp_request,
+        )
 
     def _map_status_code_error(
         self,
@@ -538,6 +749,9 @@ class OpenRouterProvider(BaseAIProvider):
             safe_err = f"HTTP {status_code}"
             logger.error("OpenRouter API [%s] HTTP error (model=%s): %s", operation_name, active_model, safe_err)
             raise self._map_status_code_error(status_code) from http_err
+
+        except AIRequestCancelledError:
+            raise
 
         except (httpx.TimeoutException, TimeoutError) as timeout_err:
             raise AITimeoutError(
@@ -761,8 +975,16 @@ class OpenRouterProvider(BaseAIProvider):
         """Execute primary OpenRouter model and allow at most one bounded alternative-model attempt."""
         api_key = self._get_api_key()
         url = f"{self._base_url}/chat/completions"
-        client = self._get_client()
         overall_budget = timeout_seconds if timeout_seconds is not None else self._timeout_seconds
+        ctx_rem = get_remaining_request_deadline()
+        if ctx_rem is not None:
+            overall_budget = min(overall_budget, ctx_rem)
+        if overall_budget <= 0.05:
+            raise AITimeoutError(
+                "OpenRouter request deadline exhausted before upstream call.",
+                provider=self.name,
+                error_category="upstream_timeout",
+            )
         t_overall_start = time.perf_counter()
 
         has_alternative = bool(self._alternative_model and self._alternative_model != self._model)
@@ -780,31 +1002,28 @@ class OpenRouterProvider(BaseAIProvider):
             max_retries_override: Optional[int],
         ) -> T:
             payload = _build_model_payload(model_id, messages, self._max_tokens)
-            connect_timeout = min(5.0, max(attempt_budget, 0.5))
-            req_timeout = (
-                attempt_budget
-                if attempt_budget <= 5.0
-                else httpx.Timeout(attempt_budget, connect=connect_timeout)
-            )
+            invoke_deadline = time.perf_counter() + attempt_budget
 
             def _call_openrouter() -> httpx.Response:
-                t_req_start = time.perf_counter()
-                resp = client.post(
-                    url,
-                    headers={"Authorization": f"Bearer {api_key}"},
-                    json=payload,
-                    timeout=req_timeout,
+                now = time.perf_counter()
+                overall_rem = overall_budget - (now - t_overall_start)
+                live_ctx = get_remaining_request_deadline()
+                rem_budget = min(invoke_deadline - now, overall_rem)
+                if live_ctx is not None:
+                    rem_budget = min(rem_budget, live_ctx)
+                if rem_budget <= 0.05:
+                    raise httpx.ReadTimeout(
+                        f"OpenRouter request exceeded {attempt_budget:.1f}s wall-clock deadline."
+                    )
+                return self._post_with_wall_clock_deadline(
+                    operation_name=operation_name,
+                    model_id=model_id,
+                    url=url,
+                    api_key=api_key,
+                    payload=payload,
+                    attempt_budget=rem_budget,
+                    is_cancelled=is_cancelled,
                 )
-                t_req_elapsed = time.perf_counter() - t_req_start
-                logger.info(
-                    "[Timing][%s] OpenRouter [%s] HTTP request completed in %.3fs (status: %d, model=%s)",
-                    get_current_request_id(),
-                    operation_name,
-                    t_req_elapsed,
-                    resp.status_code,
-                    model_id,
-                )
-                return resp
 
             data, call_duration = self._execute_with_retry(
                 operation_name,
@@ -990,11 +1209,11 @@ class OpenRouterProvider(BaseAIProvider):
             user_content += f"\nMeal context: {meal_context.strip()}"
 
         user_content += (
-            '\nReturn ONLY raw JSON matching: {"success":true,"transcript":"...","summary":"...",'
-            '"items":[{"food_description":"...","quantity":1.0,"unit":"bowl","preparation":null,'
-            '"state":"raw|cooked|unspecified","estimated_grams":150.0,"calories":180.0,'
-            '"protein":7.0,"carbohydrates":28.0,"fat":4.0,"confidence":0.9,"confidence_level":"high",'
-            '"alternatives":[],"notes":null}],"warnings":[],"clarifying_questions":[]}'
+            '\nReturn ONLY minified raw JSON (no markdown, omit transcript echo & null/empty keys) matching: '
+            '{"success":true,"summary":"<8 words>","items":[{"food_description":"...",'
+            '"quantity":1.0,"unit":"serving","state":"raw|cooked|unspecified",'
+            '"estimated_grams":100.0,"calories":150.0,"protein":5.0,"carbohydrates":20.0,"fat":4.0}],'
+            '"warnings":[]}'
         )
 
         messages = [
