@@ -43,10 +43,31 @@ _MIN_ALTERNATIVE_BUDGET_SECONDS = 7.0
 
 # Models verified not to support OpenAI-style `response_format={"type": "json_object"}`
 _MODELS_WITHOUT_RESPONSE_FORMAT = frozenset({
+    "nvidia/nemotron-3-ultra-550b-a55b:free",
     "nvidia/nemotron-3.5-lightning:free",
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
     "thinkingmachines/inkling-2-small:free",
 })
+
+# Models verified as text-only (must NEVER receive image payloads)
+_TEXT_ONLY_MODEL_IDS = frozenset({
+    "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "nvidia/nemotron-3.5-lightning:free",
+    "liquid/lfm-3-1.7b:free",
+    "liquid/lfm-2.5-2.6b:free",
+    "recursive/flint-v1.0:free",
+    "xingchen-agi/xing4.0-29b-a4b:free",
+    "cohere/north-mini-code:free",
+})
+
+
+def is_text_only_openrouter_model(model_id: str) -> bool:
+    """Return True when the given OpenRouter model ID is known text-only and cannot accept images."""
+    lower_id = model_id.strip().lower()
+    if lower_id in _TEXT_ONLY_MODEL_IDS:
+        return True
+    # Defensive heuristic for Cohere code/text or Flint text variants
+    return lower_id.startswith(("cohere/", "recursive/flint", "liquid/lfm-"))
 
 # Routers or endpoints that may reject `reasoning.enabled=False` with HTTP 400
 _REASONING_REQUIRED_PREFIXES = (
@@ -258,6 +279,17 @@ def _extract_text_from_message(message: dict[str, Any]) -> tuple[str, bool, bool
             return "", True, has_refusal
         if isinstance(raw_content.get("text"), str):
             return raw_content["text"].strip(), has_reasoning_output, has_refusal
+
+    # If final content is absent, safely inspect structured function tool_calls (if provided)
+    tool_calls = message.get("tool_calls")
+    if isinstance(tool_calls, list) and tool_calls:
+        first_tc = tool_calls[0]
+        if isinstance(first_tc, dict):
+            fn_obj = first_tc.get("function")
+            if isinstance(fn_obj, dict) and isinstance(fn_obj.get("arguments"), str):
+                stripped_args = fn_obj["arguments"].strip()
+                if stripped_args:
+                    return stripped_args, has_reasoning_output, has_refusal
 
     return "", has_reasoning_output, has_refusal
 
@@ -811,6 +843,14 @@ class OpenRouterProvider(BaseAIProvider):
                 rem,
             )
             assert self._alternative_model is not None
+            if operation_name == "recognize_food" and is_text_only_openrouter_model(self._alternative_model):
+                logger.error(
+                    "[Timing][%s] OpenRouter [%s] blocked image routing to text-only alternative model [%s]",
+                    get_current_request_id(),
+                    operation_name,
+                    self._alternative_model,
+                )
+                raise exc
             return _invoke_model(self._alternative_model, rem, 0)
 
     def recognize_food(
@@ -821,37 +861,28 @@ class OpenRouterProvider(BaseAIProvider):
         is_cancelled: Optional[Callable[[], bool]] = None,
     ) -> FoodRecognitionResponse:
         """Recognize food items from an image using OpenRouter vision chat completion."""
+        if is_text_only_openrouter_model(self._model):
+            logger.error(
+                "[Timing][%s] OpenRouter [recognize_food] blocked attempt to route image data to text-only model [%s]",
+                get_current_request_id(),
+                self._model,
+            )
+            raise AIServiceError(
+                f"Configured OpenRouter model [{self._model}] does not support image input.",
+                provider=self.name,
+                code=400,
+                error_category="model_vision_unsupported",
+            )
+
         b64_image = base64.b64encode(image_bytes).decode("utf-8")
         data_url = f"data:{mime_type};base64,{b64_image}"
 
         prompt_text = (
-            "Identify each visually distinguishable food item in this meal photo. "
-            "For Indian meals or mixed plates/thalis, detect components separately (breads, rice, dal, sabzi, curries, sides). "
-            "Estimate realistic portion weights in grams, calories, and macronutrients, noting visual ambiguities or alternatives.\n\n"
-            "You MUST respond ONLY with a valid JSON object matching this schema:\n"
-            "{\n"
-            '  "success": true,\n'
-            '  "summary": "Brief meal description",\n'
-            '  "items": [\n'
-            "    {\n"
-            '      "food_name": "Item name",\n'
-            '      "estimated_quantity": 1.0,\n'
-            '      "unit": "bowl",\n'
-            '      "estimated_grams": 150.0,\n'
-            '      "calories": 180.0,\n'
-            '      "protein": 7.0,\n'
-            '      "carbohydrates": 28.0,\n'
-            '      "fat": 4.0,\n'
-            '      "uncertainty": {\n'
-            '        "confidence_score": 0.88,\n'
-            '        "confidence_level": "high",\n'
-            '        "notes": null,\n'
-            '        "alternatives": []\n'
-            "      }\n"
-            "    }\n"
-            "  ],\n"
-            '  "warnings": []\n'
-            "}"
+            "Identify distinct meal components cleanly (breads, rice, dal, sabzi, curries, sides) with realistic grams and macros. "
+            'Respond ONLY with raw JSON matching: {"success":true,"summary":"...",'
+            '"items":[{"food_name":"...","estimated_quantity":1.0,"unit":"bowl","estimated_grams":150.0,'
+            '"calories":180.0,"protein":7.0,"carbohydrates":28.0,"fat":4.0,'
+            '"uncertainty":{"confidence_score":0.88,"confidence_level":"high","notes":null,"alternatives":[]}}],"warnings":[]}'
         )
 
         messages = [
@@ -959,27 +990,11 @@ class OpenRouterProvider(BaseAIProvider):
             user_content += f"\nMeal context: {meal_context.strip()}"
 
         user_content += (
-            "\n\nYou MUST respond ONLY with a valid JSON object matching this schema:\n"
-            "{\n"
-            '  "success": true,\n'
-            f'  "transcript": "{cleaned_transcript}",\n'
-            '  "summary": "Brief summary",\n'
-            '  "items": [\n'
-            "    {\n"
-            '      "food_description": "Item description",\n'
-            '      "quantity": 1.0,\n'
-            '      "unit": "bowl",\n'
-            '      "preparation": null,\n'
-            '      "state": "unspecified",\n'
-            '      "estimated_grams": 150.0,\n'
-            '      "calories": 180.0,\n'
-            '      "protein": 7.0,\n'
-            '      "carbohydrates": 28.0,\n'
-            '      "fat": 4.0\n'
-            "    }\n"
-            "  ],\n"
-            '  "warnings": []\n'
-            "}"
+            '\nReturn ONLY raw JSON matching: {"success":true,"transcript":"...","summary":"...",'
+            '"items":[{"food_description":"...","quantity":1.0,"unit":"bowl","preparation":null,'
+            '"state":"raw|cooked|unspecified","estimated_grams":150.0,"calories":180.0,'
+            '"protein":7.0,"carbohydrates":28.0,"fat":4.0,"confidence":0.9,"confidence_level":"high",'
+            '"alternatives":[],"notes":null}],"warnings":[],"clarifying_questions":[]}'
         )
 
         messages = [

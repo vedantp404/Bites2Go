@@ -44,6 +44,27 @@ def _get_safe_error_summary(exc: BaseException) -> str:
     return type(exc).__name__
 
 
+def _safe_gemini_int(val: object) -> Optional[int]:
+    """Return integer metric only for real numeric values (safe with MagicMock test objects)."""
+    if isinstance(val, bool) or val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return int(val)
+    return None
+
+
+def _clean_markdown_json_text(raw_text: str) -> str:
+    """Strip markdown fences around JSON text cleanly."""
+    cleaned = raw_text.strip()
+    if cleaned.startswith("```json"):
+        cleaned = cleaned[7:]
+    if cleaned.startswith("```"):
+        cleaned = cleaned[3:]
+    if cleaned.endswith("```"):
+        cleaned = cleaned[:-3]
+    return cleaned.strip()
+
+
 class GeminiProvider(BaseAIProvider):
     """Gemini AI provider wrapping Google GenAI SDK with bounded retries."""
 
@@ -57,6 +78,8 @@ class GeminiProvider(BaseAIProvider):
         retry_max_delay: Optional[float] = None,
         retry_on_rate_limit: bool = True,
         settings: Optional[Settings] = None,
+        thinking_budget: Optional[int] = None,
+        max_output_tokens: Optional[int] = None,
     ) -> None:
         self._settings = settings or get_settings()
         self._model = model or self._settings.gemini_model
@@ -75,6 +98,16 @@ class GeminiProvider(BaseAIProvider):
             retry_max_delay if retry_max_delay is not None else self._settings.gemini_retry_max_delay
         )
         self._retry_on_rate_limit = retry_on_rate_limit
+        self._thinking_budget = (
+            thinking_budget
+            if thinking_budget is not None
+            else getattr(self._settings, "gemini_thinking_budget", 0)
+        )
+        self._max_output_tokens = (
+            max_output_tokens
+            if max_output_tokens is not None
+            else getattr(self._settings, "gemini_max_output_tokens", 1500)
+        )
 
     @property
     def name(self) -> str:
@@ -229,58 +262,71 @@ class GeminiProvider(BaseAIProvider):
             if isinstance(final_exc, errors.APIError):
                 code = getattr(final_exc, "code", None)
                 if code == 429:
+                    err_msg = str(final_exc).lower()
+                    quota_hit = "per day" in err_msg or "daily" in err_msg or "retry in" in err_msg
                     raise AIRateLimitError(
-                        "Gemini API rate limit or quota exceeded. Please wait a moment and try again.",
+                        "Gemini API quota exhausted for today. Using fallback provider."
+                        if quota_hit
+                        else "Gemini API rate limit reached. Please wait a moment and try again.",
                         provider=self.name,
                         code=429,
-                        is_quota_exhausted=True,
+                        is_quota_exhausted=quota_hit,
+                        error_category="quota_exhausted" if quota_hit else "rate_limit",
                     ) from final_exc
                 if code in {408, 504}:
                     raise AITimeoutError(
                         "AI recognition service timed out after multiple attempts. Please try again.",
                         provider=self.name,
                         code=code,
+                        error_category="upstream_timeout",
                     ) from final_exc
                 if code in {500, 502, 503}:
                     raise AIUnavailableError(
                         f"The AI recognition service is temporarily overloaded or unavailable (HTTP {code}). Please try again in a few moments.",
                         provider=self.name,
                         code=code,
+                        error_category="upstream_unavailable",
                     ) from final_exc
                 if code == 401:
                     raise AIAuthenticationError(
                         "AI service authentication failed. Please verify your GEMINI_API_KEY configuration.",
                         provider=self.name,
                         code=401,
+                        error_category="auth_failed",
                     ) from final_exc
                 if code == 403:
                     raise AIAuthenticationError(
                         "AI service access is forbidden. Please verify your API key permissions and project status.",
                         provider=self.name,
                         code=403,
+                        error_category="auth_failed",
                     ) from final_exc
                 if code == 400:
                     raise AIServiceError(
                         "AI service rejected the request payload as invalid.",
                         provider=self.name,
                         code=400,
+                        error_category="bad_request",
                     ) from final_exc
                 raise AIServiceError(
                     f"Gemini service was unable to process the request (HTTP {code}). Please try again later.",
                     provider=self.name,
                     code=code,
+                    error_category="upstream_error",
                 ) from final_exc
 
             if isinstance(final_exc, (TimeoutError, httpx.TimeoutException)):
                 raise AITimeoutError(
                     "AI recognition request timed out after multiple attempts. Please try again.",
                     provider=self.name,
+                    error_category="upstream_timeout",
                 ) from final_exc
 
             if isinstance(final_exc, (httpx.ConnectError, httpx.RemoteProtocolError)):
                 raise AIUnavailableError(
                     "Cannot establish connection to AI recognition service. Please check your network and try again.",
                     provider=self.name,
+                    error_category="network_error",
                 ) from final_exc
 
             if isinstance(final_exc, AIServiceError):
@@ -289,7 +335,99 @@ class GeminiProvider(BaseAIProvider):
             raise AIServiceError(
                 f"Unexpected error communicating with AI recognition service: {str(final_exc)}",
                 provider=self.name,
+                error_category="unexpected_error",
             ) from final_exc
+
+    def _build_generation_config(
+        self,
+        system_instruction: str,
+        response_schema: object,
+        timeout_seconds: float,
+    ) -> types.GenerateContentConfig:
+        """Build tuned GenAI generation config (disabled AFC + configurable thinking budget)."""
+        timeout_ms = max(100, int(timeout_seconds * 1000))
+        cfg_kwargs: dict[str, object] = {
+            "system_instruction": system_instruction,
+            "response_mime_type": "application/json",
+            "response_schema": response_schema,
+            "temperature": 0.2,
+            "max_output_tokens": self._max_output_tokens,
+            "automatic_function_calling": types.AutomaticFunctionCallingConfig(disable=True),
+            "http_options": types.HttpOptions(
+                timeout=timeout_ms,
+                retry_options=None,
+            ),
+        }
+        if self._thinking_budget >= 0 and "lite" not in self._model.lower():
+            cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=self._thinking_budget)
+        return types.GenerateContentConfig(**cfg_kwargs)
+
+    def _extract_and_clean_response_text(
+        self,
+        operation_name: str,
+        response: types.GenerateContentResponse,
+    ) -> str:
+        """Log safe Gemini response metadata and extract stripped JSON string."""
+        req_id = get_current_request_id()
+        usage = getattr(response, "usage_metadata", None)
+        prompt_tok = _safe_gemini_int(getattr(usage, "prompt_token_count", None)) if usage else None
+        cand_tok = _safe_gemini_int(getattr(usage, "candidates_token_count", None)) if usage else None
+        think_tok = _safe_gemini_int(getattr(usage, "thoughts_token_count", None)) if usage else None
+
+        finish_reason_str = "unknown"
+        candidates = getattr(response, "candidates", None)
+        if isinstance(candidates, list) and candidates:
+            fr = getattr(candidates[0], "finish_reason", None)
+            if fr is not None and isinstance(getattr(fr, "value", fr), str):
+                finish_reason_str = str(getattr(fr, "value", fr))
+
+        raw_text_attr = getattr(response, "text", None) if response else None
+        has_text = isinstance(raw_text_attr, str) and bool(raw_text_attr.strip())
+
+        logger.info(
+            "[Timing][%s] Gemini [%s] response meta: model=%s, finish_reason=%s, "
+            "prompt_tokens=%s, candidate_tokens=%s, thoughts_tokens=%s, content_empty=%s",
+            req_id,
+            operation_name,
+            self._model,
+            finish_reason_str,
+            prompt_tok,
+            cand_tok,
+            think_tok,
+            not has_text,
+        )
+
+        if not response or not has_text:
+            upper_fr = finish_reason_str.upper()
+            if "MAX_TOKENS" in upper_fr:
+                raise ModelOutputValidationError(
+                    "Gemini exceeded output token budget before returning complete JSON.",
+                    provider=self.name,
+                    error_category="token_budget_exhausted",
+                )
+            if any(flag in upper_fr for flag in ("SAFETY", "RECITATION", "BLOCKLIST")):
+                raise ModelOutputValidationError(
+                    "Gemini blocked the response due to content policy.",
+                    provider=self.name,
+                    error_category="content_filtered",
+                )
+            raise ModelOutputValidationError(
+                "The AI service returned an empty response.",
+                provider=self.name,
+                error_category="empty_model_content",
+            )
+
+        assert isinstance(raw_text_attr, str)
+        t_parse_start = time.perf_counter()
+        cleaned = _clean_markdown_json_text(raw_text_attr)
+        t_parse_elapsed = time.perf_counter() - t_parse_start
+        logger.info(
+            "[Timing][%s] Gemini [%s] response JSON text cleaning took %.4fs",
+            req_id,
+            operation_name,
+            t_parse_elapsed,
+        )
+        return cleaned
 
     def recognize_food(
         self,
@@ -301,25 +439,13 @@ class GeminiProvider(BaseAIProvider):
         """Analyze food image and return validated structured food candidates."""
         image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
         prompt_text = (
-            "Identify each visually distinguishable food item in this meal. "
-            "For Indian meals or mixed plates/thalis, detect components separately (breads, rice, dal, sabzi, curries, sides). "
-            "Estimate realistic portion weights in grams, calories, and macronutrients, noting any visual ambiguities or alternatives."
+            "Identify each distinct food item on this meal. Separate breads, rice, dal, sabzi, curries, and sides. "
+            "Estimate grams, calories, protein, carbohydrates, fat, and note ambiguities."
         )
 
         contents = [image_part, prompt_text]
-
         effective_timeout = timeout_seconds if timeout_seconds is not None else self._per_attempt_timeout_seconds
-        timeout_ms = int(effective_timeout * 1000)
-        config = types.GenerateContentConfig(
-            system_instruction=SYSTEM_INSTRUCTION,
-            response_mime_type="application/json",
-            response_schema=FoodRecognitionResponse,
-            temperature=0.2,
-            http_options=types.HttpOptions(
-                timeout=timeout_ms,
-                retry_options=None,  # Keep SDK internal retries at 1 to prevent unexpected request multiplication
-            ),
-        )
+        config = self._build_generation_config(SYSTEM_INSTRUCTION, FoodRecognitionResponse, effective_timeout)
 
         def _call_gemini() -> types.GenerateContentResponse:
             return self.client.models.generate_content(
@@ -329,21 +455,7 @@ class GeminiProvider(BaseAIProvider):
             )
 
         response = self._execute_with_retry("recognize_food", _call_gemini, is_cancelled=is_cancelled)
-
-        if not response or not response.text:
-            raise ModelOutputValidationError("The AI service returned an empty response.", provider=self.name)
-
-        t_parse_start = time.perf_counter()
-        raw_text = response.text.strip()
-        if raw_text.startswith("```json"):
-            raw_text = raw_text[7:]
-        if raw_text.startswith("```"):
-            raw_text = raw_text[3:]
-        if raw_text.endswith("```"):
-            raw_text = raw_text[:-3]
-        raw_text = raw_text.strip()
-        t_parse_elapsed = time.perf_counter() - t_parse_start
-        logger.info("[Timing][%s] Gemini [%s] response JSON text cleaning took %.4fs", get_current_request_id(), "recognize_food", t_parse_elapsed)
+        raw_text = self._extract_and_clean_response_text("recognize_food", response)
 
         t_val_start = time.perf_counter()
         try:
@@ -366,11 +478,13 @@ class GeminiProvider(BaseAIProvider):
             raise ModelOutputValidationError(
                 f"Model response failed validation schema: {str(val_err)}",
                 provider=self.name,
+                error_category="pydantic_validation_failed",
             ) from val_err
         except Exception as exc:
             raise ModelOutputValidationError(
                 f"Failed to decode model JSON output: {str(exc)}",
                 provider=self.name,
+                error_category="malformed_json",
             ) from exc
 
     def parse_voice_meal(
@@ -387,17 +501,7 @@ class GeminiProvider(BaseAIProvider):
 
         contents = [prompt_text]
         effective_timeout = timeout_seconds if timeout_seconds is not None else self._voice_timeout_seconds
-        timeout_ms = int(effective_timeout * 1000)
-        config = types.GenerateContentConfig(
-            system_instruction=VOICE_PARSER_SYSTEM_INSTRUCTION,
-            response_mime_type="application/json",
-            response_schema=VoiceMealParseResponse,
-            temperature=0.2,
-            http_options=types.HttpOptions(
-                timeout=timeout_ms,
-                retry_options=None,  # Keep SDK internal retries at 1 to prevent unexpected request multiplication
-            ),
-        )
+        config = self._build_generation_config(VOICE_PARSER_SYSTEM_INSTRUCTION, VoiceMealParseResponse, effective_timeout)
 
         def _call_gemini() -> types.GenerateContentResponse:
             return self.client.models.generate_content(
@@ -407,21 +511,7 @@ class GeminiProvider(BaseAIProvider):
             )
 
         response = self._execute_with_retry("parse_voice_meal", _call_gemini, is_cancelled=is_cancelled)
-
-        if not response or not response.text:
-            raise ModelOutputValidationError("The AI service returned an empty response.", provider=self.name)
-
-        t_parse_start = time.perf_counter()
-        raw_text = response.text.strip()
-        if raw_text.startswith("```json"):
-            raw_text = raw_text[7:]
-        if raw_text.startswith("```"):
-            raw_text = raw_text[3:]
-        if raw_text.endswith("```"):
-            raw_text = raw_text[:-3]
-        raw_text = raw_text.strip()
-        t_parse_elapsed = time.perf_counter() - t_parse_start
-        logger.info("[Timing][%s] Gemini [%s] response JSON text cleaning took %.4fs", get_current_request_id(), "parse_voice_meal", t_parse_elapsed)
+        raw_text = self._extract_and_clean_response_text("parse_voice_meal", response)
 
         t_val_start = time.perf_counter()
         try:
@@ -445,9 +535,11 @@ class GeminiProvider(BaseAIProvider):
             raise ModelOutputValidationError(
                 f"Model response failed validation schema: {str(val_err)}",
                 provider=self.name,
+                error_category="pydantic_validation_failed",
             ) from val_err
         except Exception as exc:
             raise ModelOutputValidationError(
                 f"Failed to decode model JSON output: {str(exc)}",
                 provider=self.name,
+                error_category="malformed_json",
             ) from exc

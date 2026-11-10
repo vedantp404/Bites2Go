@@ -26,5 +26,29 @@ def health_check() -> dict:
         "model": settings.gemini_model,
         "fallback_model": settings.openrouter_model,
         "fallback_alternative_model": settings.openrouter_alternative_model,
+        "photo_primary_provider": settings.photo_primary_provider,
+        "photo_fallback_provider": settings.photo_fallback_provider,
+        "photo_model": (
+            settings.gemini_model
+            if settings.photo_primary_provider == "gemini"
+            else settings.photo_openrouter_model
+        ),
+        "photo_fallback_model": (
+            settings.photo_openrouter_model
+            if settings.photo_fallback_provider == "openrouter"
+            else settings.gemini_model
+        ),
+        "voice_primary_provider": settings.voice_primary_provider,
+        "voice_fallback_provider": settings.voice_fallback_provider,
+        "voice_model": (
+            settings.voice_openrouter_model
+            if settings.voice_primary_provider == "openrouter"
+            else settings.gemini_model
+        ),
+        "voice_fallback_model": (
+            settings.gemini_model
+            if settings.voice_fallback_provider == "gemini"
+            else settings.voice_openrouter_model
+        ),
         "commit": settings.git_commit[:8],
     }

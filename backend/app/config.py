@@ -37,47 +37,86 @@ class Settings:
         self.host: str = os.getenv("HOST", "127.0.0.1")
         self.port: int = int(os.getenv("PORT", "8000"))
         
-        # Default to gemini-3.5-flash for speed, high availability, multimodal accuracy, and active API tier
-        self.gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+        # Default to gemini-3.5-flash (benchmarked faster/more reliable than 3.8-flash and 3.5-flash-lite)
+        self.gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.5-flash").strip()
+
+        # Disable hidden Gemini thinking tokens by default (cut latency from ~17.5s to ~2.7-4.0s)
+        self.gemini_thinking_budget: int = int(os.getenv("GEMINI_THINKING_BUDGET", "0"))
+        self.gemini_max_output_tokens: int = int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "1500"))
         
-        # Max upload size: 10 MB
+        # Image upload & in-memory preprocessing settings (preserve clarity while shrinking payload)
         self.max_image_size_bytes: int = int(os.getenv("MAX_IMAGE_SIZE_BYTES", str(10 * 1024 * 1024)))
+        self.max_image_dimension: int = int(os.getenv("MAX_IMAGE_DIMENSION", "1024"))
+        self.image_jpeg_quality: int = int(os.getenv("IMAGE_JPEG_QUALITY", "82"))
         
-        # Request timeout in seconds per attempt (default 14.0s so bounded attempts fit within mobile timeout)
+        # Request timeout in seconds per attempt (14.0s photo fits safely inside 35s deadline with 21s fallback headroom)
         self.gemini_timeout_seconds: float = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "14.0"))
         
-        # Max automatic retries for transient failures (default 2 additional attempts = 3 attempts total)
+        # Max automatic retries for transient failures when fallback is disabled
         self.gemini_max_retries: int = int(os.getenv("GEMINI_MAX_RETRIES", "2"))
         
-        # Retry backoff initial delay in seconds
+        # Retry backoff initial delay and max delay in seconds
         self.gemini_retry_initial_delay: float = float(os.getenv("GEMINI_RETRY_INITIAL_DELAY", "1.0"))
-        
-        # Retry backoff maximum delay in seconds
         self.gemini_retry_max_delay: float = float(os.getenv("GEMINI_RETRY_MAX_DELAY", "3.0"))
         
-        # Global server-side request deadline budgets (must complete before mobile AbortController timeouts: 45s photo / 40s voice)
+        # Global server-side request deadline budgets (must finish ahead of mobile AbortControllers: 45s photo / 40s voice)
         self.server_deadline_seconds: float = float(os.getenv("SERVER_DEADLINE_SECONDS", "35.0"))
-        self.voice_server_deadline_seconds: float = float(os.getenv("VOICE_SERVER_DEADLINE_SECONDS", "33.0"))
+        self.voice_server_deadline_seconds: float = float(os.getenv("VOICE_SERVER_DEADLINE_SECONDS", "35.0"))
 
-        # Provider architecture configuration
-        self.ai_primary_provider: str = os.getenv("AI_PRIMARY_PROVIDER", "gemini").lower()
+        # Master fallback switch
         self.ai_fallback_enabled: bool = os.getenv("AI_FALLBACK_ENABLED", "true").lower() in ("true", "1", "yes")
 
-        # OpenRouter fallback configuration (fixed vision + JSON free models avoiding reasoning starvation)
-        self.openrouter_model: str = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3.5-super-vl:free").strip()
-        alt_model_env = os.getenv("OPENROUTER_ALTERNATIVE_MODEL")
+        # Task-specific Photo routing (Primary: Gemini vision, Fallback: verified OpenRouter vision free model)
+        self.ai_primary_provider: str = os.getenv("AI_PRIMARY_PROVIDER", "gemini").strip().lower()
+        self.photo_primary_provider: str = os.getenv("PHOTO_PRIMARY_PROVIDER", self.ai_primary_provider).strip().lower()
+        default_photo_fallback = "gemini" if self.photo_primary_provider == "openrouter" else "openrouter"
+        self.photo_fallback_provider: str = os.getenv("PHOTO_FALLBACK_PROVIDER", default_photo_fallback).strip().lower()
+
+        # Task-specific Voice routing (Primary: Nemotron 3 Ultra on OpenRouter, Fallback: Gemini text parsing)
+        self.voice_primary_provider: str = os.getenv("VOICE_PRIMARY_PROVIDER", "openrouter").strip().lower()
+        default_voice_fallback = "gemini" if self.voice_primary_provider == "openrouter" else "openrouter"
+        self.voice_fallback_provider: str = os.getenv("VOICE_FALLBACK_PROVIDER", default_voice_fallback).strip().lower()
+
+        # Photo OpenRouter vision configuration (avoids legacy openrouter/free empty-content failures)
+        legacy_or_model = os.getenv("OPENROUTER_MODEL", "").strip()
+        photo_or_env = os.getenv("PHOTO_OPENROUTER_MODEL")
+        if photo_or_env and photo_or_env.strip():
+            self.photo_openrouter_model: str = photo_or_env.strip()
+        elif legacy_or_model and legacy_or_model != "openrouter/free":
+            self.photo_openrouter_model = legacy_or_model
+        else:
+            self.photo_openrouter_model = "nvidia/nemotron-3.5-super-vl:free"
+        self.openrouter_model: str = self.photo_openrouter_model
+
+        alt_model_env = os.getenv("PHOTO_OPENROUTER_ALTERNATIVE_MODEL")
+        if alt_model_env is None:
+            alt_model_env = os.getenv("OPENROUTER_ALTERNATIVE_MODEL")
         if alt_model_env is not None:
             cleaned_alt = alt_model_env.strip()
-            self.openrouter_alternative_model: Optional[str] = (
+            self.photo_openrouter_alternative_model: Optional[str] = (
                 None if cleaned_alt.lower() in ("", "none", "off") else cleaned_alt
             )
         else:
-            if self.openrouter_model == "nvidia/nemotron-3.5-super-vl:free":
-                self.openrouter_alternative_model = "dots-studio/dots-3-note-preview:free"
+            if self.photo_openrouter_model == "nvidia/nemotron-3.5-super-vl:free":
+                self.photo_openrouter_alternative_model = "dots-studio/dots-3-note-preview:free"
             else:
-                self.openrouter_alternative_model = "nvidia/nemotron-3.5-super-vl:free"
+                self.photo_openrouter_alternative_model = "nvidia/nemotron-3.5-super-vl:free"
+        self.openrouter_alternative_model: Optional[str] = self.photo_openrouter_alternative_model
+
+        # Voice OpenRouter configuration (Nemotron 3 Ultra text-only model; never passed image data)
+        self.voice_openrouter_model: str = os.getenv(
+            "VOICE_OPENROUTER_MODEL",
+            "nvidia/nemotron-3-ultra-550b-a55b:free",
+        ).strip()
+        voice_alt_env = os.getenv("VOICE_OPENROUTER_ALTERNATIVE_MODEL")
+        if voice_alt_env is not None and voice_alt_env.strip().lower() not in ("", "none", "off"):
+            self.voice_openrouter_alternative_model: Optional[str] = voice_alt_env.strip()
+        else:
+            self.voice_openrouter_alternative_model = None
+
         self.openrouter_base_url: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
         self.openrouter_timeout_seconds: float = float(os.getenv("OPENROUTER_TIMEOUT_SECONDS", "19.0"))
+        self.voice_primary_timeout_seconds: float = float(os.getenv("VOICE_PRIMARY_TIMEOUT_SECONDS", "24.0"))
         self.openrouter_max_retries: int = int(os.getenv("OPENROUTER_MAX_RETRIES", "1"))
         self.openrouter_max_tokens: int = int(os.getenv("OPENROUTER_MAX_TOKENS", "2000"))
 

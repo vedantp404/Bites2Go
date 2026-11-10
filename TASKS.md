@@ -1,5 +1,18 @@
 # Ordered roadmap
 
+## Milestone 4 — Reliable AI Voice and Image Recognition — implemented
+
+- [x] Inspected live Render deployment (`40762dbc`) and mobile/backend timeout budgets (`45.0s` mobile photo / `40.0s` mobile voice vs `35.0s` server deadline).
+- [x] Benchmarked live Gemini and OpenRouter free-tier models cleanly: verified `gemini-3.5-flash` with `ThinkingConfig(thinking_budget=0)` reduces photo inference from ~17.54s to ~2.69s–8.49s, while `nvidia/nemotron-3-ultra-550b-a55b:free` handles complex Indian/Hinglish voice transcripts accurately (`response_format` omitted, text-only).
+- [x] Implemented task-specific provider routing in `backend/app/services/ai_service.py` (`DualProviderService`) and `backend/app/config.py`:
+  - Voice meal parsing (`POST /api/v1/parse-voice-meal`): primary `openrouter` (`nvidia/nemotron-3-ultra-550b-a55b:free`, `24.0s` socket timeout, `35.0s` server deadline), fallback `gemini` (`gemini-3.5-flash`, `thinking_budget=0`).
+  - Photo food recognition (`POST /api/v1/recognize-food` & `/base64`): primary `gemini` (`gemini-3.5-flash`, `thinking_budget=0`, AFC disabled, `1024px@q82` image downscaling), fallback `openrouter` (`nvidia/nemotron-3.5-super-vl:free` + bounded `dots-studio/dots-3-note-preview:free` alternative).
+- [x] Hardened OpenRouter & Gemini providers: blocked image routing to text-only models (`error_category="model_vision_unsupported"`), supported `tool_calls[0].function.arguments` extraction alongside JSON blocks, distinguished daily RPD 429 quota exhaustion vs burst RPM rate limits, and classified `MAX_TOKENS` empty responses as `token_budget_exhausted`.
+- [x] Expanded `GET /health` with task-specific routing status fields (`photo_*` and `voice_*`) while preserving existing schema fields and suppressing all secret keys.
+- [x] Ran bounded live E2E verification (~2 free API calls total): Nemotron voice returned HTTP 200 (4 Indian/Hinglish items, `31.61s`), Gemini photo returned HTTP 200 (`3.60s`, honest empty detection on synthetic image), cost `$0`.
+- [x] Expanded backend test suite from 96 to 106 passing unit tests (`backend/tests/test_timeout_reliability.py`, `test_dual_provider.py`, `test_food_recognition.py`, `test_image_processing.py`) and updated `.env.example`, `backend/.env.example`, `backend/README.md`, `TASKS.md`, and `docs/MEMORY.md`.
+- [ ] User deploys verified backend commit to Render and unsets legacy `OPENROUTER_MODEL=openrouter/free` override if present (no remote push/deploy or APK rebuild performed in this milestone).
+
 ## Recipe Screen Compilation & Mobile Build Fix — implemented
 
 - [x] Identified root cause of TypeScript compilation failure in `apps/mobile/src/screens/RecipeScreen.tsx`: uncommitted working-tree edits introduced duplicate declarations and malformed JSX fragment nesting.

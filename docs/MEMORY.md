@@ -1,5 +1,23 @@
 # Project memory
 
+## Current handoff: Milestone 4 — Reliable AI Voice and Image Recognition
+
+Implemented task-specific AI routing across FastAPI backend services while preserving existing API endpoints, Pydantic schemas, SQLite offline-first storage, and installed Android APK compatibility.
+
+Key Engineering Highlights:
+- Task-Specific Provider Routing (`backend/app/config.py`, `backend/app/services/ai_service.py`):
+  - **Voice (`POST /api/v1/parse-voice-meal`):** Primary `nvidia/nemotron-3-ultra-550b-a55b:free` on OpenRouter (`VOICE_PRIMARY_PROVIDER=openrouter`, `VOICE_PRIMARY_TIMEOUT_SECONDS=24.0`, `VOICE_SERVER_DEADLINE_SECONDS=35.0`), fallback `gemini-3.5-flash` (`VOICE_FALLBACK_PROVIDER=gemini`, `thinking_budget=0`). Routing voice to OpenRouter preserves Gemini daily RPD quota for vision requests.
+  - **Photo (`POST /api/v1/recognize-food` & `/base64`):** Primary `gemini-3.5-flash` with `ThinkingConfig(thinking_budget=0)` and `AutomaticFunctionCallingConfig(disable=True)` (`GEMINI_MAX_OUTPUT_TOKENS=1500`), plus `1024px @ JPEG q82` default Pillow sanitization (`MAX_IMAGE_DIMENSION=1024`, `IMAGE_JPEG_QUALITY=82`). Fallback uses `nvidia/nemotron-3.5-super-vl:free` (ignoring legacy `openrouter/free` defaults) with single bounded alternative `dots-studio/dots-3-note-preview:free`.
+- Provider Safety & Classification Hardening:
+  - Added `_TEXT_ONLY_MODEL_IDS` and `is_text_only_openrouter_model()` guard blocking image payloads to text-only models (`error_category="model_vision_unsupported"`, zero HTTP calls) on both primary and alternative OpenRouter photo paths.
+  - Omitted unsupported `response_format` for `nvidia/nemotron-3-ultra-550b-a55b:free` and added `tool_calls[0].function.arguments` parsing in `OpenRouterProvider`.
+  - Classified Gemini `MAX_TOKENS` empty candidate text as `token_budget_exhausted` and separated daily (`per day`) 429 quota exhaustion (`is_quota_exhausted=True`) from transient RPM rate limits (`is_quota_exhausted=False`); skipped `thinking_config` on `-lite` Gemini variants.
+- Prompt & Health Observability Updates:
+  - Added compact Hinglish guidance in `VOICE_PARSER_SYSTEM_INSTRUCTION` (`backend/app/services/providers/base.py`) and updated `/health` (`backend/app/routers/health.py`) with `photo_*` and `voice_*` status fields.
+- Live E2E & Automated Verification:
+  - Live free E2E smoke test (~2 calls, `$0` cost): `POST /api/v1/parse-voice-meal` on `nvidia/nemotron-3-ultra-550b-a55b:free` returned HTTP 200 with 4 Hinglish/raw Indian items in `31.61s` (`prompt_tokens=504`, `completion_tokens=953`, `reasoning_tokens=0`), underscoring why `VOICE_SERVER_DEADLINE_SECONDS=35.0` (inside mobile's `40.0s` client timeout) is required. `POST /api/v1/recognize-food` on `gemini-3.5-flash` (`tb=0`) returned HTTP 200 in `3.60s` (`thoughts_tokens=None`, honest zero-hallucination detection on synthetic image).
+  - Installed Android APK requires zero mobile code changes or APK rebuild (`45s` photo / `40s` voice timeouts, unchanged JSON schemas, preserved error-retry UX in `AIFoodScannerModal.tsx` and `VoiceFoodLoggingModal.tsx`). Note: pushing/deploying to Render and unsetting any legacy Render `OPENROUTER_MODEL=openrouter/free` env var remains with the user.
+
 ## Current handoff: Recipe Screen Compilation & Mobile Build Fix
 
 Fixed TypeScript and JSX compilation in `apps/mobile/src/screens/RecipeScreen.tsx` (Milestone 1).

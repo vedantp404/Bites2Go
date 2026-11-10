@@ -652,21 +652,21 @@ def test_recognize_food_budget_allocation_prevents_fallback_starvation(
 def test_parse_voice_meal_budget_allocation_prevents_fallback_starvation(
     sample_voice_item: ParsedVoiceFoodItem,
 ) -> None:
-    """Voice parsing primary must be capped to reserve sufficient deadline budget for fallback."""
+    """Voice parsing primary (OpenRouter) must be capped to reserve budget for Gemini fallback."""
     mock_primary = MagicMock(spec=BaseAIProvider)
-    mock_primary.name = "gemini"
+    mock_primary.name = "openrouter"
     mock_primary.is_configured = True
 
     captured_primary_timeout = {}
 
     def mock_primary_fail(*args, **kwargs):
         captured_primary_timeout["timeout"] = kwargs.get("timeout_seconds")
-        raise AIUnavailableError("Gemini 503 high demand", provider="gemini", code=503)
+        raise AIUnavailableError("OpenRouter 503 high demand", provider="openrouter", code=503)
 
     mock_primary.parse_voice_meal.side_effect = mock_primary_fail
 
     mock_fallback = MagicMock(spec=BaseAIProvider)
-    mock_fallback.name = "openrouter"
+    mock_fallback.name = "gemini"
     mock_fallback.is_configured = True
     mock_fallback.parse_voice_meal.return_value = VoiceMealParseResponse(
         success=True,
@@ -676,20 +676,24 @@ def test_parse_voice_meal_budget_allocation_prevents_fallback_starvation(
     )
 
     settings = Settings()
+    settings.voice_primary_provider = "openrouter"
+    settings.voice_fallback_provider = "gemini"
+    settings.voice_primary_timeout_seconds = 24.0
+    settings.voice_server_deadline_seconds = 35.0
     service = DualProviderService(
-        gemini_provider=mock_primary,
-        openrouter_provider=mock_fallback,
+        gemini_provider=mock_fallback,
+        voice_openrouter_provider=mock_primary,
         settings=settings,
     )
 
-    # 32.0s budget: primary must be capped (<= 14.0s) so fallback gets >= 14.0s
-    res = service.parse_voice_meal(transcript="2 chapatis", deadline_seconds=32.0)
+    # 35.0s budget: OpenRouter primary must be capped (<= 25.0s) so Gemini fallback gets >= 10.0s
+    res = service.parse_voice_meal(transcript="2 chapatis", deadline_seconds=35.0)
 
     assert res.success is True
-    assert captured_primary_timeout["timeout"] <= 14.0
+    assert captured_primary_timeout["timeout"] <= 25.0
 
     _, fb_kwargs = mock_fallback.parse_voice_meal.call_args
-    assert fb_kwargs["timeout_seconds"] >= 14.0
+    assert fb_kwargs["timeout_seconds"] >= 10.0
 
 
 # ---------------------------------------------------------------------------
@@ -698,18 +702,18 @@ def test_parse_voice_meal_budget_allocation_prevents_fallback_starvation(
 def test_end_to_end_fastapi_voice_parsing_failover(
     sample_voice_item: ParsedVoiceFoodItem,
 ) -> None:
-    """When Gemini returns 503, FastAPI endpoint cleanly fails over to OpenRouter without 504."""
+    """When OpenRouter voice primary returns 503, FastAPI fails over to Gemini without 504."""
     from app.main import app
 
     mock_primary = MagicMock(spec=BaseAIProvider)
-    mock_primary.name = "gemini"
+    mock_primary.name = "openrouter"
     mock_primary.is_configured = True
     mock_primary.parse_voice_meal.side_effect = AIUnavailableError(
-        "Gemini 503 UNAVAILABLE", provider="gemini", code=503
+        "OpenRouter 503 UNAVAILABLE", provider="openrouter", code=503
     )
 
     mock_fallback = MagicMock(spec=BaseAIProvider)
-    mock_fallback.name = "openrouter"
+    mock_fallback.name = "gemini"
     mock_fallback.is_configured = True
     mock_fallback.parse_voice_meal.return_value = VoiceMealParseResponse(
         success=True,
@@ -719,9 +723,11 @@ def test_end_to_end_fastapi_voice_parsing_failover(
     )
 
     settings = Settings()
+    settings.voice_primary_provider = "openrouter"
+    settings.voice_fallback_provider = "gemini"
     mock_service = DualProviderService(
-        gemini_provider=mock_primary,
-        openrouter_provider=mock_fallback,
+        gemini_provider=mock_fallback,
+        voice_openrouter_provider=mock_primary,
         settings=settings,
     )
 
@@ -737,6 +743,8 @@ def test_end_to_end_fastapi_voice_parsing_failover(
         assert data["success"] is True
         assert len(data["items"]) == 1
         assert data["items"][0]["food_description"] == "2 chapatis"
+        mock_primary.parse_voice_meal.assert_called_once()
+        mock_fallback.parse_voice_meal.assert_called_once()
     finally:
         app.dependency_overrides.pop(get_ai_service, None)
 
@@ -1424,5 +1432,507 @@ def test_openrouter_missing_or_malformed_metadata_logs_safely(
         current_request_id.reset(token)
 
 
+# ---------------------------------------------------------------------------
+# Test 33: Nemotron voice parsing omits response_format and handles Hinglish
+# ---------------------------------------------------------------------------
+def test_nemotron_voice_hinglish_omits_response_format_and_validates() -> None:
+    """Nemotron 3 Ultra voice provider omits unsupported response_format and validates Hinglish output."""
+    import json
+    import httpx
+    from app.services.providers.openrouter_provider import OpenRouterProvider
 
+    payload_json = {
+        "success": True,
+        "transcript": "do aloo paratha dahi ke saath, 150g raw chicken, actually make that 200g cooked chicken breast",
+        "summary": "Aloo paratha with dahi and cooked chicken breast",
+        "items": [
+            {
+                "food_description": "Aloo paratha",
+                "quantity": 2,
+                "unit": "piece",
+                "estimated_calories": 420,
+                "estimated_protein_g": 9.0,
+                "estimated_carbs_g": 56.0,
+                "estimated_fat_g": 18.0,
+                "confidence": 0.85,
+            },
+            {
+                "food_description": "Dahi (plain curd)",
+                "quantity": 100,
+                "unit": "g",
+                "estimated_calories": 60,
+                "estimated_protein_g": 3.5,
+                "estimated_carbs_g": 4.5,
+                "estimated_fat_g": 3.0,
+                "confidence": 0.75,
+            },
+            {
+                "food_description": "Cooked chicken breast",
+                "quantity": 200,
+                "unit": "g",
+                "estimated_calories": 330,
+                "estimated_protein_g": 62.0,
+                "estimated_carbs_g": 0.0,
+                "estimated_fat_g": 7.2,
+                "confidence": 0.92,
+            },
+        ],
+        "warnings": [
+            "Resolved self-correction from 150g raw chicken to 200g cooked chicken breast.",
+            "Estimated 100g dahi serving from Hinglish phrasing.",
+        ],
+    }
+
+    mock_resp = MagicMock(spec=httpx.Response)
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "id": "or-nemotron-33",
+        "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "usage": {"prompt_tokens": 210, "completion_tokens": 175},
+        "choices": [
+            {
+                "finish_reason": "stop",
+                "message": {"content": json.dumps(payload_json)},
+            }
+        ],
+    }
+
+    mock_client = MagicMock(spec=httpx.Client)
+    mock_client.post.return_value = mock_resp
+
+    provider = OpenRouterProvider(
+        api_key="sk-or-test",
+        model="nvidia/nemotron-3-ultra-550b-a55b:free",
+        alternative_model=None,
+        max_retries=0,
+        http_client=mock_client,
+    )
+
+    result = provider.parse_voice_meal(
+        "do aloo paratha dahi ke saath, 150g raw chicken, actually make that 200g cooked chicken breast"
+    )
+
+    assert isinstance(result, VoiceMealParseResponse)
+    assert result.success is True
+    assert len(result.items) == 3
+    assert len(result.warnings) == 2
+
+    sent_payload = mock_client.post.call_args.kwargs["json"]
+    assert sent_payload["model"] == "nvidia/nemotron-3-ultra-550b-a55b:free"
+    assert "response_format" not in sent_payload
+
+
+# ---------------------------------------------------------------------------
+# Test 34: Text-only OpenRouter models are never sent food photos
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "text_model",
+    [
+        "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "nvidia/nemotron-3.5-lightning:free",
+    ],
+)
+def test_openrouter_rejects_text_only_models_for_photo_without_http_call(
+    sample_jpeg_bytes: bytes,
+    text_model: str,
+) -> None:
+    """Photo recognition must refuse text-only OpenRouter models before making any HTTP request."""
+    import httpx
+    from app.services.providers.base import AIServiceError
+    from app.services.providers.openrouter_provider import (
+        OpenRouterProvider,
+        is_text_only_openrouter_model,
+    )
+
+    assert is_text_only_openrouter_model(text_model) is True
+
+    mock_client = MagicMock(spec=httpx.Client)
+    provider = OpenRouterProvider(
+        api_key="sk-or-test",
+        model=text_model,
+        alternative_model=None,
+        max_retries=0,
+        http_client=mock_client,
+    )
+
+    with pytest.raises(AIServiceError) as exc_info:
+        provider.recognize_food(sample_jpeg_bytes)
+
+    assert exc_info.value.error_category == "model_vision_unsupported"
+    mock_client.post.assert_not_called()
+
+
+def test_openrouter_photo_skips_text_only_alternative_model(
+    sample_jpeg_bytes: bytes,
+) -> None:
+    """When primary vision OpenRouter model fails 503, a text-only alternative model is never called."""
+    import httpx
+    from app.services.providers.base import AIUnavailableError
+    from app.services.providers.openrouter_provider import OpenRouterProvider
+
+    mock_503 = httpx.Response(
+        status_code=503,
+        text="upstream temporarily unavailable",
+        request=httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions"),
+    )
+
+    mock_client = MagicMock(spec=httpx.Client)
+    mock_client.post.return_value = mock_503
+
+    provider = OpenRouterProvider(
+        api_key="sk-or-test",
+        model="nvidia/nemotron-3.5-super-vl:free",
+        alternative_model="nvidia/nemotron-3-ultra-550b-a55b:free",
+        max_retries=0,
+        http_client=mock_client,
+    )
+
+    with pytest.raises(AIUnavailableError):
+        provider.recognize_food(sample_jpeg_bytes)
+
+    assert mock_client.post.call_count == 1
+    assert mock_client.post.call_args.kwargs["json"]["model"] == "nvidia/nemotron-3.5-super-vl:free"
+
+
+# ---------------------------------------------------------------------------
+# Test 35: DualProviderService enforces task-specific routing isolation
+# ---------------------------------------------------------------------------
+def test_dual_provider_task_specific_isolation(
+    sample_jpeg_bytes: bytes,
+    sample_voice_item: ParsedVoiceFoodItem,
+) -> None:
+    """Voice uses voice_openrouter->gemini while Photo uses gemini->photo_openrouter independently."""
+    from app.models.food import FoodItemCandidate, FoodRecognitionResponse, UncertaintyInfo
+
+    mock_gemini = MagicMock(spec=BaseAIProvider)
+    mock_gemini.name = "gemini"
+    mock_gemini.is_configured = True
+    mock_gemini.recognize_food.side_effect = AIUnavailableError(
+        "Gemini 503 overloaded", provider="gemini", code=503
+    )
+    mock_gemini.parse_voice_meal.return_value = VoiceMealParseResponse(
+        success=True,
+        transcript="2 rotis",
+        summary="2 rotis",
+        items=[sample_voice_item],
+    )
+
+    mock_photo_or = MagicMock(spec=BaseAIProvider)
+    mock_photo_or.name = "openrouter"
+    mock_photo_or.is_configured = True
+    mock_photo_or.recognize_food.return_value = FoodRecognitionResponse(
+        success=True,
+        summary="Idli plate",
+        items=[
+            FoodItemCandidate(
+                food_name="Idli",
+                estimated_quantity=2.0,
+                unit="piece",
+                estimated_grams=120.0,
+                calories=140.0,
+                protein=4.0,
+                carbohydrates=28.0,
+                fat=1.0,
+                uncertainty=UncertaintyInfo(
+                    confidence_score=0.9,
+                    confidence_level="high",
+                ),
+            )
+        ],
+    )
+
+    mock_voice_or = MagicMock(spec=BaseAIProvider)
+    mock_voice_or.name = "openrouter"
+    mock_voice_or.is_configured = True
+    mock_voice_or.parse_voice_meal.side_effect = [
+        VoiceMealParseResponse(
+            success=True,
+            transcript="2 rotis",
+            summary="2 rotis",
+            items=[sample_voice_item],
+        ),
+        AIUnavailableError("Nemotron temporary 503", provider="openrouter", code=503),
+    ]
+
+    settings = Settings()
+    settings.photo_primary_provider = "gemini"
+    settings.photo_fallback_provider = "openrouter"
+    settings.voice_primary_provider = "openrouter"
+    settings.voice_fallback_provider = "gemini"
+    service = DualProviderService(
+        gemini_provider=mock_gemini,
+        photo_openrouter_provider=mock_photo_or,
+        voice_openrouter_provider=mock_voice_or,
+        settings=settings,
+    )
+
+    # Voice attempt 1: succeeds on voice OpenRouter primary without touching photo_or or gemini
+    voice_res_1 = service.parse_voice_meal("2 rotis")
+    assert voice_res_1.success is True
+    assert mock_voice_or.parse_voice_meal.call_count == 1
+    mock_photo_or.parse_voice_meal.assert_not_called()
+    mock_gemini.parse_voice_meal.assert_not_called()
+
+    # Voice attempt 2: voice_or 503 falls back to gemini (never photo_or)
+    voice_res_2 = service.parse_voice_meal("2 rotis")
+    assert voice_res_2.success is True
+    assert mock_voice_or.parse_voice_meal.call_count == 2
+    mock_gemini.parse_voice_meal.assert_called_once()
+    mock_photo_or.parse_voice_meal.assert_not_called()
+
+    # Photo attempt: gemini 503 falls back to photo_or (never voice_or)
+    photo_res = service.recognize_food(sample_jpeg_bytes)
+    assert photo_res.success is True
+    mock_gemini.recognize_food.assert_called_once()
+    mock_photo_or.recognize_food.assert_called_once()
+    mock_voice_or.recognize_food.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Test 36: OpenRouter tool_calls extraction & malformed JSON rejection
+# ---------------------------------------------------------------------------
+def test_openrouter_tool_calls_arguments_extraction_and_malformed_json() -> None:
+    """OpenRouterProvider accepts valid tool_calls[0].function.arguments and rejects malformed JSON."""
+    import httpx
+    from app.services.providers.base import ModelOutputValidationError
+    from app.services.providers.openrouter_provider import OpenRouterProvider
+
+    valid_args = (
+        '{"success": true, "transcript": "2 idli", "summary": "2 idli", '
+        '"items": [{"food_description": "2 idli", "quantity": 2, "unit": "pieces", '
+        '"estimated_calories": 140, "estimated_protein_g": 4.0, '
+        '"estimated_carbs_g": 28.0, "estimated_fat_g": 1.0, "confidence": 0.9}]}'
+    )
+
+    valid_resp = MagicMock(spec=httpx.Response)
+    valid_resp.status_code = 200
+    valid_resp.json.return_value = {
+        "id": "or-tool-ok",
+        "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "choices": [
+            {
+                "finish_reason": "tool_calls",
+                "message": {
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {"name": "emit_meal", "arguments": valid_args},
+                        }
+                    ],
+                },
+            }
+        ],
+    }
+
+    bad_resp = MagicMock(spec=httpx.Response)
+    bad_resp.status_code = 200
+    bad_resp.json.return_value = {
+        "id": "or-tool-bad",
+        "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "choices": [
+            {
+                "finish_reason": "tool_calls",
+                "message": {
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_2",
+                            "type": "function",
+                            "function": {"name": "emit_meal", "arguments": "{not valid json"},
+                        }
+                    ],
+                },
+            }
+        ],
+    }
+
+    mock_client = MagicMock(spec=httpx.Client)
+    mock_client.post.side_effect = [valid_resp, bad_resp]
+
+    provider = OpenRouterProvider(
+        api_key="sk-or-test",
+        model="nvidia/nemotron-3-ultra-550b-a55b:free",
+        alternative_model=None,
+        max_retries=0,
+        http_client=mock_client,
+    )
+
+    parsed = provider.parse_voice_meal("2 idli")
+    assert parsed.success is True
+    assert parsed.items[0].food_description == "2 idli"
+
+    with pytest.raises(ModelOutputValidationError):
+        provider.parse_voice_meal("2 idli")
+
+
+# ---------------------------------------------------------------------------
+# Test 37: GeminiProvider ThinkingConfig & AFC config per model
+# ---------------------------------------------------------------------------
+def test_gemini_thinking_config_and_afc_disabled_per_model() -> None:
+    """GeminiProvider applies thinking_budget=0 & disabled AFC on flash, omits thinking on -lite."""
+    from app.services.providers.gemini_provider import GeminiProvider
+
+    flash_provider = GeminiProvider(
+        client=MagicMock(),
+        model="gemini-3.5-flash",
+        thinking_budget=0,
+        max_output_tokens=1500,
+    )
+    flash_cfg = flash_provider._build_generation_config(
+        system_instruction="sys",
+        response_schema=dict,
+        timeout_seconds=15.0,
+    )
+    assert flash_cfg.max_output_tokens == 1500
+    assert flash_cfg.automatic_function_calling.disable is True
+    assert flash_cfg.thinking_config is not None
+    assert flash_cfg.thinking_config.thinking_budget == 0
+
+    lite_provider = GeminiProvider(
+        client=MagicMock(),
+        model="gemini-3.5-flash-lite",
+        thinking_budget=0,
+        max_output_tokens=1500,
+    )
+    lite_cfg = lite_provider._build_generation_config(
+        system_instruction="sys",
+        response_schema=dict,
+        timeout_seconds=15.0,
+    )
+    assert lite_cfg.automatic_function_calling.disable is True
+    assert lite_cfg.thinking_config is None
+
+
+# ---------------------------------------------------------------------------
+# Test 38: GeminiProvider MAX_TOKENS empty output & daily vs burst 429
+# ---------------------------------------------------------------------------
+def test_gemini_max_tokens_empty_output_and_rate_limit_classification(
+    sample_jpeg_bytes: bytes,
+) -> None:
+    """MAX_TOKENS empty response yields token_budget_exhausted; daily vs burst 429 sets quota flag."""
+    from types import SimpleNamespace
+    from google.genai.errors import APIError
+    from app.services.providers.base import (
+        AIRateLimitError,
+        ModelOutputValidationError,
+    )
+    from app.services.providers.gemini_provider import GeminiProvider
+
+    mock_client = MagicMock()
+
+    # Subcase A: MAX_TOKENS with empty text and candidate content parts
+    empty_max_tokens_resp = SimpleNamespace(
+        text="",
+        candidates=[
+            SimpleNamespace(
+                finish_reason="MAX_TOKENS",
+                content=SimpleNamespace(parts=[]),
+            )
+        ],
+        usage_metadata=SimpleNamespace(
+            prompt_token_count=300,
+            candidates_token_count=0,
+            thoughts_token_count=1490,
+        ),
+    )
+    mock_client.models.generate_content.return_value = empty_max_tokens_resp
+
+    provider = GeminiProvider(
+        client=mock_client,
+        model="gemini-3.5-flash",
+        max_retries=0,
+    )
+
+    with pytest.raises(ModelOutputValidationError) as exc_max:
+        provider.recognize_food(sample_jpeg_bytes)
+    assert exc_max.value.error_category == "token_budget_exhausted"
+
+    # Subcase B: Burst 429 (per minute) -> is_quota_exhausted=False
+    mock_client.models.generate_content.side_effect = APIError(
+        429,
+        {"error": {"message": "429 RESOURCE_EXHAUSTED: Requests per minute rate limit exceeded"}},
+    )
+    with pytest.raises(AIRateLimitError) as exc_burst:
+        provider.recognize_food(sample_jpeg_bytes)
+    assert exc_burst.value.is_quota_exhausted is False
+
+    # Subcase C: Daily quota 429 (per day) -> is_quota_exhausted=True
+    mock_client.models.generate_content.side_effect = APIError(
+        429,
+        {
+            "error": {
+                "message": "429 RESOURCE_EXHAUSTED: GenerateRequestsPerDayPerProjectPerModel requests per day limit reached"
+            }
+        },
+    )
+    with pytest.raises(AIRateLimitError) as exc_daily:
+        provider.recognize_food(sample_jpeg_bytes)
+    assert exc_daily.value.is_quota_exhausted is True
+
+
+# ---------------------------------------------------------------------------
+# Test 39: Default image optimization downscales to 1024px max dimension
+# ---------------------------------------------------------------------------
+def test_image_sanitize_defaults_to_1024_dimension() -> None:
+    """validate_and_sanitize_image defaults to 1024px max edge when max_dimension is omitted."""
+    import io
+    from PIL import Image
+    from app.services.image import validate_and_sanitize_image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (2400, 1800), color=(200, 120, 60)).save(buf, format="JPEG", quality=95)
+    raw_bytes = buf.getvalue()
+
+    sanitized_bytes, content_type = validate_and_sanitize_image(raw_bytes)
+    assert content_type == "image/jpeg"
+    with Image.open(io.BytesIO(sanitized_bytes)) as img:
+        assert max(img.size) == 1024
+        assert img.size == (1024, 768)
+
+
+# ---------------------------------------------------------------------------
+# Test 40: /health reports task-specific routing cleanly without leaking secrets
+# ---------------------------------------------------------------------------
+def test_health_endpoint_reports_task_specific_routing_without_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Health endpoint surfaces Milestone 4 photo & voice routing fields and omits secret keys."""
+    from app.main import app
+    from app.config import get_settings
+
+    monkeypatch.setenv("GEMINI_API_KEY", "secret-gemini-should-not-appear")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "secret-openrouter-should-not-appear")
+
+    safe_settings = Settings()
+    safe_settings.photo_primary_provider = "gemini"
+    safe_settings.photo_fallback_provider = "openrouter"
+    safe_settings.gemini_model = "gemini-3.5-flash"
+    safe_settings.photo_openrouter_model = "nvidia/nemotron-3.5-super-vl:free"
+    safe_settings.voice_primary_provider = "openrouter"
+    safe_settings.voice_fallback_provider = "gemini"
+    safe_settings.voice_openrouter_model = "nvidia/nemotron-3-ultra-550b-a55b:free"
+
+    app.dependency_overrides[get_settings] = lambda: safe_settings
+    try:
+        client = TestClient(app)
+        resp = client.get("/health")
+        assert resp.status_code == 200
+        body_text = resp.text
+        data = resp.json()
+
+        assert data["status"] == "ok"
+        assert data["photo_primary_provider"] == "gemini"
+        assert data["photo_fallback_provider"] == "openrouter"
+        assert data["photo_model"] == "gemini-3.5-flash"
+        assert data["photo_fallback_model"] == "nvidia/nemotron-3.5-super-vl:free"
+        assert data["voice_primary_provider"] == "openrouter"
+        assert data["voice_fallback_provider"] == "gemini"
+        assert data["voice_model"] == "nvidia/nemotron-3-ultra-550b-a55b:free"
+        assert data["voice_fallback_model"] == "gemini-3.5-flash"
+        assert "secret-gemini-should-not-appear" not in body_text
+        assert "secret-openrouter-should-not-appear" not in body_text
+    finally:
+        app.dependency_overrides.pop(get_settings, None)
 

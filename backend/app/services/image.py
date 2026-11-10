@@ -1,7 +1,7 @@
 """In-memory image validation and metadata stripping service."""
 
 import io
-from typing import Tuple
+from typing import Optional, Tuple
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app.config import get_settings
@@ -22,7 +22,7 @@ class ImageSizeExceededError(ValueError):
 
 def validate_and_sanitize_image(
     image_bytes: bytes,
-    max_dimension: int = 1600,
+    max_dimension: Optional[int] = None,
 ) -> Tuple[bytes, str]:
     """Validate, sanitize, strip metadata, and downscale an image entirely in memory.
 
@@ -30,17 +30,12 @@ def validate_and_sanitize_image(
     - Decodes image and ensures valid format (JPEG, PNG, WEBP, etc.).
     - Applies EXIF orientation to keep correct physical orientation.
     - Strips all EXIF metadata, GPS tags, device details, and timestamps.
-    - Resizes to a maximum dimension if larger, conserving bandwidth and API latency.
+    - Resizes to a maximum dimension if larger (default 1024px @ quality=82), conserving bandwidth and latency.
     - Re-encodes as clean, sanitized JPEG bytes in memory.
-
-    Args:
-        image_bytes: Raw bytes from uploaded multipart file.
-        max_dimension: Maximum allowed width or height in pixels.
-
-    Returns:
-        Tuple of (sanitized_bytes, mime_type).
     """
     settings = get_settings()
+    effective_max_dim = max_dimension if max_dimension is not None else settings.max_image_dimension
+    jpeg_quality = getattr(settings, "image_jpeg_quality", 82)
 
     if not image_bytes or len(image_bytes) < 16:
         raise InvalidImageError("Image data is empty or too small to be a valid image file.")
@@ -68,17 +63,17 @@ def validate_and_sanitize_image(
             else:
                 rgb_img = img.copy()
 
-            # Downscale if dimensions exceed max_dimension
+            # Downscale if dimensions exceed effective_max_dim
             width, height = rgb_img.size
-            if width > max_dimension or height > max_dimension:
-                rgb_img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+            if width > effective_max_dim or height > effective_max_dim:
+                rgb_img.thumbnail((effective_max_dim, effective_max_dim), Image.Resampling.LANCZOS)
 
             # Re-encode to clean JPEG buffer without EXIF metadata
             output_buffer = io.BytesIO()
             rgb_img.save(
                 output_buffer,
                 format="JPEG",
-                quality=88,
+                quality=jpeg_quality,
                 optimize=True,
             )
             sanitized_bytes = output_buffer.getvalue()

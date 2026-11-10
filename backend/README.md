@@ -1,44 +1,42 @@
 # Bites2Go AI Food Recognition Backend
 
-Secure, local FastAPI microservice for AI-powered meal recognition and voice food parsing, featuring a resilient dual-provider architecture with Google Gemini as primary and OpenRouter as intelligent fallback.
+Secure, local FastAPI microservice for AI-powered meal recognition and voice food parsing, featuring task-specific dual-provider routing across Google Gemini and OpenRouter free-tier models.
 
 ---
 
-## Dual-Provider Architecture & Intelligent Fallback
+## Task-Specific Dual-Provider Architecture & Failover
 
 ```
 [Untrusted Expo Mobile App]
        │
-       │ (Sends image bytes via POST /api/v1/recognize-food or voice transcript via POST /api/v1/parse-voice-meal)
-       ▼
-[Bites2Go FastAPI Service (Trusted Server Boundary)]
-  │ - Strict in-memory processing (Pillow, io.BytesIO, no disk persistence)
-  │ - EXIF & GPS metadata stripped, aspect ratio preserved
-  │ - API keys stored strictly in backend/.env (Never leaked to mobile app)
-  │
-  ├──► [Primary Provider: Google Gemini (e.g. gemini-3.5-flash)]
-  │      │
-  │      ├─► Success: Returns normalized FoodRecognitionResponse
-  │      ├─► HTTP 503/504/Timeout: Bounded retries with exponential backoff & jitter
-  │      └─► HTTP 429 / Quota Exhaustion / Retries Exhausted: Failover triggered
-  │
-  └──► [Fallback Provider: OpenRouter (e.g. openrouter/free)]
-         │
-         ├─► Activated automatically when Gemini quota is exhausted or unavailable
-         ├─► Standardized chat completions format with base64 image / structured JSON
-         ├─► Bounded retries for transient OpenRouter network errors
-         └─► Normalized into identical FoodRecognitionResponse schema
+       ├──► POST /api/v1/recognize-food (or /base64)
+       │      │  - In-memory Pillow validation: EXIF/GPS stripped, downscaled <=1024px @ q82
+       │      │  - Server deadline: 35.0s (completes before mobile 45.0s timeout)
+       │      ▼
+       │    [Photo Primary: Google Gemini Vision (gemini-3.5-flash, thinking_budget=0)]
+       │      ├─► Success (~3.6s–8.5s): Returns FoodRecognitionResponse
+       │      └─► Quota/429/503/Timeout ─► [Fallback: nvidia/nemotron-3.5-super-vl:free]
+       │                                      (Single optional alternative: dots-studio/dots-3-note-preview:free)
+       │                                      * Text-only models are strictly rejected before HTTP send *
+       │
+       └──► POST /api/v1/parse-voice-meal (Text transcripts; Indian + Hinglish + raw/cooked)
+              │  - Server deadline: 35.0s (leaves 5s margin before mobile 40.0s timeout)
+              ▼
+            [Voice Primary: NVIDIA Nemotron 3 Ultra Free (nvidia/nemotron-3-ultra-550b-a55b:free)]
+              ├─► Success: Returns VoiceMealParseResponse (omits unsupported response_format)
+              └─► Error/429/503/Timeout ─► [Fallback: Google Gemini Text (gemini-3.5-flash, tb=0)]
 ```
 
 ### Core Architecture Guarantees
 1. **Zero Client Leakage:** API keys (`GEMINI_API_KEY`, `OPENROUTER_API_KEY`) remain exclusively on the server. The mobile client never receives or stores third-party API credentials.
-2. **Intelligent Failover:**
-   - When Gemini returns HTTP 429 / Quota Exhaustion, the backend stops retrying Gemini immediately and switches to OpenRouter without wasting attempts or quota.
-   - For transient server failures (HTTP 503/504), Gemini executes bounded retries before failing over.
-   - Authentication errors (HTTP 401) and malformed requests (HTTP 400) fail fast without retry loops.
-3. **Response Normalization:** Both providers return the exact same validated Pydantic schemas (`FoodRecognitionResponse`, `VoiceMealParseResponse`).
-4. **Safety & Review-First Workflow:** AI responses are nutritional estimates, never authoritative facts. The backend never writes directly to SQLite. The user must review and edit portion weights and dish names before saving to the diary.
-5. **Offline Independence:** If the backend is unreachable or disabled, local offline SQLite logging and manual catalogue search continue to function without interruption.
+2. **Task-Specific Routing & Vision Safety:**
+   - Voice meal parsing uses `nvidia/nemotron-3-ultra-550b-a55b:free` as primary to preserve Gemini daily RPD quota for food photos, with `gemini-3.5-flash` (`thinking_budget=0`) as fast fallback.
+   - Photo recognition uses `gemini-3.5-flash` (`thinking_budget=0`, AFC disabled) as primary with verified vision-capable OpenRouter fallback (`nvidia/nemotron-3.5-super-vl:free`). Text-only models are explicitly blocked from receiving image payloads (`error_category="model_vision_unsupported"`).
+3. **Intelligent Failover:**
+   - Daily quota exhaustion (`per day`) triggers immediate failover without wasting retries; transient burst RPM limits (`per minute`) or 503/504 errors fail over within bounded retry/budget rules.
+   - Authentication errors (HTTP 401/403) and malformed client payloads (HTTP 400) fail fast without retry loops.
+4. **Response Normalization & Review-First Workflow:** Both providers normalize into identical Pydantic schemas (`FoodRecognitionResponse`, `VoiceMealParseResponse`). Results are estimates only, never auto-written to SQLite; users review and edit before saving.
+5. **Offline Independence:** If the backend is unreachable or disabled, local offline SQLite logging and manual catalogue search continue uninterrupted.
 
 ---
 
@@ -53,42 +51,54 @@ Edit `backend/.env` to configure your providers:
 
 ```env
 # ---------------------------------------------------------------------------
-# Provider Architecture Selection
+# Provider Architecture Selection (Task-Specific Routing)
 # ---------------------------------------------------------------------------
 AI_PRIMARY_PROVIDER=gemini
+PHOTO_PRIMARY_PROVIDER=gemini
+PHOTO_FALLBACK_PROVIDER=openrouter
+VOICE_PRIMARY_PROVIDER=openrouter
+VOICE_FALLBACK_PROVIDER=gemini
 AI_FALLBACK_ENABLED=true
 
 # ---------------------------------------------------------------------------
-# Google Gemini (Primary Provider)
+# Google Gemini (Photo Primary / Voice Fallback)
 # ---------------------------------------------------------------------------
 # Obtain your free API key at: https://aistudio.google.com/
 GEMINI_API_KEY=your_gemini_api_key_here
 GEMINI_MODEL=gemini-3.5-flash
+GEMINI_THINKING_BUDGET=0
+GEMINI_MAX_OUTPUT_TOKENS=1500
 GEMINI_TIMEOUT_SECONDS=14.0
 GEMINI_MAX_RETRIES=2
 
 # ---------------------------------------------------------------------------
-# OpenRouter (Fallback Provider)
+# OpenRouter (Voice Primary / Photo Vision Fallback)
 # ---------------------------------------------------------------------------
 # Obtain an OpenRouter key at: https://openrouter.ai/settings/keys
 OPENROUTER_API_KEY=your_openrouter_api_key_here
 
-# Fixed vision-capable + JSON-compatible free model + single bounded alternative:
-OPENROUTER_MODEL=nvidia/nemotron-3.5-super-vl:free
-OPENROUTER_ALTERNATIVE_MODEL=dots-studio/dots-3-note-preview:free
+VOICE_OPENROUTER_MODEL=nvidia/nemotron-3-ultra-550b-a55b:free
+VOICE_OPENROUTER_ALTERNATIVE_MODEL=
+VOICE_PRIMARY_TIMEOUT_SECONDS=24.0
+
+PHOTO_OPENROUTER_MODEL=nvidia/nemotron-3.5-super-vl:free
+PHOTO_OPENROUTER_ALTERNATIVE_MODEL=dots-studio/dots-3-note-preview:free
+
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 OPENROUTER_TIMEOUT_SECONDS=19.0
 OPENROUTER_MAX_TOKENS=2000
 OPENROUTER_MAX_RETRIES=1
 
 # ---------------------------------------------------------------------------
-# Server Runtime Settings & Request Deadlines
+# Server Runtime Settings, Image Optimization & Request Deadlines
 # ---------------------------------------------------------------------------
 HOST=127.0.0.1
 PORT=8000
 ENVIRONMENT=development
+MAX_IMAGE_DIMENSION=1024
+IMAGE_JPEG_QUALITY=82
 SERVER_DEADLINE_SECONDS=35.0
-VOICE_SERVER_DEADLINE_SECONDS=33.0
+VOICE_SERVER_DEADLINE_SECONDS=35.0
 MAX_IMAGE_SIZE_BYTES=10485760
 ALLOWED_ORIGINS=*
 ```
@@ -112,17 +122,16 @@ ALLOWED_ORIGINS=*
 
 ---
 
-## Disabling Fallback (Gemini-Only Operation)
+## Disabling Fallback or Overriding Task Providers
 
-To disable the OpenRouter backup provider and run solely with Gemini:
+To disable automatic failover across both endpoints:
 ```env
 AI_FALLBACK_ENABLED=false
 ```
-When fallback is disabled, Gemini rate limit (429) and timeout (504) errors will be returned directly to the mobile app without invoking OpenRouter.
-
-To use OpenRouter as the primary provider:
+To override voice or photo primary providers independently:
 ```env
-AI_PRIMARY_PROVIDER=openrouter
+VOICE_PRIMARY_PROVIDER=gemini
+PHOTO_PRIMARY_PROVIDER=openrouter
 ```
 
 ---
@@ -130,13 +139,13 @@ AI_PRIMARY_PROVIDER=openrouter
 ## Known Free-Tier Limitations
 
 1. **Google Gemini Free Tier:**
-   - Standard Gemini Flash models on the free tier feature daily request caps (e.g., 20 Requests Per Day for standard flash endpoints). Daily quotas reset at midnight Pacific Time.
-   - When the 20 RPD cap is reached, Gemini returns HTTP 429 (`RESOURCE_EXHAUSTED`). Bites2Go's dual-provider architecture catches this and transparently switches to OpenRouter.
-2. **OpenRouter Free Tier (`openrouter/free`):**
-   - Free models (`:free`) on OpenRouter are subject to provider availability and rotation.
-   - Using `openrouter/free` routes to whatever active free vision model is currently operational.
-   - Strict rate limits (e.g., 20-50 requests per day) may apply across free models depending on OpenRouter traffic.
-   - Adding a small credit balance (e.g., $5) to OpenRouter unlocks high-volume paid models (like `google/gemini-2.5-flash` at fractions of a cent per image) if higher throughput is desired.
+   - Standard Gemini Flash models on the free tier feature daily request caps (e.g., 20 RPD / shared project quota). Daily quotas reset at midnight Pacific Time.
+   - Routing voice transcripts to Nemotron on OpenRouter by default preserves Gemini daily quota for photo vision requests.
+   - Setting `GEMINI_THINKING_BUDGET=0` disables default reasoning tokens on `gemini-3.5-flash`, reducing photo latency from ~17.5s to ~3.5s–8.5s. Note: `gemini-3.5-flash-lite` rejects `thinking_budget`; the provider skips it automatically on `-lite` models.
+2. **OpenRouter Free Models (`:free`):**
+   - `nvidia/nemotron-3-ultra-550b-a55b:free` is text-only (`response_format` unsupported, omitted automatically) and serves as voice primary. Real multi-item/Hinglish transcripts typically complete in 19s–32s depending on output length (`VOICE_SERVER_DEADLINE_SECONDS=35.0`).
+   - `nvidia/nemotron-3.5-super-vl:free` (plus single alternative `dots-studio/dots-3-note-preview:free`) provides vision-capable fallback for photos.
+   - Strict upstream rate limits or empty responses may still occur under heavy free-tier load; genuine failures surface safe retryable errors without hallucinated results.
 
 ---
 
@@ -184,23 +193,35 @@ Example response:
   "model": "gemini-3.5-flash",
   "fallback_model": "nvidia/nemotron-3.5-super-vl:free",
   "fallback_alternative_model": "dots-studio/dots-3-note-preview:free",
-  "commit": "40762db"
+  "photo_primary_provider": "gemini",
+  "photo_fallback_provider": "openrouter",
+  "photo_model": "gemini-3.5-flash",
+  "photo_fallback_model": "nvidia/nemotron-3.5-super-vl:free",
+  "voice_primary_provider": "openrouter",
+  "voice_fallback_provider": "gemini",
+  "voice_model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "voice_fallback_model": "gemini-3.5-flash",
+  "commit": "dev"
 }
 ```
 
 ### 2. Run Automated Tests (Mocked - Zero Quota Consumed)
-All tests run with mocked HTTP responses and never hit real APIs or consume API quota:
+All tests run with mocked HTTP/SDK responses and never hit real APIs or consume API quota:
 ```bash
-# Run all backend tests (92 tests)
-backend\.venv\Scripts\pytest.exe backend/tests -v
+# Run all backend tests (106 tests)
+PYTHONPATH=backend backend\.venv\Scripts\python.exe -m pytest backend/tests -v
 
-# Run the dual-provider fallback suite specifically
-backend\.venv\Scripts\pytest.exe backend/tests/test_dual_provider.py -v
+# Run the timeout & task-routing reliability suite specifically
+PYTHONPATH=backend backend\.venv\Scripts\python.exe -m pytest backend/tests/test_timeout_reliability.py -v
 ```
 
 ---
 
-## Connecting the Mobile App
+## Connecting the Mobile App & APK Compatibility
+
+- **Installed Android APK Compatibility:** All endpoint paths (`/api/v1/recognize-food`, `/api/v1/recognize-food/base64`, `/api/v1/parse-voice-meal`, `/health`) and Pydantic response schemas remain unchanged. Installed APKs work seamlessly without rebuilding once the updated backend is deployed.
+- **Timeout Margin Alignment:** Mobile uses `45000ms` (photo) and `40000ms` (voice). Backend enforces `35.0s` server deadlines for both paths, leaving `5.0s–10.0s` transport margin so Render timeouts return structured backend JSON errors rather than raw client aborts.
+- **Render Environment Note:** When deploying to Render, unset legacy `OPENROUTER_MODEL=openrouter/free` (or update `PHOTO_OPENROUTER_MODEL=nvidia/nemotron-3.5-super-vl:free` and `VOICE_OPENROUTER_MODEL=nvidia/nemotron-3-ultra-550b-a55b:free`).
 
 1. **Android Emulator:**
    - Maps host `127.0.0.1` to `http://10.0.2.2:8000` automatically.
@@ -211,6 +232,6 @@ backend\.venv\Scripts\pytest.exe backend/tests/test_dual_provider.py -v
      ```
 3. **Usage:**
    - Tap **Scan Meal with Gemini AI** on any meal in Bites2Go to take or select a photo.
-   - Tap **Voice Log** to record spoken meals.
+   - Tap **Voice Log** to enter/review spoken meal descriptions.
    - Detected foods appear in editable cards showing estimated portions and macronutrients.
    - Review and adjust items, then tap **Log to Diary** to save to SQLite.
