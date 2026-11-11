@@ -550,10 +550,9 @@ test('matchVoiceTranscriptOffline: preserves null unknown nutrients strictly thr
     source: 'User Verified Partial Entry',
   };
 
-  const result = matchVoiceTranscriptOffline(
-    '100g partial food',
-    [customUnknownFood],
-  );
+  const result = matchVoiceTranscriptOffline('100g partial food', [
+    customUnknownFood,
+  ]);
   assert.equal(result.candidates.length, 1);
   const cand = result.candidates[0];
   assert.equal(cand.calories, 250);

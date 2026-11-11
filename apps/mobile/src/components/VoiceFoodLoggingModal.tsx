@@ -362,7 +362,10 @@ export function VoiceFoodLoggingModal({
       prev.map((item) => {
         if (item.id !== id) return item;
         if (!item.matchedCatalogueFood) return item;
-        if (item.origin === 'offline_catalogue' || analysisSource === 'offline') {
+        if (
+          item.origin === 'offline_catalogue' ||
+          analysisSource === 'offline'
+        ) {
           return item;
         }
 
@@ -492,7 +495,10 @@ export function VoiceFoodLoggingModal({
         fiber: c.fiber ?? null,
       })),
     );
-    const grams = candidates.reduce((acc, item) => acc + item.estimated_grams, 0);
+    const grams = candidates.reduce(
+      (acc, item) => acc + item.estimated_grams,
+      0,
+    );
     return {
       calories: summed.values.calories,
       protein: summed.values.protein,
@@ -1048,7 +1054,8 @@ export function VoiceFoodLoggingModal({
                               { color: '#0E6251' },
                             ]}
                           >
-                            ✓ Offline Catalogue ({item.matchedCatalogueFood.status}):{' '}
+                            ✓ Offline Catalogue (
+                            {item.matchedCatalogueFood.status}):{' '}
                             {item.matchedCatalogueFood.name}
                           </Text>
                         </View>

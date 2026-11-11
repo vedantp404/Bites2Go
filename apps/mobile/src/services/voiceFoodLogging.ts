@@ -172,10 +172,13 @@ export async function parseVoiceMeal(
       }
       const rawRetryAfter = response.headers?.get?.('Retry-After');
       const retryAfterNum = rawRetryAfter ? Number(rawRetryAfter) : NaN;
-      const errorCategory = response.headers?.get?.('X-Error-Category') ?? undefined;
+      const errorCategory =
+        response.headers?.get?.('X-Error-Category') ?? undefined;
       throw new VoiceCloudError(detail, {
         status: response.status,
-        retryAfterSeconds: Number.isFinite(retryAfterNum) ? retryAfterNum : undefined,
+        retryAfterSeconds: Number.isFinite(retryAfterNum)
+          ? retryAfterNum
+          : undefined,
         errorCategory,
       });
     }
@@ -402,7 +405,9 @@ function splitSpokenTranscriptClauses(transcript: string): {
 
   const clauses: string[] = [];
   for (const part of rawParts) {
-    const correctionSplit = part.split(/\b(?:actually(?:\s+make\s+that)?|instead)\b/i);
+    const correctionSplit = part.split(
+      /\b(?:actually(?:\s+make\s+that)?|instead)\b/i,
+    );
     const chosen =
       correctionSplit.length > 1
         ? correctionSplit[correctionSplit.length - 1].trim()
@@ -426,14 +431,17 @@ function parseClausePortionAndQuery(clause: string): {
   let unit = 'serving';
 
   // Extract explicit gram or ml weights (e.g. "150g white rice", "100 gms oats", "200 ml milk")
-  const weightMatch = working.match(/\b(\d+(?:\.\d+)?)\s*(g|gm|gms|gram|grams|ml)\b/i);
+  const weightMatch = working.match(
+    /\b(\d+(?:\.\d+)?)\s*(g|gm|gms|gram|grams|ml)\b/i,
+  );
   if (weightMatch) {
     const val = Number(weightMatch[1]);
     if (Number.isFinite(val) && val > 0) {
       explicitGrams = val;
       quantity = val;
       unit = weightMatch[2].toLowerCase() === 'ml' ? 'ml' : 'g';
-      working = `${working.slice(0, weightMatch.index ?? 0)} ${working.slice((weightMatch.index ?? 0) + weightMatch[0].length)}`.trim();
+      working =
+        `${working.slice(0, weightMatch.index ?? 0)} ${working.slice((weightMatch.index ?? 0) + weightMatch[0].length)}`.trim();
     }
   }
 
@@ -473,7 +481,12 @@ function parseClausePortionAndQuery(clause: string): {
   }
 
   const foodQuery = tokens.join(' ').replace(/\s+/g, ' ').trim();
-  return { quantity, unit, explicitGrams, foodQuery: foodQuery || clause.trim() };
+  return {
+    quantity,
+    unit,
+    explicitGrams,
+    foodQuery: foodQuery || clause.trim(),
+  };
 }
 
 function singularizeToken(word: string): string {
@@ -494,7 +507,10 @@ function hasWholeWordTokenMatch(food: Food, query: string): boolean {
     .map((t) => t.replace(/[^a-z0-9]/g, ''))
     .filter(Boolean);
   if (tokens.length === 0) return false;
-  const haystacks = [food.name.toLowerCase(), ...food.aliases.map((a) => a.toLowerCase())];
+  const haystacks = [
+    food.name.toLowerCase(),
+    ...food.aliases.map((a) => a.toLowerCase()),
+  ];
   return tokens.every((tok) => {
     const escaped = tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const re = new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`);
@@ -550,7 +566,10 @@ function resolveOfflinePortionGrams(
   explicitGrams: number | null,
 ): { grams: number; note: string } {
   if (explicitGrams !== null && explicitGrams > 0) {
-    return { grams: Math.round(explicitGrams * 10) / 10, note: 'Matched explicit spoken weight' };
+    return {
+      grams: Math.round(explicitGrams * 10) / 10,
+      note: 'Matched explicit spoken weight',
+    };
   }
 
   const normUnit = unit.toLowerCase();
@@ -597,11 +616,14 @@ export function matchVoiceTranscriptOffline(
       summary: '',
       candidates: [],
       unmatchedClauses: [],
-      warnings: ['Please enter a meal description to match against the local catalogue.'],
+      warnings: [
+        'Please enter a meal description to match against the local catalogue.',
+      ],
     };
   }
 
-  const { clauses, hasCorrectionKeywords } = splitSpokenTranscriptClauses(cleanedTranscript);
+  const { clauses, hasCorrectionKeywords } =
+    splitSpokenTranscriptClauses(cleanedTranscript);
   const warnings: string[] = [];
   if (hasCorrectionKeywords) {
     warnings.push(
@@ -614,7 +636,8 @@ export function matchVoiceTranscriptOffline(
   const baseTs = Date.now();
 
   clauses.forEach((clause, index) => {
-    const { quantity, unit, explicitGrams, foodQuery } = parseClausePortionAndQuery(clause);
+    const { quantity, unit, explicitGrams, foodQuery } =
+      parseClausePortionAndQuery(clause);
     const matches = findBestCatalogueMatches(availableFoods, foodQuery);
 
     if (matches.length === 0) {
@@ -626,7 +649,12 @@ export function matchVoiceTranscriptOffline(
     }
 
     const topMatch = matches[0];
-    const { grams, note } = resolveOfflinePortionGrams(topMatch, quantity, unit, explicitGrams);
+    const { grams, note } = resolveOfflinePortionGrams(
+      topMatch,
+      quantity,
+      unit,
+      explicitGrams,
+    );
     const scaled = scaleFoodNutrientsNullable(topMatch.nutrients, grams);
 
     const hasUnknownMacro =

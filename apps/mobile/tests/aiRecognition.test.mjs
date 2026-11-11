@@ -5,7 +5,10 @@ import {
   checkBackendHealth,
   recognizeFoodFromImage,
 } from '../src/services/aiFoodRecognition.ts';
-import { parseVoiceMeal, VoiceCloudError } from '../src/services/voiceFoodLogging.ts';
+import {
+  parseVoiceMeal,
+  VoiceCloudError,
+} from '../src/services/voiceFoodLogging.ts';
 
 test('getBackendBaseUrl: resolves default and custom URL values', () => {
   const originalEnv = process.env.EXPO_PUBLIC_AI_BACKEND_URL;
