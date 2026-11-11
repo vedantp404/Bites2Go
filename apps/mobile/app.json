@@ -9,8 +9,7 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSSpeechRecognitionUsageDescription": "Allow Bites2Go to use speech recognition to log your meals.",
-        "NSMicrophoneUsageDescription": "Allow Bites2Go to access microphone for voice food logging."
+        "NSMicrophoneUsageDescription": "Allow Bites2Go to access microphone for voice meal logging."
       }
     },
     "android": {
@@ -49,13 +48,12 @@
         }
       ],
       [
-        "expo-speech-recognition",
+        "expo-audio",
         {
-          "microphonePermission": "Allow Bites2Go to access microphone for voice food logging.",
-          "speechRecognitionPermission": "Allow Bites2Go to use speech recognition to log your meals.",
-          "androidSpeechServicePackages": [
-            "com.google.android.googlequicksearchbox"
-          ]
+          "microphonePermission": "Allow Bites2Go to access your microphone for voice meal logging.",
+          "recordAudioAndroid": true,
+          "enableBackgroundRecording": false,
+          "enableBackgroundPlayback": false
         }
       ]
     ],

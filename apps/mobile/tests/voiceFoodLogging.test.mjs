@@ -656,3 +656,228 @@ test('offline voice confirmation: preserves existing diary history, supports por
   assert.equal(allEntries[1].grams, 200);
   assert.equal(allEntries[1].nutrients.fiber, null);
 });
+
+test('audio-native matching: preserves sourdough specificity, butter modifier without weight, whey uncertainty, and egg units', () => {
+  // Include a shorter generic 'Toast' food and 'Protein' food in pool to prove no misleading flattening!
+  const pool = [
+    ...unifiedFoods,
+    {
+      id: 'generic:toast',
+      name: 'Toast',
+      aliases: [],
+      category: 'Bread',
+      preparation: 'toasted',
+      referenceGrams: 100,
+      nutrients: { calories: 290, protein: 9, carbs: 50, fat: 4, fiber: 3 },
+      status: 'verified',
+      source: 'Test Catalogue',
+    },
+    {
+      id: 'generic:protein',
+      name: 'Protein',
+      aliases: [],
+      category: 'Supplements',
+      preparation: 'powder',
+      referenceGrams: 100,
+      nutrients: { calories: 400, protein: 80, carbs: 10, fat: 5, fiber: 0 },
+      status: 'verified',
+      source: 'Test Catalogue',
+    },
+  ];
+
+  const items = [
+    {
+      food_description: 'Scrambled eggs',
+      quantity: 2,
+      unit: 'egg',
+      preparation: 'scrambled',
+      modifiers: [],
+      state: 'cooked',
+      portion_specified: true,
+      estimated_grams: 110,
+      calories: 165,
+      protein: 13,
+      carbohydrates: 1.6,
+      fat: 11.5,
+      confidence: 0.94,
+      confidence_level: 'high',
+      alternatives: [],
+      notes: '2 eggs scrambled',
+    },
+    {
+      food_description: 'Sourdough toast',
+      quantity: 1,
+      unit: 'slice',
+      preparation: 'toasted',
+      modifiers: ['with butter'],
+      state: 'cooked',
+      portion_specified: true,
+      estimated_grams: 45,
+      calories: 120,
+      protein: 4,
+      carbohydrates: 22,
+      fat: 1,
+      confidence: 0.78,
+      confidence_level: 'medium',
+      alternatives: [],
+      notes: 'Butter amount unstated',
+    },
+    {
+      food_description: 'Black coffee',
+      quantity: 1,
+      unit: 'cup',
+      preparation: 'brewed black',
+      modifiers: [],
+      state: 'cooked',
+      portion_specified: true,
+      estimated_grams: 240,
+      calories: 2,
+      protein: 0.3,
+      carbohydrates: 0,
+      fat: 0,
+      confidence: 0.95,
+      confidence_level: 'high',
+      alternatives: [],
+      notes: null,
+    },
+    {
+      food_description: 'Banana',
+      quantity: 2,
+      unit: 'banana',
+      preparation: 'fresh',
+      modifiers: [],
+      state: 'unspecified',
+      portion_specified: true,
+      estimated_grams: 236,
+      calories: 210,
+      protein: 2.6,
+      carbohydrates: 54,
+      fat: 0.8,
+      confidence: 0.95,
+      confidence_level: 'high',
+      alternatives: [],
+      notes: 'Corrected from 1 to 2 bananas',
+    },
+    {
+      food_description: 'Whey protein powder',
+      quantity: 1,
+      unit: 'scoop',
+      preparation: 'mixed',
+      modifiers: [],
+      state: 'unspecified',
+      portion_specified: true,
+      estimated_grams: 30,
+      calories: 120,
+      protein: 24,
+      carbohydrates: 3,
+      fat: 1.5,
+      confidence: 0.65,
+      confidence_level: 'medium',
+      alternatives: ['Whey isolate powder'],
+      notes: 'Brand and scoop weight vary',
+    },
+  ];
+
+  const matched = matchVoiceItemsToCatalogue(items, pool);
+  assert.equal(matched.length, 5);
+
+  const eggs = matched[0];
+  assert.equal(eggs.quantity, 2);
+  assert.equal(eggs.unit, 'egg');
+
+  const sourdough = matched[1];
+  assert.equal(sourdough.food_name, 'Sourdough toast');
+  assert.deepEqual(sourdough.modifiers, ['with butter']);
+  assert.ok(sourdough.notes.includes('with butter'));
+
+  const banana = matched[3];
+  assert.equal(banana.quantity, 2);
+  assert.equal(banana.unit, 'banana');
+
+  const whey = matched[4];
+  assert.equal(whey.food_name, 'Whey protein powder');
+  assert.equal(whey.confidence_level, 'medium');
+
+  const diaryEntries = buildDiaryEntriesFromVoiceCandidates(
+    matched,
+    'Breakfast',
+    '2026-11-12',
+  );
+  assert.equal(diaryEntries.length, 5);
+  assert.ok(diaryEntries[1].preparation.includes('with butter'));
+  diaryEntries.forEach((entry) =>
+    assert.doesNotThrow(() => assertEntry(entry)),
+  );
+});
+
+test('audio-native matching & validation: unspecified portions keep null grams/macros and block invalid saves until filled', async () => {
+  const { validateRecordedAudioMetadata } =
+    await import('../src/services/voiceFoodLogging.ts');
+
+  // Unspecified portion from speech
+  const matched = matchVoiceItemsToCatalogue(
+    [
+      {
+        food_description: 'Vegetable curry',
+        quantity: 1,
+        unit: 'serving',
+        preparation: 'simmered',
+        modifiers: [],
+        state: 'cooked',
+        portion_specified: false,
+        estimated_grams: null,
+        calories: null,
+        protein: null,
+        carbohydrates: null,
+        fat: null,
+        confidence: 0.4,
+        confidence_level: 'low',
+        alternatives: [],
+        notes: 'Portion size not spoken',
+      },
+    ],
+    [],
+  );
+  assert.equal(matched[0].estimated_grams, null);
+  assert.equal(matched[0].calories, null);
+  assert.equal(matched[0].portionSpecified, false);
+
+  assert.throws(
+    () => buildDiaryEntriesFromVoiceCandidates(matched, 'Dinner', '2026-11-12'),
+    /must be a positive number of grams/,
+  );
+
+  // Audio validation boundaries
+  assert.equal(
+    validateRecordedAudioMetadata({
+      uri: '',
+      durationMillis: 2000,
+      sizeBytes: 1000,
+    }).valid,
+    false,
+  );
+  assert.equal(
+    validateRecordedAudioMetadata({
+      uri: 'file:///cache/short.m4a',
+      durationMillis: 150,
+      sizeBytes: 1000,
+    }).valid,
+    false,
+  );
+  assert.equal(
+    validateRecordedAudioMetadata({
+      uri: 'file:///cache/oversize.m4a',
+      durationMillis: 10000,
+      sizeBytes: 11 * 1024 * 1024,
+    }).valid,
+    false,
+  );
+  assert.equal(
+    validateRecordedAudioMetadata({
+      uri: 'file:///cache/meal.m4a',
+      durationMillis: 8500,
+      sizeBytes: 140000,
+    }).valid,
+    true,
+  );
+});

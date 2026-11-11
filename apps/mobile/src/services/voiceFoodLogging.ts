@@ -20,17 +20,25 @@ import { type Library, customAsFood, recipeAsFood } from '../domain/library.ts';
 import { unifiedFoods } from '../data/unifiedFoods.ts';
 import { getBackendBaseUrl } from './aiFoodRecognition.ts';
 
+export const MAX_AUDIO_DURATION_MS = 90_000;
+export const MAX_AUDIO_FILE_BYTES = 10 * 1024 * 1024;
+export const MIN_AUDIO_DURATION_MS = 400;
+export const MIN_AUDIO_FILE_BYTES = 512;
+export const AUDIO_UPLOAD_TIMEOUT_MS = 45_000;
+
 export type ParsedVoiceFoodItem = {
   food_description: string;
   quantity: number;
   unit: string;
   preparation?: string | null;
+  modifiers?: string[];
   state: 'raw' | 'cooked' | 'unspecified';
-  estimated_grams: number;
-  calories: number;
-  protein: number;
-  carbohydrates: number;
-  fat: number;
+  portion_specified?: boolean;
+  estimated_grams: number | null;
+  calories: number | null;
+  protein: number | null;
+  carbohydrates: number | null;
+  fat: number | null;
   confidence: number;
   confidence_level: 'high' | 'medium' | 'low';
   alternatives: string[];
@@ -53,7 +61,7 @@ export type MatchedVoiceFoodCandidate = {
   food_name: string;
   quantity: number;
   unit: string;
-  estimated_grams: number;
+  estimated_grams: number | null;
   calories: number | null;
   protein: number | null;
   carbohydrates: number | null;
@@ -61,6 +69,8 @@ export type MatchedVoiceFoodCandidate = {
   fiber?: number | null;
   state: 'raw' | 'cooked' | 'unspecified';
   preparation: string;
+  modifiers?: string[];
+  portionSpecified?: boolean;
   notes: string;
   confidence: number;
   confidence_level: 'high' | 'medium' | 'low';
@@ -125,6 +135,237 @@ export function scaleFoodNutrientsNullable(
   };
 }
 
+export function validateRecordedAudioMetadata(input: {
+  uri?: string | null;
+  durationMillis: number;
+  sizeBytes?: number | null;
+}): { valid: boolean; error?: string } {
+  const cleanUri = input.uri?.trim() || '';
+  if (!cleanUri) {
+    return {
+      valid: false,
+      error: 'No audio recording was captured. Tap Speak and try again.',
+    };
+  }
+  if (
+    !Number.isFinite(input.durationMillis) ||
+    input.durationMillis < MIN_AUDIO_DURATION_MS
+  ) {
+    return {
+      valid: false,
+      error:
+        'Recording was too short. Hold and speak your meal clearly for at least 1 second.',
+    };
+  }
+  if (input.durationMillis > MAX_AUDIO_DURATION_MS + 2000) {
+    return {
+      valid: false,
+      error:
+        'Recording exceeded the 90-second limit. Please split very long meals or record a shorter description.',
+    };
+  }
+  if (input.sizeBytes !== null && input.sizeBytes !== undefined) {
+    if (input.sizeBytes < MIN_AUDIO_FILE_BYTES) {
+      return {
+        valid: false,
+        error:
+          'Captured audio file appears empty. Check your microphone and try again.',
+      };
+    }
+    if (input.sizeBytes > MAX_AUDIO_FILE_BYTES) {
+      return {
+        valid: false,
+        error:
+          'Audio recording is too large to upload (10 MB max). Please record a shorter clip.',
+      };
+    }
+  }
+  return { valid: true };
+}
+
+export function inferAudioMimeAndName(audioUri: string): {
+  filename: string;
+  mimeType: string;
+} {
+  const rawName = audioUri.split('/').pop() || 'meal-voice.m4a';
+  const cleanName = rawName.split('?')[0] || 'meal-voice.m4a';
+  const match = /\.(\w+)$/.exec(cleanName);
+  const ext = match ? match[1].toLowerCase() : 'm4a';
+  switch (ext) {
+    case 'mp4':
+      return { filename: cleanName, mimeType: 'audio/mp4' };
+    case 'aac':
+      return { filename: cleanName, mimeType: 'audio/aac' };
+    case 'wav':
+      return { filename: cleanName, mimeType: 'audio/wav' };
+    case 'mp3':
+      return { filename: cleanName, mimeType: 'audio/mpeg' };
+    case 'ogg':
+    case 'opus':
+      return { filename: cleanName, mimeType: 'audio/ogg' };
+    case 'webm':
+      return { filename: cleanName, mimeType: 'audio/webm' };
+    case 'flac':
+      return { filename: cleanName, mimeType: 'audio/flac' };
+    case 'm4a':
+    default:
+      return {
+        filename: cleanName.endsWith(`.${ext}`) ? cleanName : 'meal-voice.m4a',
+        mimeType: 'audio/m4a',
+      };
+  }
+}
+
+export function sanitizeVoiceUserMessage(
+  rawDetail?: string,
+  status?: number,
+): string {
+  const trimmed = (rawDetail || '').trim();
+  const hasRawJsonOrTechnicalNoise =
+    !trimmed ||
+    trimmed.startsWith('{') ||
+    trimmed.startsWith('[') ||
+    /^(?:Error|HTTP)\s+\d{3}\b/i.test(trimmed) ||
+    /\bHTTP\s*\d{3}\b/i.test(trimmed) ||
+    /\b(?:nvidia\/|dots-studio\/|openrouter\/|gemini-[\d.]+|traceback|syntaxerror|validationerror)\b/i.test(
+      trimmed,
+    );
+
+  if (!hasRawJsonOrTechnicalNoise) {
+    return trimmed.replace(/\bOpenRouter\s+/gi, '');
+  }
+
+  if (status === 429) {
+    return 'Voice AI reached temporary rate or daily quota limits. Wait briefly to retry, edit your description below, or open Food Search.';
+  }
+  if (status === 504) {
+    return 'Voice meal analysis timed out. You can retry the recording, edit text below, or open Food Search.';
+  }
+  if (status === 413) {
+    return 'Audio recording exceeded the maximum size limit. Record a shorter clip or open Food Search.';
+  }
+  if (status === 502 || status === 503) {
+    return 'Could not interpret that meal clearly right now. You can retry, edit your description below, or open Food Search.';
+  }
+  return 'Unable to reach voice AI right now. You can retry, type your meal below, or open Food Search.';
+}
+
+/**
+ * Upload recorded meal audio securely over HTTPS/HTTP to FastAPI for direct audio-native AI interpretation.
+ */
+export async function parseVoiceAudio(
+  audioUri: string,
+  mealContext?: string,
+  loggedDate?: string,
+  opts?: { signal?: AbortSignal; timeoutMs?: number },
+): Promise<VoiceMealParseResponse> {
+  const cleanUri = audioUri.trim();
+  if (!cleanUri) {
+    throw new VoiceCloudError('No audio recording found to analyze.', {
+      status: 400,
+      errorCategory: 'missing_audio',
+    });
+  }
+
+  const baseUrl = getBackendBaseUrl();
+  const url = `${baseUrl}/api/v1/parse-voice-audio`;
+  const { filename, mimeType } = inferAudioMimeAndName(cleanUri);
+
+  const formData = new FormData();
+  formData.append('file', {
+    uri: cleanUri,
+    name: filename,
+    type: mimeType,
+  } as unknown as Blob);
+  if (mealContext?.trim()) {
+    formData.append('meal_context', mealContext.trim());
+  }
+  if (loggedDate?.trim()) {
+    formData.append('logged_date', loggedDate.trim());
+  }
+
+  const controller = new AbortController();
+  const timeoutMs = opts?.timeoutMs ?? AUDIO_UPLOAD_TIMEOUT_MS;
+  let timedOut = false;
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  const onExternalAbort = () => controller.abort();
+  if (opts?.signal) {
+    if (opts.signal.aborted) {
+      clearTimeout(timeoutId);
+      throw new VoiceCloudError('Audio analysis canceled.', {
+        errorCategory: 'upload_canceled',
+      });
+    }
+    opts.signal.addEventListener('abort', onExternalAbort, { once: true });
+  }
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+      },
+      body: formData,
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      let rawDetail = '';
+      try {
+        const errorJson = await response.json();
+        if (typeof errorJson?.detail === 'string') {
+          rawDetail = errorJson.detail;
+        } else if (typeof errorJson?.detail?.message === 'string') {
+          rawDetail = errorJson.detail.message;
+        }
+      } catch {
+        // ignore JSON parse failure on non-JSON proxy errors
+      }
+      const rawRetryAfter = response.headers?.get?.('Retry-After');
+      const retryAfterNum = rawRetryAfter ? Number(rawRetryAfter) : NaN;
+      const errorCategory =
+        response.headers?.get?.('X-Error-Category') ?? undefined;
+      throw new VoiceCloudError(
+        sanitizeVoiceUserMessage(rawDetail, response.status),
+        {
+          status: response.status,
+          retryAfterSeconds: Number.isFinite(retryAfterNum)
+            ? retryAfterNum
+            : undefined,
+          errorCategory,
+        },
+      );
+    }
+
+    return (await response.json()) as VoiceMealParseResponse;
+  } catch (err: unknown) {
+    if (err instanceof VoiceCloudError) {
+      throw err;
+    }
+    if (opts?.signal?.aborted) {
+      throw new VoiceCloudError('Audio analysis canceled.', {
+        errorCategory: 'upload_canceled',
+      });
+    }
+    if (err instanceof Error && (err.name === 'AbortError' || timedOut)) {
+      throw new VoiceCloudError(
+        'Voice meal analysis timed out. You can retry the recording, edit text manually, or open Food Search.',
+        { status: 504, errorCategory: 'timeout' },
+      );
+    }
+    throw new VoiceCloudError(sanitizeVoiceUserMessage(), {
+      errorCategory: 'network_error',
+    });
+  } finally {
+    clearTimeout(timeoutId);
+    opts?.signal?.removeEventListener('abort', onExternalAbort);
+  }
+}
+
 /**
  * Send voice transcript to FastAPI backend for natural language food extraction.
  */
@@ -132,6 +373,7 @@ export async function parseVoiceMeal(
   transcript: string,
   mealContext?: string,
   loggedDate?: string,
+  opts?: { signal?: AbortSignal; timeoutMs?: number },
 ): Promise<VoiceMealParseResponse> {
   const cleaned = transcript.trim();
   if (!cleaned) {
@@ -141,7 +383,20 @@ export async function parseVoiceMeal(
   const baseUrl = getBackendBaseUrl();
   const url = `${baseUrl}/api/v1/parse-voice-meal`;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 40000);
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    opts?.timeoutMs ?? 40000,
+  );
+  const onExternalAbort = () => controller.abort();
+  if (opts?.signal) {
+    if (opts.signal.aborted) {
+      clearTimeout(timeoutId);
+      throw new VoiceCloudError('Voice analysis canceled.', {
+        errorCategory: 'upload_canceled',
+      });
+    }
+    opts.signal.addEventListener('abort', onExternalAbort, { once: true });
+  }
 
   try {
     const response = await fetch(url, {
@@ -159,7 +414,7 @@ export async function parseVoiceMeal(
     });
 
     if (!response.ok) {
-      let detail = `Error ${response.status}`;
+      let detail = '';
       try {
         const errorJson = await response.json();
         if (typeof errorJson?.detail === 'string') {
@@ -174,25 +429,40 @@ export async function parseVoiceMeal(
       const retryAfterNum = rawRetryAfter ? Number(rawRetryAfter) : NaN;
       const errorCategory =
         response.headers?.get?.('X-Error-Category') ?? undefined;
-      throw new VoiceCloudError(detail, {
-        status: response.status,
-        retryAfterSeconds: Number.isFinite(retryAfterNum)
-          ? retryAfterNum
-          : undefined,
-        errorCategory,
-      });
+      throw new VoiceCloudError(
+        sanitizeVoiceUserMessage(detail, response.status),
+        {
+          status: response.status,
+          retryAfterSeconds: Number.isFinite(retryAfterNum)
+            ? retryAfterNum
+            : undefined,
+          errorCategory,
+        },
+      );
     }
 
     return (await response.json()) as VoiceMealParseResponse;
   } catch (err: unknown) {
+    if (err instanceof VoiceCloudError) {
+      throw err;
+    }
+    if (opts?.signal?.aborted) {
+      throw new VoiceCloudError('Voice analysis canceled.', {
+        errorCategory: 'upload_canceled',
+      });
+    }
     if (err instanceof Error && err.name === 'AbortError') {
-      throw new Error(
-        'Voice interpretation request timed out. Please check your connection and try again.',
+      throw new VoiceCloudError(
+        'Voice meal analysis timed out. Please retry or open Food Search.',
+        { status: 504, errorCategory: 'timeout' },
       );
     }
-    throw err;
+    throw new VoiceCloudError(sanitizeVoiceUserMessage(), {
+      errorCategory: 'network_error',
+    });
   } finally {
     clearTimeout(timeoutId);
+    opts?.signal?.removeEventListener('abort', onExternalAbort);
   }
 }
 
@@ -212,18 +482,68 @@ export function buildAvailableFoodPool(
  * Match parsed voice food items to the existing 1,411-food unified catalogue,
  * preserving dataset-first priority and provenance.
  */
+function deriveAIReferencePer100g(
+  item: ParsedVoiceFoodItem,
+  grams: number | null,
+): FoodNutrients {
+  if (!grams || grams <= 0) {
+    return {
+      calories: null,
+      protein: null,
+      carbs: null,
+      fat: null,
+      fiber: null,
+    };
+  }
+  const factor = 100 / grams;
+  return {
+    calories:
+      item.calories !== null && Number.isFinite(item.calories)
+        ? Math.round(item.calories * factor * 1000) / 1000
+        : null,
+    protein:
+      item.protein !== null && Number.isFinite(item.protein)
+        ? Math.round(item.protein * factor * 1000) / 1000
+        : null,
+    carbs:
+      item.carbohydrates !== null && Number.isFinite(item.carbohydrates)
+        ? Math.round(item.carbohydrates * factor * 1000) / 1000
+        : null,
+    fat:
+      item.fat !== null && Number.isFinite(item.fat)
+        ? Math.round(item.fat * factor * 1000) / 1000
+        : null,
+    fiber: 0,
+  };
+}
+
+/**
+ * Match parsed voice food items to the existing 1,411-food unified catalogue,
+ * preserving dish specificity, modifiers, uncertainty, and unknown nulls.
+ */
 export function matchVoiceItemsToCatalogue(
   items: ParsedVoiceFoodItem[],
   availableFoods: readonly Food[],
 ): MatchedVoiceFoodCandidate[] {
   return items.map((item, index) => {
-    const rawGrams = item.estimated_grams > 0 ? item.estimated_grams : 100;
+    const portionSpecified =
+      item.portion_specified !== false &&
+      item.estimated_grams !== null &&
+      Number.isFinite(item.estimated_grams) &&
+      item.estimated_grams > 0;
+    const rawGrams: number | null = portionSpecified
+      ? item.estimated_grams
+      : null;
     const query = item.food_description.trim();
+    const queryLower = query.toLowerCase();
+    const modifiers = Array.isArray(item.modifiers)
+      ? item.modifiers.map((m) => m.trim()).filter(Boolean)
+      : [];
 
     // Search existing catalogue using searchFoods (handles dataset-first ranking)
     const matches = searchFoods(availableFoods, query);
 
-    // If query has 0 matches, also try searching the alternatives provided by Gemini
+    // If query has 0-4 matches, also search alternatives provided by Gemini
     const additionalMatches: Food[] = [];
     if (matches.length < 5 && item.alternatives?.length > 0) {
       for (const alt of item.alternatives) {
@@ -245,44 +565,49 @@ export function matchVoiceItemsToCatalogue(
     const allMatches = [...matches, ...additionalMatches].slice(0, 8);
     const topMatch = allMatches.length > 0 ? allMatches[0] : null;
 
-    // Determine initial sourceMode:
-    // If we have a very close match in the catalogue, we can prefer catalogue data;
-    // otherwise default to AI-estimated values.
+    // Only auto-select catalogue when the catalogue food is at least as specific as the spoken dish;
+    // never overwrite "Sourdough toast" with generic "Toast" or "Whey protein powder" with "Protein".
     const isCloseMatch =
       topMatch !== null &&
-      (topMatch.name.toLowerCase() === query.toLowerCase() ||
-        topMatch.name.toLowerCase().includes(query.toLowerCase()) ||
-        query.toLowerCase().includes(topMatch.name.toLowerCase()));
+      (topMatch.name.toLowerCase() === queryLower ||
+        topMatch.name.toLowerCase().includes(queryLower));
 
     const sourceMode: 'catalogue' | 'ai' = isCloseMatch ? 'catalogue' : 'ai';
 
-    let calories: number | null = item.calories;
-    let protein: number | null = item.protein;
-    let carbohydrates: number | null = item.carbohydrates;
-    let fat: number | null = item.fat;
-    let fiber: number | null = 0;
+    let calories: number | null = rawGrams !== null ? item.calories : null;
+    let protein: number | null = rawGrams !== null ? item.protein : null;
+    let carbohydrates: number | null =
+      rawGrams !== null ? item.carbohydrates : null;
+    let fat: number | null = rawGrams !== null ? item.fat : null;
+    let fiber: number | null = rawGrams !== null ? 0 : null;
     let reference: FoodNutrients;
 
     if (sourceMode === 'catalogue' && topMatch) {
-      const scaled = scaleFoodNutrientsNullable(topMatch.nutrients, rawGrams);
-      calories = scaled.calories;
-      protein = scaled.protein;
-      carbohydrates = scaled.carbohydrates;
-      fat = scaled.fat;
-      fiber = scaled.fiber;
       reference = { ...topMatch.nutrients };
+      if (rawGrams !== null) {
+        const scaled = scaleFoodNutrientsNullable(topMatch.nutrients, rawGrams);
+        calories = scaled.calories;
+        protein = scaled.protein;
+        carbohydrates = scaled.carbohydrates;
+        fat = scaled.fat;
+        fiber = scaled.fiber;
+      } else {
+        calories = null;
+        protein = null;
+        carbohydrates = null;
+        fat = null;
+        fiber = null;
+      }
     } else {
-      // AI reference per 100g
-      reference = scaleNutrients(
-        {
-          calories: item.calories,
-          protein: item.protein,
-          carbs: item.carbohydrates,
-          fat: item.fat,
-          fiber: 0,
-        },
-        10000 / rawGrams,
-      );
+      reference = deriveAIReferencePer100g(item, rawGrams);
+    }
+
+    const baseNoteParts: string[] = [];
+    if (modifiers.length > 0) {
+      baseNoteParts.push(`Includes ${modifiers.join(', ')}`);
+    }
+    if (item.notes?.trim()) {
+      baseNoteParts.push(item.notes.trim());
     }
 
     const uniqueId = `voice-item-${Date.now()}-${index}`;
@@ -308,7 +633,9 @@ export function matchVoiceItemsToCatalogue(
       preparation:
         item.preparation ||
         (item.state === 'raw' ? 'Raw / uncooked' : 'Cooked / prepared'),
-      notes: item.notes || '',
+      modifiers,
+      portionSpecified,
+      notes: baseNoteParts.join(' · '),
       confidence: item.confidence,
       confidence_level: item.confidence_level,
       matchedCatalogueFood: topMatch,
@@ -700,6 +1027,8 @@ export function matchVoiceTranscriptOffline(
       fiber: scaled.fiber,
       state: 'unspecified',
       preparation: topMatch.preparation,
+      modifiers: [],
+      portionSpecified: true,
       notes: note,
       confidence: 0.75,
       confidence_level: 'medium',
@@ -745,7 +1074,11 @@ export function buildDiaryEntriesFromVoiceCandidates(
     if (!trimmedName) {
       throw new Error('Food name cannot be empty.');
     }
-    if (!Number.isFinite(item.estimated_grams) || item.estimated_grams <= 0) {
+    if (
+      item.estimated_grams === null ||
+      !Number.isFinite(item.estimated_grams) ||
+      item.estimated_grams <= 0
+    ) {
       throw new RangeError(
         `Portion for "${trimmedName}" must be a positive number of grams.`,
       );
@@ -793,17 +1126,11 @@ export function buildDiaryEntriesFromVoiceCandidates(
       assertEntry(entry);
       entries.push(entry);
     } else {
-      if (
-        item.calories === null ||
-        item.protein === null ||
-        item.carbohydrates === null ||
-        item.fat === null
-      ) {
-        throw new RangeError(
-          `Nutritional values for "${trimmedName}" must be non-negative finite numbers.`,
-        );
-      }
-      // Use AI-estimated entry
+      const basePrep = item.preparation?.trim() || 'Voice logged meal';
+      const modSuffix =
+        item.modifiers && item.modifiers.length > 0
+          ? ` (${item.modifiers.join(', ')})`
+          : '';
       const entry = createAIDiaryEntry({
         id: item.stableEntryId,
         foodName: trimmedName,
@@ -814,8 +1141,8 @@ export function buildDiaryEntriesFromVoiceCandidates(
         protein: item.protein,
         carbs: item.carbohydrates,
         fat: item.fat,
-        fiber: item.fiber ?? 0,
-        preparation: item.preparation || 'Voice logged via Gemini AI',
+        fiber: item.fiber === undefined ? 0 : item.fiber,
+        preparation: `${basePrep}${modSuffix}`.slice(0, 120),
         source: 'Gemini AI Voice Parser',
         now,
       });

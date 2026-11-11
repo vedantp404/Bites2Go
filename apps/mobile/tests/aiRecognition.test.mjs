@@ -6,7 +6,9 @@ import {
   recognizeFoodFromImage,
 } from '../src/services/aiFoodRecognition.ts';
 import {
+  parseVoiceAudio,
   parseVoiceMeal,
+  sanitizeVoiceUserMessage,
   VoiceCloudError,
 } from '../src/services/voiceFoodLogging.ts';
 
@@ -264,6 +266,117 @@ test('getBackendBaseUrl & checkBackendHealth: enforce production URL config and 
     } else {
       delete process.env.NODE_ENV;
     }
+    if (originalEnv !== undefined) {
+      process.env.EXPO_PUBLIC_AI_BACKEND_URL = originalEnv;
+    } else {
+      delete process.env.EXPO_PUBLIC_AI_BACKEND_URL;
+    }
+  }
+});
+
+test('parseVoiceAudio: uploads audio, handles cancellation, sanitizes raw errors/models, and maps 429/504 cleanly', async () => {
+  const originalEnv = process.env.EXPO_PUBLIC_AI_BACKEND_URL;
+  const originalFetch = globalThis.fetch;
+  try {
+    process.env.EXPO_PUBLIC_AI_BACKEND_URL = 'http://127.0.0.1:8000';
+
+    // Successful multipart audio upload
+    let capturedMethod = '';
+    let capturedUrl = '';
+    globalThis.fetch = async (url, init) => {
+      capturedUrl = String(url);
+      capturedMethod = String(init?.method || '');
+      assert.ok(init?.body instanceof FormData);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          transcript: 'Two rotis, no wait, three rotis and dal',
+          summary: '3 rotis and dal',
+          items: [
+            {
+              food_description: 'Whole wheat roti',
+              quantity: 3,
+              unit: 'roti',
+              state: 'cooked',
+              modifiers: [],
+              portion_specified: true,
+              estimated_grams: 105,
+              calories: 270,
+              protein: 9,
+              carbohydrates: 54,
+              fat: 2.1,
+              confidence: 0.91,
+              confidence_level: 'high',
+              alternatives: [],
+            },
+          ],
+          warnings: ['Corrected rotis from 2 to 3'],
+          clarifying_questions: [],
+        }),
+      };
+    };
+
+    const okRes = await parseVoiceAudio(
+      'file:///cache/meal.m4a',
+      'Dinner',
+      '2026-11-12',
+    );
+    assert.equal(capturedMethod, 'POST');
+    assert.ok(capturedUrl.endsWith('/api/v1/parse-voice-audio'));
+    assert.equal(okRes.items[0].quantity, 3);
+
+    // Caller cancellation cleanly aborts upload
+    const abortController = new AbortController();
+    abortController.abort();
+    await assert.rejects(
+      () =>
+        parseVoiceAudio('file:///cache/meal.m4a', 'Dinner', '2026-11-12', {
+          signal: abortController.signal,
+        }),
+      (err) => {
+        assert.ok(err instanceof VoiceCloudError);
+        assert.equal(err.errorCategory, 'upload_canceled');
+        return true;
+      },
+    );
+
+    // Raw JSON / model identifier sanitization (never leaked to ordinary users)
+    const clean502 = sanitizeVoiceUserMessage(
+      '{"error":"nvidia/nemotron-3-ultra-550b-a55b:free HTTP 502 gemini-3.5-flash"}',
+      502,
+    );
+    assert.ok(!clean502.includes('nemotron'));
+    assert.ok(!clean502.includes('gemini-3.5-flash'));
+    assert.ok(!clean502.includes('{'));
+    assert.ok(!clean502.includes('502'));
+
+    // Quota exhaustion 429 with Retry-After header
+    globalThis.fetch = async () => ({
+      ok: false,
+      status: 429,
+      headers: new Headers({
+        'Retry-After': '18',
+        'X-Error-Category': 'daily_quota_exhausted',
+      }),
+      json: async () => ({
+        detail: 'gemini-3.5-flash quota exhausted',
+      }),
+    });
+
+    await assert.rejects(
+      () => parseVoiceAudio('file:///cache/meal.m4a'),
+      (err) => {
+        assert.ok(err instanceof VoiceCloudError);
+        assert.equal(err.status, 429);
+        assert.equal(err.retryAfterSeconds, 18);
+        assert.ok(!err.message.includes('gemini-3.5-flash'));
+        return true;
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
     if (originalEnv !== undefined) {
       process.env.EXPO_PUBLIC_AI_BACKEND_URL = originalEnv;
     } else {
