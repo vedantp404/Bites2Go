@@ -1,5 +1,14 @@
 # Project memory
 
+## Current handoff: Milestone 4E — Final Android Preview APK Preparation
+
+Prepared clean local commits on `master` for an Android `--profile preview` APK containing the offline voice catalogue fallback while keeping `origin/master`, Render (`6bd4ecfa`), and existing EAS signing intact and stopping before push/deploy/EAS build.
+
+Key Findings & Changes:
+- **Release Config & Signing Compatibility:** Confirmed `apps/mobile/app.json` preserves `android.package="com.bites2go"`, `version="1.0.0"`, `extra.eas.projectId="1e504316-51f2-4b43-ab54-ffcd26d92eba"`, and bumped `android.versionCode` from `1` to `2`. Confirmed `apps/mobile/eas.json` `preview` resolves `credentialsSource="remote"`, `distribution="internal"`, `buildType="apk"`, and EAS cloud `preview` env `EXPO_PUBLIC_AI_BACKEND_URL=https://bites2go-api.onrender.com` without embedding backend AI keys (`GEMINI_API_KEY`, `OPENROUTER_API_KEY`) in the bundle.
+- **`expo-dev-client` Decision:** Kept `expo-dev-client` (`~58.0.18`) in `apps/mobile/package.json` & `package-lock.json` because `eas.json` `development` (`developmentClient: true`) and `expo run:android` depend on it, while `expo-dev-launcher/android/build.gradle` compiles `src/disableInRelease/java` in release/preview APKs (matches earlier finished preview build `42623c82`).
+- **Formatting, AI Client & Offline Voice Hardening:** Formatted all 5 Prettier-flagged files (`VoiceFoodLoggingModal.tsx`, `aiFoodRecognition.ts`, `voiceFoodLogging.ts`, `aiRecognition.test.mjs`, `voiceFoodLogging.test.mjs`), committed production `NODE_ENV=production` backend URL validation in `aiFoodRecognition.ts` with tests, and added a synchronous `savingRef` guard + idempotency/history-preservation regression test in `VoiceFoodLoggingModal.tsx` / `voiceFoodLogging.test.mjs`. Unrelated `.planning/*` and `scripts/catalog_data_part*.py` changes remain untouched.
+
 ## Current handoff: Milestone 4C — Quota-Aware Voice Reliability & Offline Catalogue Fallback
 
 Hardened cloud 429/503 handling and added a deterministic mobile offline voice catalogue fallback while keeping Nemotron Ultra voice primary, Gemini voice fallback, and Gemini photo recognition intact.

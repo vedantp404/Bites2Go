@@ -1,5 +1,13 @@
 # Ordered roadmap
 
+## Milestone 4E — Final Android Preview APK Preparation — prepared (awaiting EAS build approval)
+
+- [x] Audited Android release configuration across `apps/mobile/app.json`, `apps/mobile/eas.json`, `apps/mobile/package.json`, `apps/mobile/package-lock.json`, and `apps/mobile/src/services/aiFoodRecognition.ts` (application ID `com.bites2go`, EAS project `1e504316-51f2-4b43-ab54-ffcd26d92eba`, preview profile `distribution: internal` / `buildType: apk`, remote signing keystore compatibility, `EXPO_PUBLIC_AI_BACKEND_URL=https://bites2go-api.onrender.com`, zero embedded API keys).
+- [x] Bumped `expo.android.versionCode` from `1` to `2` in `apps/mobile/app.json` while keeping `version` at `1.0.0`, and verified `expo-dev-client` (`~58.0.18`) is needed for the `development` EAS profile / `expo run:android` while compiling its release stub (`disableInRelease`) on `--profile preview`.
+- [x] Applied Prettier formatting to the 5 flagged files (`VoiceFoodLoggingModal.tsx`, `aiFoodRecognition.ts`, `voiceFoodLogging.ts`, `aiRecognition.test.mjs`, `voiceFoodLogging.test.mjs`).
+- [x] Verified offline voice fallback acceptance criteria and added focused unit/regression coverage (`savingRef` rapid-tap confirm guard + offline diary history preservation & idempotency test; production HTTPS backend URL validation & scheme check tests).
+- [ ] Run `cd apps/mobile && npx --yes eas-cli build --platform android --profile preview` after explicit release approval (no push, deploy, or EAS build triggered).
+
 ## Milestone 4C — Quota-Aware Voice Reliability & Offline Catalogue Fallback — implemented
 
 - [x] Inspected live OpenRouter `/key` (`is_free_tier=true`, `free_model_daily_requests={used:52, limit:50, remaining:0}`) and actual HTTP `429` headers/payload (`X-RateLimit-Limit: 50`, `X-RateLimit-Remaining: 0`, `X-RateLimit-Reset` ms timestamp, `limit_source: openrouter_free_tier_daily`, `metadata.provider_name`).
