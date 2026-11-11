@@ -1,8 +1,8 @@
 /**
- * Client service for connecting mobile app to local Gemini AI backend.
+ * Client service for connecting the mobile app to the Bites2Go AI backend.
  */
 
-// Pure TypeScript service (avoids direct react-native imports so it can run in Node unit tests)
+// Pure TypeScript service (avoids direct React Native imports so it can run in Node unit tests).
 
 export type UncertaintyInfo = {
   confidence_score: number;
@@ -32,40 +32,78 @@ export type FoodRecognitionResult = {
 
 /**
  * Resolves the backend base URL.
- * - Android Emulator routes to 10.0.2.2 to reach host loopback.
- * - iOS Simulator and Web route to localhost:8000.
- * - Can be overridden via EXPO_PUBLIC_AI_BACKEND_URL for physical LAN devices.
+ *
+ * Priority:
+ * 1. EXPO_PUBLIC_AI_BACKEND_URL, when configured.
+ * 2. Android emulator's local development backend.
+ * 3. localhost for non-production development.
+ *
+ * Production builds must provide the hosted HTTPS backend URL.
  */
 export function getBackendBaseUrl(platform?: string): string {
-  if (process.env.EXPO_PUBLIC_AI_BACKEND_URL) {
-    return process.env.EXPO_PUBLIC_AI_BACKEND_URL.replace(/\/+$/, '');
+  const configuredUrl = process.env.EXPO_PUBLIC_AI_BACKEND_URL?.trim();
+
+  if (configuredUrl) {
+    const normalizedUrl = configuredUrl.replace(/\/+$/, '');
+
+    if (!/^https?:\/\//i.test(normalizedUrl)) {
+      throw new Error(
+        'Invalid AI backend URL. Use a complete URL beginning with https:// or http://.',
+      );
+    }
+
+    return normalizedUrl;
   }
+
+  // Prevent a standalone production app from silently using localhost.
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'AI backend URL is not configured. Set EXPO_PUBLIC_AI_BACKEND_URL to the hosted HTTPS backend and rebuild the app.',
+    );
+  }
+
   const isAndroid =
     platform === 'android' ||
     (typeof process !== 'undefined' && process.env?.EXPO_OS === 'android');
+
   if (isAndroid) {
     return 'http://10.0.2.2:8000';
   }
+
   return 'http://localhost:8000';
 }
 
 /**
- * Safe ping to verify backend availability.
+ * Safely checks whether the backend is available.
  */
 export async function checkBackendHealth(): Promise<{
   available: boolean;
   aiConfigured: boolean;
   message?: string;
 }> {
-  const url = `${getBackendBaseUrl()}/health`;
+  let url: string;
+
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 4000);
+    url = `${getBackendBaseUrl()}/health`;
+  } catch (err: unknown) {
+    return {
+      available: false,
+      aiConfigured: false,
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+  try {
     const response = await fetch(url, {
-      credentials: 'omit',
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
       signal: controller.signal,
     });
-    clearTimeout(timeout);
 
     if (!response.ok) {
       return {
@@ -74,24 +112,37 @@ export async function checkBackendHealth(): Promise<{
         message: `Server error: HTTP ${response.status}`,
       };
     }
+
     const data = await response.json();
+
     return {
       available: true,
       aiConfigured: Boolean(data.ai_configured),
       message: data.service,
     };
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
+    const errorMsg =
+      err instanceof Error
+        ? err.name === 'AbortError'
+          ? 'The backend health check timed out.'
+          : err.message
+        : String(err);
+
     return {
       available: false,
       aiConfigured: false,
       message: `Cannot connect to AI backend at ${url} (${errorMsg}). Manual search remains available offline.`,
     };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
 /**
- * Send an image to the local backend for Gemini food recognition.
+ * Sends an image to the backend for AI food recognition.
+ *
+ * Uses the base64 endpoint when base64 image data is available.
+ * Otherwise, sends the image using multipart FormData.
  */
 export async function recognizeFoodFromImage(
   imageUri: string,
@@ -99,7 +150,7 @@ export async function recognizeFoodFromImage(
 ): Promise<FoodRecognitionResult> {
   const baseUrl = getBackendBaseUrl();
 
-  // If base64 data is already available from ImagePicker, prefer the base64 route
+  // Prefer the base64 endpoint when image data is already available.
   if (base64Data && base64Data.length > 0) {
     const url = `${baseUrl}/api/v1/recognize-food/base64`;
     const controller = new AbortController();
@@ -112,22 +163,27 @@ export async function recognizeFoodFromImage(
           'Content-Type': 'application/json',
           Accept: 'application/json',
         },
-        body: JSON.stringify({ image_base64: base64Data }),
+        body: JSON.stringify({
+          image_base64: base64Data,
+        }),
         signal: controller.signal,
       });
 
       if (!response.ok) {
         let detail = `Error ${response.status}`;
+
         try {
           const errorJson = await response.json();
+
           if (typeof errorJson?.detail === 'string') {
             detail = errorJson.detail;
-          } else if (errorJson?.detail?.message) {
+          } else if (typeof errorJson?.detail?.message === 'string') {
             detail = errorJson.detail.message;
           }
         } catch {
-          // use default detail
+          // Retain the default error message.
         }
+
         throw new Error(detail);
       }
 
@@ -135,18 +191,20 @@ export async function recognizeFoodFromImage(
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') {
         throw new Error(
-          'AI recognition request timed out. Please check your connection and try again.',
+          'AI recognition request timed out. Check your internet connection and try again.',
         );
       }
+
       throw err;
     } finally {
       clearTimeout(timeoutId);
     }
   }
 
-  // Fallback to multipart FormData
+  // Fallback: upload the image as multipart FormData.
   const url = `${baseUrl}/api/v1/recognize-food`;
   const formData = new FormData();
+
   const filename = imageUri.split('/').pop() || 'photo.jpg';
   const match = /\.(\w+)$/.exec(filename);
   const ext = match ? match[1].toLowerCase() : 'jpg';
@@ -173,16 +231,19 @@ export async function recognizeFoodFromImage(
 
     if (!response.ok) {
       let detail = `Error ${response.status}`;
+
       try {
         const errorJson = await response.json();
+
         if (typeof errorJson?.detail === 'string') {
           detail = errorJson.detail;
-        } else if (errorJson?.detail?.message) {
+        } else if (typeof errorJson?.detail?.message === 'string') {
           detail = errorJson.detail.message;
         }
       } catch {
-        // use default detail
+        // Retain the default error message.
       }
+
       throw new Error(detail);
     }
 
@@ -190,9 +251,10 @@ export async function recognizeFoodFromImage(
   } catch (err: unknown) {
     if (err instanceof Error && err.name === 'AbortError') {
       throw new Error(
-        'AI recognition request timed out. Please check your connection and try again.',
+        'AI recognition request timed out. Check your internet connection and try again.',
       );
     }
+
     throw err;
   } finally {
     clearTimeout(timeoutId);

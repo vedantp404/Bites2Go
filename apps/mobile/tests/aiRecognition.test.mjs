@@ -12,14 +12,21 @@ import {
 
 test('getBackendBaseUrl: resolves default and custom URL values', () => {
   const originalEnv = process.env.EXPO_PUBLIC_AI_BACKEND_URL;
+  const originalNodeEnv = process.env.NODE_ENV;
   try {
     delete process.env.EXPO_PUBLIC_AI_BACKEND_URL;
+    process.env.NODE_ENV = 'test';
     const defaultUrl = getBackendBaseUrl();
     assert.ok(defaultUrl.startsWith('http://'));
 
     process.env.EXPO_PUBLIC_AI_BACKEND_URL = 'http://192.168.1.50:8000/';
     assert.equal(getBackendBaseUrl(), 'http://192.168.1.50:8000');
   } finally {
+    if (originalNodeEnv !== undefined) {
+      process.env.NODE_ENV = originalNodeEnv;
+    } else {
+      delete process.env.NODE_ENV;
+    }
     if (originalEnv) {
       process.env.EXPO_PUBLIC_AI_BACKEND_URL = originalEnv;
     } else {
@@ -216,6 +223,48 @@ test('parseVoiceMeal: parses structured 504 and 503 error details from backend',
   } finally {
     globalThis.fetch = originalFetch;
     if (originalEnv) {
+      process.env.EXPO_PUBLIC_AI_BACKEND_URL = originalEnv;
+    } else {
+      delete process.env.EXPO_PUBLIC_AI_BACKEND_URL;
+    }
+  }
+});
+
+test('getBackendBaseUrl & checkBackendHealth: enforce production URL config and scheme validation', async () => {
+  const originalEnv = process.env.EXPO_PUBLIC_AI_BACKEND_URL;
+  const originalNodeEnv = process.env.NODE_ENV;
+  try {
+    process.env.NODE_ENV = 'production';
+    delete process.env.EXPO_PUBLIC_AI_BACKEND_URL;
+
+    assert.throws(
+      () => getBackendBaseUrl('android'),
+      /AI backend URL is not configured/,
+    );
+
+    const missingHealth = await checkBackendHealth();
+    assert.equal(missingHealth.available, false);
+    assert.equal(missingHealth.aiConfigured, false);
+    assert.ok(
+      missingHealth.message?.includes('AI backend URL is not configured'),
+    );
+
+    process.env.EXPO_PUBLIC_AI_BACKEND_URL = 'bites2go-api.onrender.com';
+    assert.throws(() => getBackendBaseUrl('android'), /Invalid AI backend URL/);
+
+    process.env.EXPO_PUBLIC_AI_BACKEND_URL =
+      ' https://bites2go-api.onrender.com/ ';
+    assert.equal(
+      getBackendBaseUrl('android'),
+      'https://bites2go-api.onrender.com',
+    );
+  } finally {
+    if (originalNodeEnv !== undefined) {
+      process.env.NODE_ENV = originalNodeEnv;
+    } else {
+      delete process.env.NODE_ENV;
+    }
+    if (originalEnv !== undefined) {
       process.env.EXPO_PUBLIC_AI_BACKEND_URL = originalEnv;
     } else {
       delete process.env.EXPO_PUBLIC_AI_BACKEND_URL;
