@@ -7,18 +7,23 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSSpeechRecognitionUsageDescription": "Allow Bites2Go to use speech recognition to log your meals.",
+        "NSMicrophoneUsageDescription": "Allow Bites2Go to access microphone for voice food logging."
+      }
     },
     "android": {
       "package": "com.bites2go",
-      "versionCode": 1,
+      "versionCode": 2,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": ["android.permission.RECORD_AUDIO"]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -54,6 +59,19 @@
         }
       ]
     ],
-    "scheme": "bites2go"
+    "scheme": "bites2go",
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "expo-navigation-bar": {
+        "enforceContrast": false
+      },
+      "eas": {
+        "projectId": "1e504316-51f2-4b43-ab54-ffcd26d92eba"
+      }
+    }
   }
 }
