@@ -575,3 +575,84 @@ test('matchVoiceTranscriptOffline: preserves null unknown nutrients strictly thr
   assert.equal(entries[0].meal, 'Snacks');
   assert.equal(entries[0].date, '2026-11-10');
 });
+
+test('offline voice confirmation: preserves existing diary history, supports portion edits, and blocks duplicate saves on repeat taps', async () => {
+  const { createDiaryRepository } =
+    await import('../src/storage/diaryRepository.ts');
+  const { scaleFoodNutrientsNullable } =
+    await import('../src/services/voiceFoodLogging.ts');
+
+  const priorEntry = {
+    id: 'existing-breakfast-1',
+    foodId: 'roti-1',
+    foodName: 'Existing Breakfast Roti',
+    meal: 'Breakfast',
+    date: '2026-11-11',
+    grams: 40,
+    unit: 'g',
+    referenceGrams: 100,
+    reference: { calories: 300, protein: 8, carbs: 55, fat: 3, fiber: 7 },
+    nutrients: { calories: 120, protein: 3.2, carbs: 22, fat: 1.2, fiber: 2.8 },
+    preparation: 'Griddle cooked',
+    source: 'Catalogue',
+    status: 'verified',
+    createdAt: '2026-11-11T08:00:00.000Z',
+    updatedAt: '2026-11-11T08:00:00.000Z',
+  };
+
+  let rawStorage = JSON.stringify({ version: 1, entries: [priorEntry] });
+  const storage = {
+    getItem: async () => rawStorage,
+    setItem: async (_key, val) => {
+      rawStorage = val;
+    },
+  };
+  const repo = createDiaryRepository(storage);
+
+  const partialFood = {
+    id: 'custom:offline-test-food',
+    name: 'Verified Local Dal',
+    aliases: ['dal'],
+    category: 'Lentils',
+    preparation: 'Cooked',
+    referenceGrams: 100,
+    nutrients: { calories: 120, protein: 7, carbs: 18, fat: 2, fiber: null },
+    status: 'verified',
+    source: 'Catalogue',
+  };
+
+  const matchResult = matchVoiceTranscriptOffline('1 bowl dal', [partialFood]);
+  assert.equal(matchResult.candidates.length, 1);
+
+  // Simulate user editing portion to 200g before confirmation
+  const cand = { ...matchResult.candidates[0] };
+  const editedGrams = 200;
+  const scaled = scaleFoodNutrientsNullable(cand.reference, editedGrams);
+  cand.estimated_grams = editedGrams;
+  cand.calories = scaled.calories;
+  cand.protein = scaled.protein;
+  cand.carbohydrates = scaled.carbohydrates;
+  cand.fat = scaled.fat;
+  cand.fiber = scaled.fiber;
+
+  const fixedNow = '2026-11-11T13:00:00.000Z';
+  const entries = buildDiaryEntriesFromVoiceCandidates(
+    [cand],
+    'Lunch',
+    '2026-11-11',
+    fixedNow,
+  );
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].nutrients.calories, 240);
+  assert.equal(entries[0].nutrients.fiber, null);
+
+  // Simulate duplicate confirmation taps sharing the same entry ID and payload
+  await Promise.all([repo.saveAll(entries), repo.saveAll(entries)]);
+
+  const allEntries = await repo.loadAll();
+  assert.equal(allEntries.length, 2);
+  assert.equal(allEntries[0].id, 'existing-breakfast-1');
+  assert.equal(allEntries[1].id, cand.stableEntryId);
+  assert.equal(allEntries[1].grams, 200);
+  assert.equal(allEntries[1].nutrients.fiber, null);
+});

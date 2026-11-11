@@ -12,7 +12,7 @@
  * - Atomic persistence to local SQLite diary via diary.saveAll().
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -88,6 +88,7 @@ export function VoiceFoodLoggingModal({
   const [volume, setVolume] = useState(0);
   const [interpreting, setInterimInterpreting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const [mealSummary, setMealSummary] = useState('');
@@ -154,6 +155,7 @@ export function VoiceFoodLoggingModal({
     setInterimText('');
     setVolume(0);
     setInterimInterpreting(false);
+    savingRef.current = false;
     setSaving(false);
     setErrorMessage(null);
     setMealSummary('');
@@ -511,13 +513,14 @@ export function VoiceFoodLoggingModal({
 
   // Confirm and log to diary atomically
   const handleConfirmLog = async () => {
-    if (saving || candidates.length === 0) {
-      if (!saving) {
+    if (savingRef.current || saving || candidates.length === 0) {
+      if (!savingRef.current && !saving) {
         Alert.alert('No Items', 'There are no items in this meal to log.');
       }
       return;
     }
 
+    savingRef.current = true;
     try {
       const entriesToSave = buildDiaryEntriesFromVoiceCandidates(
         candidates,
@@ -535,6 +538,7 @@ export function VoiceFoodLoggingModal({
       const msg = err instanceof Error ? err.message : String(err);
       Alert.alert('Save Failed', `Could not save meal to diary: ${msg}`);
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
