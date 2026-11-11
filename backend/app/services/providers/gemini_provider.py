@@ -20,11 +20,13 @@ from app.services.providers.base import (
     AIServiceError,
     AITimeoutError,
     AIUnavailableError,
+    AUDIO_MEAL_PARSER_SYSTEM_INSTRUCTION,
     BaseAIProvider,
     ModelOutputValidationError,
     SYSTEM_INSTRUCTION,
     VOICE_PARSER_SYSTEM_INSTRUCTION,
     get_current_request_id,
+    get_remaining_request_deadline,
     is_request_cancelled,
 )
 
@@ -84,6 +86,12 @@ class GeminiProvider(BaseAIProvider):
     ) -> None:
         self._settings = settings or get_settings()
         self._model = model or self._settings.gemini_model
+        configured_audio_model = getattr(self._settings, "voice_audio_model", None)
+        self._audio_model = model or (
+            configured_audio_model.strip()
+            if isinstance(configured_audio_model, str) and configured_audio_model.strip()
+            else self._model
+        )
         self._client = client
         self._per_attempt_timeout_seconds = (
             timeout_seconds if timeout_seconds is not None else self._settings.gemini_timeout_seconds
@@ -363,6 +371,7 @@ class GeminiProvider(BaseAIProvider):
         system_instruction: str,
         response_schema: object,
         timeout_seconds: float,
+        max_output_tokens: Optional[int] = None,
     ) -> types.GenerateContentConfig:
         """Build tuned GenAI generation config (disabled AFC + configurable thinking budget)."""
         timeout_ms = max(100, int(timeout_seconds * 1000))
@@ -371,7 +380,9 @@ class GeminiProvider(BaseAIProvider):
             "response_mime_type": "application/json",
             "response_schema": response_schema,
             "temperature": 0.2,
-            "max_output_tokens": self._max_output_tokens,
+            "max_output_tokens": (
+                max_output_tokens if max_output_tokens is not None else self._max_output_tokens
+            ),
             "automatic_function_calling": types.AutomaticFunctionCallingConfig(disable=True),
             "http_options": types.HttpOptions(
                 timeout=timeout_ms,
@@ -507,6 +518,66 @@ class GeminiProvider(BaseAIProvider):
                 error_category="malformed_json",
             ) from exc
 
+    def _validate_voice_response_text(
+        self,
+        operation_name: str,
+        raw_text: str,
+        transcript_fallback: Optional[str] = None,
+    ) -> VoiceMealParseResponse:
+        """Validate voice response JSON strictly into VoiceMealParseResponse with minimal structural normalization."""
+        t_val_start = time.perf_counter()
+        try:
+            parsed_data = VoiceMealParseResponse.model_validate_json(raw_text)
+            if transcript_fallback is not None:
+                parsed_data.transcript = transcript_fallback.strip()
+            t_val_elapsed = time.perf_counter() - t_val_start
+            logger.info(
+                "[Timing][%s] Gemini [%s] Pydantic validation took %.4fs",
+                get_current_request_id(),
+                operation_name,
+                t_val_elapsed,
+            )
+            return parsed_data
+        except ValidationError as val_err:
+            try:
+                data = json.loads(raw_text)
+                if isinstance(data, dict):
+                    if "items" not in data:
+                        if "candidates" in data:
+                            data["items"] = data.pop("candidates")
+                        elif "foods" in data:
+                            data["items"] = data.pop("foods")
+                    if transcript_fallback is not None:
+                        data["transcript"] = transcript_fallback.strip()
+                    elif not isinstance(data.get("transcript"), str):
+                        data["transcript"] = ""
+                    if isinstance(data.get("items"), list):
+                        for item in data["items"]:
+                            if isinstance(item, dict) and isinstance(item.get("modifiers"), str):
+                                item["modifiers"] = [item["modifiers"]] if item["modifiers"].strip() else []
+                    parsed_data = VoiceMealParseResponse.model_validate(data)
+                    t_val_elapsed = time.perf_counter() - t_val_start
+                    logger.info(
+                        "[Timing][%s] Gemini [%s] Pydantic validation took %.4fs",
+                        get_current_request_id(),
+                        operation_name,
+                        t_val_elapsed,
+                    )
+                    return parsed_data
+            except Exception:
+                pass
+            raise ModelOutputValidationError(
+                f"Model response failed validation schema: {str(val_err)}",
+                provider=self.name,
+                error_category="pydantic_validation_failed",
+            ) from val_err
+        except Exception as exc:
+            raise ModelOutputValidationError(
+                f"Failed to decode model JSON output: {str(exc)}",
+                provider=self.name,
+                error_category="malformed_json",
+            ) from exc
+
     def parse_voice_meal(
         self,
         transcript: str,
@@ -532,34 +603,124 @@ class GeminiProvider(BaseAIProvider):
 
         response = self._execute_with_retry("parse_voice_meal", _call_gemini, is_cancelled=is_cancelled)
         raw_text = self._extract_and_clean_response_text("parse_voice_meal", response)
+        return self._validate_voice_response_text("parse_voice_meal", raw_text, transcript_fallback=transcript.strip())
 
-        t_val_start = time.perf_counter()
+    def parse_voice_audio(
+        self,
+        audio_bytes: bytes,
+        mime_type: str = "audio/mp4",
+        meal_context: Optional[str] = None,
+        timeout_seconds: Optional[float] = None,
+        is_cancelled: Optional[Callable[[], bool]] = None,
+    ) -> VoiceMealParseResponse:
+        """Interpret spoken meal audio directly via Gemini multimodal audio understanding."""
+        prompt_text = (
+            "Listen carefully to this spoken meal recording, transcribe accurately, "
+            "resolve any spoken self-corrections to final intent, and extract structured meal items. "
+            "Never invent unstated weights, butter amounts, brands, or foods."
+        )
+        if meal_context:
+            prompt_text += f" Meal context: {meal_context.strip()}."
+
+        audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)
+        contents = [audio_part, prompt_text]
+        base_timeout = (
+            timeout_seconds
+            if timeout_seconds is not None
+            else getattr(self._settings, "voice_audio_timeout_seconds", 18.0)
+        )
+        audio_model = self._audio_model
+        audio_max_tokens = getattr(self._settings, "voice_audio_max_output_tokens", 1800)
+        last_raw: Optional[str] = None
+
+        def _invoke_audio(
+            tok_limit: int,
+            req_timeout: float,
+            max_retries_override: Optional[int] = None,
+        ) -> VoiceMealParseResponse:
+            nonlocal last_raw
+            cfg = self._build_generation_config(
+                AUDIO_MEAL_PARSER_SYSTEM_INSTRUCTION,
+                VoiceMealParseResponse,
+                req_timeout,
+                max_output_tokens=tok_limit,
+            )
+
+            def _call() -> types.GenerateContentResponse:
+                return self.client.models.generate_content(
+                    model=audio_model,
+                    contents=contents,
+                    config=cfg,
+                )
+
+            resp = self._execute_with_retry(
+                "parse_voice_audio",
+                _call,
+                max_retries=max_retries_override,
+                is_cancelled=is_cancelled,
+            )
+            last_raw = self._extract_and_clean_response_text("parse_voice_audio", resp)
+            return self._validate_voice_response_text("parse_voice_audio", last_raw, transcript_fallback=None)
+
+        logger.info(
+            "[Timing][%s] Gemini [parse_voice_audio] starting (mime=%s, bytes=%d, model=%s)",
+            get_current_request_id(),
+            mime_type,
+            len(audio_bytes),
+            audio_model,
+        )
+
         try:
-            parsed_data = VoiceMealParseResponse.model_validate_json(raw_text)
-            parsed_data.transcript = transcript.strip()
-            t_val_elapsed = time.perf_counter() - t_val_start
-            logger.info("[Timing][%s] Gemini [%s] Pydantic validation took %.4fs", get_current_request_id(), "parse_voice_meal", t_val_elapsed)
-            return parsed_data
-        except ValidationError as val_err:
-            try:
-                data = json.loads(raw_text)
-                if isinstance(data, dict):
-                    if "transcript" not in data:
-                        data["transcript"] = transcript.strip()
-                    parsed_data = VoiceMealParseResponse.model_validate(data)
-                    t_val_elapsed = time.perf_counter() - t_val_start
-                    logger.info("[Timing][%s] Gemini [%s] Pydantic validation took %.4fs", get_current_request_id(), "parse_voice_meal", t_val_elapsed)
-                    return parsed_data
-            except Exception:
-                pass
-            raise ModelOutputValidationError(
-                f"Model response failed validation schema: {str(val_err)}",
-                provider=self.name,
-                error_category="pydantic_validation_failed",
-            ) from val_err
-        except Exception as exc:
-            raise ModelOutputValidationError(
-                f"Failed to decode model JSON output: {str(exc)}",
-                provider=self.name,
-                error_category="malformed_json",
-            ) from exc
+            return _invoke_audio(audio_max_tokens, base_timeout)
+        except ModelOutputValidationError as val_err:
+            if getattr(val_err, "error_category", None) == "content_filtered":
+                raise
+            rem = get_remaining_request_deadline()
+            repair_enabled = getattr(self._settings, "voice_audio_repair_enabled", True)
+            if (
+                not repair_enabled
+                or is_request_cancelled(is_cancelled)
+                or (rem is not None and rem < 6.0)
+            ):
+                raise
+
+            repair_timeout = min(base_timeout, rem) if rem is not None else min(base_timeout, 12.0)
+            logger.warning(
+                "[Timing][%s] Gemini [parse_voice_audio] attempting single bounded repair "
+                "(failure_category=%s, has_raw=%s, remaining=%.2fs)",
+                get_current_request_id(),
+                getattr(val_err, "error_category", None),
+                bool(last_raw),
+                rem if rem is not None else repair_timeout,
+            )
+            if last_raw:
+                repair_cfg = self._build_generation_config(
+                    AUDIO_MEAL_PARSER_SYSTEM_INSTRUCTION,
+                    VoiceMealParseResponse,
+                    repair_timeout,
+                    max_output_tokens=max(audio_max_tokens, 2000),
+                )
+                repair_prompt = (
+                    "Fix this malformed JSON so it strictly conforms to the VoiceMealParseResponse schema. "
+                    "Do not invent foods, weights, or numbers not present below:\n"
+                    f"{last_raw[:4000]}"
+                )
+
+                def _repair_json_call() -> types.GenerateContentResponse:
+                    return self.client.models.generate_content(
+                        model=audio_model,
+                        contents=[repair_prompt],
+                        config=repair_cfg,
+                    )
+
+                repaired_resp = self._execute_with_retry(
+                    "parse_voice_audio_repair",
+                    _repair_json_call,
+                    max_retries=0,
+                    is_cancelled=is_cancelled,
+                )
+                repaired_raw = self._extract_and_clean_response_text("parse_voice_audio_repair", repaired_resp)
+                return self._validate_voice_response_text("parse_voice_audio_repair", repaired_raw, transcript_fallback=None)
+
+            # Empty/truncated output: single bounded audio re-attempt with bumped token limit
+            return _invoke_audio(max(audio_max_tokens, 2400), repair_timeout, max_retries_override=0)

@@ -174,6 +174,21 @@ class BaseAIProvider(ABC):
         """Parse voice transcript and return normalized VoiceMealParseResponse."""
         pass
 
+    def parse_voice_audio(
+        self,
+        audio_bytes: bytes,
+        mime_type: str = "audio/mp4",
+        meal_context: Optional[str] = None,
+        timeout_seconds: Optional[float] = None,
+        is_cancelled: Optional[Callable[[], bool]] = None,
+    ) -> VoiceMealParseResponse:
+        """Interpret spoken meal audio directly; override in audio-capable providers."""
+        raise AIUnavailableError(
+            f"Provider [{self.name}] does not support direct audio meal parsing.",
+            provider=self.name,
+            error_category="audio_unsupported",
+        )
+
 
 SYSTEM_INSTRUCTION = (
     "You are an expert dietary analysis AI specializing in global, Indian, Asian, and Western cuisines. "
@@ -189,9 +204,22 @@ VOICE_PARSER_SYSTEM_INSTRUCTION = (
     "Parse spoken meal transcripts (English/Indian/Hinglish) into compact itemized nutrition JSON.\n"
     "Rules:\n"
     "1. Split compound/Hinglish meals cleanly (e.g. 'do aloo paratha dahi ke saath, ek cup adrak chai' -> Aloo Paratha, Plain Dahi, Adrak Chai).\n"
-    "2. Honor in-flight corrections ('one roti, actually make that two', 'no sugar') and note briefly in 'warnings'.\n"
+    "2. Honor in-flight corrections ('one roti, actually make that two', 'no sugar') and emit ONLY the corrected final quantity; note briefly in 'warnings'.\n"
     "3. Realistic weights: 1 roti~35g, 1 paratha~100g, 1 bowl dal/rice~160g, 1 tbsp ghee/oil~15g, 1 cup chai~150ml.\n"
     "4. Set state ('raw'|'cooked'|'unspecified'); adjust macros for raw vs cooked.\n"
     "5. Never invent unspoken foods; obey Calories~=4P+4C+9F with non-negative numbers. Keep text brief."
+)
+
+AUDIO_MEAL_PARSER_SYSTEM_INSTRUCTION = (
+    "You are an expert bilingual nutrition audio interpreter for Bites2Go. Listen directly to the user's spoken meal audio "
+    "(English, Indian English, Hindi, or Hinglish) and return strictly valid JSON matching VoiceMealParseResponse.\n"
+    "Core Rules:\n"
+    "1. Accurate Transcription: Set 'transcript' to a faithful, readable transcription of what was spoken in the audio (preserving spoken self-corrections in transcript while resolving final quantities in 'items').\n"
+    "2. Spoken Self-Corrections: Whenever the speaker revises a quantity, state, or item ('one banana, actually make that two bananas', 'two rotis, no wait, three', '100g rice cooked not raw'), output ONLY the final corrected value in 'items' and explain the adjustment concisely in 'warnings'.\n"
+    "3. Item & Unit Fidelity: Keep specific dish names intact ('Sourdough toast' stays 'Sourdough toast'; 'Scrambled eggs' uses quantity=2.0, unit='egg', NOT 2 arbitrary servings; 'Scoop of whey protein' becomes 'Whey protein powder' with confidence_level='medium' or 'low', brand/scoop-size uncertainty in 'notes', plausible alternatives in 'alternatives', and a question in 'clarifying_questions'—never flatten to generic 'protein').\n"
+    "4. Modifiers Without Invented Weights: Put unmeasured additions/accompaniments into 'modifiers' (e.g. Sourdough toast with modifiers=['with butter'], Tea with modifiers=['unsweetened']) and ask clarifying weight questions rather than inventing a butter/ghee/oil weight unless explicitly stated.\n"
+    "5. Unspecified Portions & Honesty: If speech mentions a food with no portion/quantity at all (e.g. 'some curry'), set portion_specified=false, estimated_grams=null, calories=null, protein=null, carbohydrates=null, fat=null, confidence_level='low', and ask for the portion in 'clarifying_questions'. For clear countable items/explicit grams, provide realistic standard weights/macros consistent with Calories~=4*P+4*C+9*F.\n"
+    "6. Silence / Non-Food Audio: If there is no intelligible speech or no food mentioned, set success=false, transcript='', items=[], and add an honest warning.\n"
+    "7. Never fabricate unspoken foods, brands, weights, or ingredients."
 )
 

@@ -205,41 +205,49 @@ class ParsedVoiceFoodItem(BaseModel):
     preparation: Optional[str] = Field(
         default=None,
         max_length=120,
-        description="Preparation method or modifiers (e.g. cooked with ghee, fried, boiled, raw, unsweetened)",
+        description="Preparation method or cooking style (e.g. scrambled, toasted, boiled, cooked with ghee)",
+    )
+    modifiers: list[str] = Field(
+        default_factory=list,
+        description="Unmeasured additions or modifiers noted in speech without inventing weights (e.g. 'with butter', 'no sugar')",
     )
     state: Literal["raw", "cooked", "unspecified"] = Field(
         default="unspecified",
         description="State of the ingredient/food: raw or cooked weight",
     )
-    estimated_grams: float = Field(
-        ...,
+    portion_specified: bool = Field(
+        default=True,
+        description="False when spoken input omitted portion size/weight and needs user confirmation",
+    )
+    estimated_grams: Optional[float] = Field(
+        default=None,
         ge=0.1,
         le=5000.0,
-        description="Realistic total weight in grams for the specified quantity",
+        description="Realistic total weight in grams for the specified quantity, or null if unknown/unspecified",
     )
-    calories: float = Field(
-        ...,
+    calories: Optional[float] = Field(
+        default=None,
         ge=0.0,
         le=10000.0,
-        description="Estimated energy in kilocalories for this portion",
+        description="Estimated energy in kilocalories for this portion, or null if unknown",
     )
-    protein: float = Field(
-        ...,
+    protein: Optional[float] = Field(
+        default=None,
         ge=0.0,
         le=1000.0,
-        description="Estimated protein in grams",
+        description="Estimated protein in grams, or null if unknown",
     )
-    carbohydrates: float = Field(
-        ...,
+    carbohydrates: Optional[float] = Field(
+        default=None,
         ge=0.0,
         le=1000.0,
-        description="Estimated carbohydrates in grams",
+        description="Estimated carbohydrates in grams, or null if unknown",
     )
-    fat: float = Field(
-        ...,
+    fat: Optional[float] = Field(
+        default=None,
         ge=0.0,
         le=1000.0,
-        description="Estimated dietary fat in grams",
+        description="Estimated dietary fat in grams, or null if unknown",
     )
     confidence: float = Field(
         default=0.85,
@@ -278,18 +286,30 @@ class ParsedVoiceFoodItem(BaseModel):
 
     @model_validator(mode="after")
     def validate_macronutrient_consistency(self) -> "ParsedVoiceFoodItem":
-        """Verify that macros are consistent with calories."""
-        macro_calories = (self.protein * 4.0) + (self.carbohydrates * 4.0) + (self.fat * 9.0)
-        if self.calories > 0 and macro_calories > max(self.calories * 2.5, self.calories + 300):
-            self.calories = round(macro_calories, 1)
+        """Verify that present macros are consistent with calories without inventing nulls."""
+        if (
+            self.calories is not None
+            and self.protein is not None
+            and self.carbohydrates is not None
+            and self.fat is not None
+        ):
+            macro_calories = (self.protein * 4.0) + (self.carbohydrates * 4.0) + (self.fat * 9.0)
+            if self.calories > 0 and macro_calories > max(self.calories * 2.5, self.calories + 300):
+                self.calories = round(macro_calories, 1)
 
         self.quantity = round(self.quantity, 2)
-        self.estimated_grams = round(self.estimated_grams, 1)
-        self.calories = round(self.calories, 1)
-        self.protein = round(self.protein, 1)
-        self.carbohydrates = round(self.carbohydrates, 1)
-        self.fat = round(self.fat, 1)
+        if self.estimated_grams is not None:
+            self.estimated_grams = round(self.estimated_grams, 1)
+        if self.calories is not None:
+            self.calories = round(self.calories, 1)
+        if self.protein is not None:
+            self.protein = round(self.protein, 1)
+        if self.carbohydrates is not None:
+            self.carbohydrates = round(self.carbohydrates, 1)
+        if self.fat is not None:
+            self.fat = round(self.fat, 1)
         self.confidence = round(self.confidence, 2)
+        self.modifiers = [m.strip() for m in self.modifiers if isinstance(m, str) and m.strip()]
         return self
 
 

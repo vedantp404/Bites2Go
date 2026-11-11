@@ -158,6 +158,7 @@ class DualProviderService:
         settings: Optional[Settings] = None,
         photo_openrouter_provider: Optional[BaseAIProvider] = None,
         voice_openrouter_provider: Optional[BaseAIProvider] = None,
+        voice_audio_provider: Optional[BaseAIProvider] = None,
         cooldown_tracker: Optional[ProviderCooldownTracker] = None,
     ) -> None:
         self._settings = settings or get_settings()
@@ -227,6 +228,20 @@ class DualProviderService:
         # Preserve .openrouter attribute pointing to photo_openrouter for backward test compatibility
         self._openrouter = self._photo_openrouter
 
+        audio_model = getattr(self._settings, "voice_audio_model", self._settings.gemini_model)
+        if voice_audio_provider is not None:
+            self._voice_audio_gemini = voice_audio_provider
+        elif gemini_provider is not None:
+            self._voice_audio_gemini = gemini_provider
+        else:
+            self._voice_audio_gemini = GeminiProvider(
+                settings=self._settings,
+                model=audio_model,
+                timeout_seconds=getattr(self._settings, "voice_audio_timeout_seconds", 18.0),
+                max_retries=min(1, self._settings.gemini_max_retries),
+                retry_on_rate_limit=False,
+            )
+
     @property
     def gemini(self) -> BaseAIProvider:
         return self._gemini
@@ -243,8 +258,15 @@ class DualProviderService:
     def voice_openrouter(self) -> BaseAIProvider:
         return self._voice_openrouter
 
-    def _resolve_task_providers(self, task: str) -> tuple[BaseAIProvider, BaseAIProvider]:
-        """Return (primary_provider, fallback_provider) for 'photo' or 'voice' tasks."""
+    def _resolve_task_providers(self, task: str) -> tuple[BaseAIProvider, Optional[BaseAIProvider]]:
+        """Return (primary_provider, fallback_provider) for 'photo', 'voice', or 'voice_audio' tasks."""
+        if task == "voice_audio":
+            fb_name = getattr(self._settings, "voice_audio_fallback_provider", "none").lower()
+            fb: Optional[BaseAIProvider] = (
+                self._voice_openrouter if fb_name == "openrouter" else None
+            )
+            return self._voice_audio_gemini, fb
+
         if task == "voice":
             if self._settings.voice_primary_provider.lower() == "gemini":
                 return self._voice_gemini, self._voice_openrouter
@@ -266,7 +288,9 @@ class DualProviderService:
 
     @property
     def fallback_provider(self) -> BaseAIProvider:
-        return self._resolve_task_providers("photo")[1]
+        fb = self._resolve_task_providers("photo")[1]
+        assert fb is not None
+        return fb
 
     @property
     def voice_primary_provider(self) -> BaseAIProvider:
@@ -274,7 +298,13 @@ class DualProviderService:
 
     @property
     def voice_fallback_provider(self) -> BaseAIProvider:
-        return self._resolve_task_providers("voice")[1]
+        fb = self._resolve_task_providers("voice")[1]
+        assert fb is not None
+        return fb
+
+    @property
+    def voice_audio_primary_provider(self) -> BaseAIProvider:
+        return self._resolve_task_providers("voice_audio")[0]
 
     @property
     def is_fallback_enabled(self) -> bool:
@@ -294,10 +324,14 @@ class DualProviderService:
             if task == "voice":
                 return self._settings.voice_openrouter_model
             return self._settings.photo_openrouter_model
+        if task == "voice_audio":
+            return getattr(self._settings, "voice_audio_model", self._settings.gemini_model)
         return self._settings.gemini_model
 
     def _default_provider_timeout(self, task: str, provider_name: str, is_fallback: bool) -> float:
         """Return configured timeout budget for the specific task/provider role."""
+        if task == "voice_audio":
+            return getattr(self._settings, "voice_audio_timeout_seconds", 18.0)
         if task == "voice":
             if provider_name == "openrouter":
                 return (
@@ -328,7 +362,7 @@ class DualProviderService:
         effective_budget = min(total_budget, ctx_remaining) if ctx_remaining is not None else total_budget
 
         primary, fallback = self._resolve_task_providers(task)
-        fallback_available = self.is_fallback_enabled and fallback.is_configured
+        fallback_available = bool(fallback is not None and self.is_fallback_enabled and fallback.is_configured)
 
         start_time = time.perf_counter()
         logger.info(
@@ -338,11 +372,11 @@ class DualProviderService:
             task,
             effective_budget,
             primary.name,
-            fallback.name if fallback_available else "none",
+            fallback.name if (fallback is not None and fallback_available) else "none",
         )
 
         primary_model_id = self._provider_model_id(task, primary.name)
-        fallback_model_id = self._provider_model_id(task, fallback.name)
+        fallback_model_id = self._provider_model_id(task, fallback.name) if fallback is not None else "none"
 
         def remaining_budget() -> float:
             elapsed = time.perf_counter() - start_time
@@ -351,7 +385,7 @@ class DualProviderService:
             return min(local_rem, live_ctx_rem) if live_ctx_rem is not None else local_rem
 
         def _attempt_fallback(primary_err: Exception, reason: str) -> T:
-            if not fallback_available:
+            if not fallback_available or fallback is None:
                 raise primary_err
             if is_request_cancelled(is_cancelled):
                 raise AIRequestCancelledError("Client disconnected / request cancelled.", provider=fallback.name)
@@ -605,6 +639,35 @@ class DualProviderService:
             reserve_fallback_seconds=14.0,
             invoke_fn=lambda provider, timeout_s: provider.parse_voice_meal(
                 transcript=transcript,
+                meal_context=meal_context,
+                timeout_seconds=timeout_s,
+                is_cancelled=is_cancelled,
+            ),
+            is_cancelled=is_cancelled,
+        )
+
+    def parse_voice_audio(
+        self,
+        audio_bytes: bytes,
+        mime_type: str = "audio/mp4",
+        meal_context: Optional[str] = None,
+        deadline_seconds: Optional[float] = None,
+        is_cancelled: Optional[Callable[[], bool]] = None,
+    ) -> VoiceMealParseResponse:
+        """Execute audio-native meal recognition using multimodal Gemini audio understanding."""
+        total_budget = (
+            deadline_seconds
+            if deadline_seconds is not None
+            else getattr(self._settings, "voice_audio_server_deadline_seconds", 32.0)
+        )
+        return self._execute_with_failover(
+            task="voice_audio",
+            operation_name="parse_voice_audio",
+            total_budget=total_budget,
+            reserve_fallback_seconds=0.0,
+            invoke_fn=lambda provider, timeout_s: provider.parse_voice_audio(
+                audio_bytes=audio_bytes,
+                mime_type=mime_type,
                 meal_context=meal_context,
                 timeout_seconds=timeout_s,
                 is_cancelled=is_cancelled,

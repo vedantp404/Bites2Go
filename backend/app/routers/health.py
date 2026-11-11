@@ -51,6 +51,19 @@ def health_check() -> dict:
             if settings.voice_fallback_provider == "gemini"
             else settings.voice_openrouter_model
         ),
+        "voice_audio_primary_provider": getattr(settings, "voice_audio_primary_provider", "gemini"),
+        "voice_audio_fallback_provider": getattr(settings, "voice_audio_fallback_provider", "none"),
+        "voice_audio_model": getattr(settings, "voice_audio_model", settings.gemini_model),
+        "voice_audio_supported_formats": [
+            "audio/m4a",
+            "audio/mp4",
+            "audio/aac",
+            "audio/mpeg",
+            "audio/wav",
+            "audio/ogg",
+            "audio/webm",
+            "audio/flac",
+        ],
         "rate_limit_cooldowns": get_active_cooldowns_if_initialized(),
         "commit": settings.git_commit[:8],
     }

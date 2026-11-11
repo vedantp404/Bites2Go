@@ -48,6 +48,16 @@ class Settings:
         self.max_image_size_bytes: int = int(os.getenv("MAX_IMAGE_SIZE_BYTES", str(10 * 1024 * 1024)))
         self.max_image_dimension: int = int(os.getenv("MAX_IMAGE_DIMENSION", "1024"))
         self.image_jpeg_quality: int = int(os.getenv("IMAGE_JPEG_QUALITY", "82"))
+
+        # Audio upload & audio-native AI configuration (Milestone 4F)
+        self.max_audio_size_bytes: int = int(os.getenv("MAX_AUDIO_SIZE_BYTES", str(10 * 1024 * 1024)))
+        self.voice_audio_primary_provider: str = os.getenv("VOICE_AUDIO_PRIMARY_PROVIDER", "gemini").strip().lower()
+        self.voice_audio_fallback_provider: str = os.getenv("VOICE_AUDIO_FALLBACK_PROVIDER", "none").strip().lower()
+        self.voice_audio_model: str = os.getenv("GEMINI_AUDIO_MODEL", self.gemini_model).strip()
+        self.voice_audio_timeout_seconds: float = float(os.getenv("VOICE_AUDIO_TIMEOUT_SECONDS", "18.0"))
+        self.voice_audio_server_deadline_seconds: float = float(os.getenv("VOICE_AUDIO_SERVER_DEADLINE_SECONDS", "32.0"))
+        self.voice_audio_max_output_tokens: int = int(os.getenv("VOICE_AUDIO_MAX_OUTPUT_TOKENS", "1800"))
+        self.voice_audio_repair_enabled: bool = os.getenv("VOICE_AUDIO_REPAIR_ENABLED", "true").lower() in ("true", "1", "yes")
         
         # Request timeout in seconds per attempt (14.0s photo fits safely inside 35s deadline with 21s fallback headroom)
         self.gemini_timeout_seconds: float = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "14.0"))
