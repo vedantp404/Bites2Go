@@ -386,3 +386,7 @@ Reviewed and included the existing Expo58-compatible package/lock pair unchanged
 - [x] Add photo-only120s bypass after two primary timeouts; retain quota checks, fallback deadlines and recovery.
 - [x] Validate192 mobile/133 backend tests, types/lint/format, Doctor20/20 and local Android export.
 - [ ] Approve/deploy backend and approve new preview build above code3; verify production timing and repeated first scans after idle. Status: partially validated; screenshot request remains uncorrelated. See PRODUCT_COMPLETION for evidence/rollback/acceptance.
+
+## Coordinated photo reliability release preparation
+
+Prepared1.0.0/code4 with same package/project/signing source/URL. Backend code remains validated41bf3bc; use the same final release-preparation SHA for deployment and clean-checkout APK build.6 readiness +1 cooldown tests, resolved config and formatting pass; unchanged192/133 implementation validation retained. Process-local preference resets on restart and differs across workers; no global/persistent health claim. docs/PHOTO_RELIABILITY_ROLLOUT.md specifies production timing/config gates, separate push/deploy/build approvals, idle-to-first-scan device acceptance and higher-code mobile rollback without data clearing.21 unrelated dirty files preserved. No production actions/inference; device gate pending.
