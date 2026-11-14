@@ -937,11 +937,20 @@ export function VoiceFoodLoggingModal({
             <View
               style={[
                 styles.errorCard,
-                { backgroundColor: '#FDEDEC', borderColor: '#E74C3C' },
+                {
+                  backgroundColor: t.colors.surface,
+                  borderColor: t.colors.error,
+                },
               ]}
             >
               <Text
-                style={{ color: '#922B21', fontSize: 13, fontWeight: '600' }}
+                accessibilityLiveRegion="polite"
+                selectable
+                style={{
+                  color: t.colors.error,
+                  fontSize: 14,
+                  fontWeight: '600',
+                }}
               >
                 {errorMessage}
               </Text>
@@ -961,7 +970,7 @@ export function VoiceFoodLoggingModal({
                   >
                     <Text
                       style={{
-                        color: '#FFFFFF',
+                        color: t.colors.onPrimary,
                         fontSize: 13,
                         fontWeight: '700',
                       }}
@@ -1786,7 +1795,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 8,
     borderWidth: 1,
-    minHeight: 40,
+    minHeight: 48,
     justifyContent: 'center',
     alignItems: 'center',
   },

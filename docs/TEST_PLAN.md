@@ -1,3 +1,21 @@
+## Completion program R1 — 2026-11-14
+
+Implemented locally: validated voice/text/photo response contracts, preserved unknown voice nutrients, rejected invalid photo weights before the scanner's 100g fallback, added server-generated error references and content-free request completion logs, corrected AI upload disclosure and themed the voice recovery card (48dp controls/selectable references). See [PRODUCT_COMPLETION.md](PRODUCT_COMPLETION.md) for roadmap, acceptance, rollback, risks and secure Render setup.
+
+Validation: backend 132 passed; mobile 177 passed; typecheck/lint/format passed; Expo Doctor 20/20; public Expo config and Android Hermes export passed. Baseline 129/171. Two old timing assertions were updated to use returned server IDs; regression coverage still verifies timing/correlation. Existing Node module-type, Starlette/httpx deprecation and Metro color warnings remain. Fresh audit exits 1 with 11 affected packages (1 high Zod, 10 moderate minimatch/tooling rows); public release remains blocked. No forced fixes or dependency changes by this run.
+
+Hosted health/OpenAPI returned 200 without inference; production voice failure is not diagnosed. No adb device, live inference, APK build, authenticated Render logs or deployment verification. Render monitoring is unconfigured. Supabase remains the recommended account foundation; account/session/consent implementation and broad UI redesign are pending. Existing user edits to planning/package/lock/evaluation/catalogue files are preserved and excluded. Whole-tree whitespace check reports preexisting trailing blank lines in those files; scoped commit diff must pass. Local commit authorized; production push/build/deploy requires owner approval under the new brief.
+
+Next: R2 device/request evidence when access is available; independently R3 mocked photo cancellation/error sanitization and UI state consistency. Do not rewrite SQLite, enable account sync or start live benchmarks to bypass missing evidence.
+
+Device acceptance for this milestone (pending):
+
+1. On the matching approved APK/backend, record a synthetic meal in English/Hindi/Hinglish, then review/correct before saving once; verify the selected date/category and reopen offline.
+2. Exercise microphone denial, cancel, interrupted recording, weak network, timeout and retry. Keep manual search usable and confirm no duplicate entries. Never clear app data to test.
+3. Use mocked invalid JSON/zero-weight photo results in development: show a recoverable error and never invent a 100g portion.
+4. In light/dark/system modes, select/copy an error reference and correlate it with server logs. Check 48dp recovery buttons, TalkBack announcement and large-text wrapping.
+5. Share only request ID, operation, UTC time and app build. Do not share recordings/transcripts/photos/health data or raw secrets in reports.
+
 # Test strategy
 
 ## My Meals verification

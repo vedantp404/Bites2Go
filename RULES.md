@@ -1,3 +1,7 @@
+## Current completion-program authority (2026-11-14)
+
+The owner's Autonomous Product Completion Program supersedes older stage stop rules and automatic-push instructions below. Follow the bounded roadmap in `docs/PRODUCT_COMPLETION.md` (repository root). Work locally on master; preserve and exclude preexisting user edits. Verified focused local commits are authorized. Production pushes/merges, Render deploys, cloud builds, publishing, live AI inference, production auth and real messages require explicit approval. Do not claim background monitoring is active. Update TASKS and MEMORY with evidence and remaining gates after each milestone.
+
 # Development rules
 
 ## Default Git workflow

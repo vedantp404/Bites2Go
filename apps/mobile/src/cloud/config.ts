@@ -7,7 +7,8 @@ export function cloudConfiguration(url?: string, key?: string): CloudConfig {
   if (!url?.trim() && !key?.trim())
     return {
       state: 'missing',
-      message: 'Cloud is not configured. Your data stays on this device.',
+      message:
+        'Diary cloud sync is not configured. Saved diary data remains on this device.',
     };
   try {
     const parsed = new URL(url ?? '');

@@ -1,3 +1,11 @@
+import {
+  AIResponseError,
+  readAIResponse,
+  validVoiceResponse,
+  responseRequestId,
+  withResponseReference,
+} from './aiResponse.ts';
+
 /**
  * Voice food logging service: client API caller, natural language interpretation,
  * food catalogue matching, and diary persistence preparation.
@@ -90,6 +98,7 @@ export type OfflineVoiceMatchResult = {
 };
 
 export class VoiceCloudError extends Error {
+  requestId?: string;
   status?: number;
   retryAfterSeconds?: number;
   errorCategory?: string;
@@ -97,6 +106,7 @@ export class VoiceCloudError extends Error {
   constructor(
     message: string,
     opts?: {
+      requestId?: string;
       status?: number;
       retryAfterSeconds?: number;
       errorCategory?: string;
@@ -104,6 +114,7 @@ export class VoiceCloudError extends Error {
   ) {
     super(message);
     this.name = 'VoiceCloudError';
+    this.requestId = opts?.requestId;
     this.status = opts?.status;
     this.retryAfterSeconds = opts?.retryAfterSeconds;
     this.errorCategory = opts?.errorCategory;
@@ -330,8 +341,12 @@ export async function parseVoiceAudio(
       const errorCategory =
         response.headers?.get?.('X-Error-Category') ?? undefined;
       throw new VoiceCloudError(
-        sanitizeVoiceUserMessage(rawDetail, response.status),
+        withResponseReference(
+          sanitizeVoiceUserMessage(rawDetail, response.status),
+          response,
+        ),
         {
+          requestId: responseRequestId(response),
           status: response.status,
           retryAfterSeconds: Number.isFinite(retryAfterNum)
             ? retryAfterNum
@@ -341,8 +356,14 @@ export async function parseVoiceAudio(
       );
     }
 
-    return (await response.json()) as VoiceMealParseResponse;
+    return await readAIResponse(response, validVoiceResponse);
   } catch (err: unknown) {
+    if (err instanceof AIResponseError) {
+      throw new VoiceCloudError(err.message, {
+        requestId: err.requestId,
+        errorCategory: 'invalid_response',
+      });
+    }
     if (err instanceof VoiceCloudError) {
       throw err;
     }
@@ -430,8 +451,12 @@ export async function parseVoiceMeal(
       const errorCategory =
         response.headers?.get?.('X-Error-Category') ?? undefined;
       throw new VoiceCloudError(
-        sanitizeVoiceUserMessage(detail, response.status),
+        withResponseReference(
+          sanitizeVoiceUserMessage(detail, response.status),
+          response,
+        ),
         {
+          requestId: responseRequestId(response),
           status: response.status,
           retryAfterSeconds: Number.isFinite(retryAfterNum)
             ? retryAfterNum
@@ -441,8 +466,14 @@ export async function parseVoiceMeal(
       );
     }
 
-    return (await response.json()) as VoiceMealParseResponse;
+    return await readAIResponse(response, validVoiceResponse);
   } catch (err: unknown) {
+    if (err instanceof AIResponseError) {
+      throw new VoiceCloudError(err.message, {
+        requestId: err.requestId,
+        errorCategory: 'invalid_response',
+      });
+    }
     if (err instanceof VoiceCloudError) {
       throw err;
     }

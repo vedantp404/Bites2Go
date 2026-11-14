@@ -1,3 +1,14 @@
+## Current completion program — R1, 2026-11-14
+
+- [x] Inspect actual master/dependencies/AI paths, preserve existing edits, establish 129 backend / 171 mobile baseline.
+- [x] Implement and test AI response validation, safe request tracing and invalid-photo-weight rejection.
+- [x] Correct upload disclosure and apply semantic theme/48dp recovery controls.
+- [x] Verify 132 backend and 177 mobile tests, types/lint/format, Doctor20/20, config and Android export.
+- [x] Record fresh failing audit (1 high / 10 moderate), roadmap, rollback, Render access limits and account recommendation in docs/PRODUCT_COMPLETION.md.
+- [ ] Verify physical device behavior and identify the reported production voice failure with correlated logs.
+- [ ] Obtain production push/deploy/build approval; no remote release performed in this run.
+- [ ] Complete remaining reliability/UI/account/notification/release milestones in the dependency-aware roadmap.
+
 # Ordered roadmap
 
 ## Milestone 4F — Rebuild Voice Logging Around Audio-Native AI — implemented (awaiting push, deploy & preview APK rebuild approval)

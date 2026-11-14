@@ -3,9 +3,9 @@
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 import logging
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from app.request_diagnostics import RequestDiagnosticsMiddleware
 
 from app.config import get_settings
 from app.routers.health import router as health_router
@@ -56,6 +56,8 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    app.add_middleware(RequestDiagnosticsMiddleware, version=settings.app_version)
+
     # Configure CORS for local development and mobile emulator access
     app.add_middleware(
         CORSMiddleware,
@@ -63,21 +65,12 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["X-Request-ID", "X-Error-Category", "Retry-After"],
     )
 
     # Include routers
     app.include_router(health_router)
     app.include_router(food_router)
-
-    @app.exception_handler(Exception)
-    async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-        """Sanitize unexpected exceptions to prevent internal details or secrets from leaking."""
-        logger.error(f"Unhandled server error on {request.method} {request.url.path}: {type(exc).__name__}")
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"detail": "An internal server error occurred. Please try again."},
-        )
-
 
     return app
 

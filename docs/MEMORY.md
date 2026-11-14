@@ -1,3 +1,13 @@
+## Completion program R1 — 2026-11-14
+
+Implemented locally: validated voice/text/photo response contracts, preserved unknown voice nutrients, rejected invalid photo weights before the scanner's 100g fallback, added server-generated error references and content-free request completion logs, corrected AI upload disclosure and themed the voice recovery card (48dp controls/selectable references). See [PRODUCT_COMPLETION.md](PRODUCT_COMPLETION.md) for roadmap, acceptance, rollback, risks and secure Render setup.
+
+Validation: backend 132 passed; mobile 177 passed; typecheck/lint/format passed; Expo Doctor 20/20; public Expo config and Android Hermes export passed. Baseline 129/171. Two old timing assertions were updated to use returned server IDs; regression coverage still verifies timing/correlation. Existing Node module-type, Starlette/httpx deprecation and Metro color warnings remain. Fresh audit exits 1 with 11 affected packages (1 high Zod, 10 moderate minimatch/tooling rows); public release remains blocked. No forced fixes or dependency changes by this run.
+
+Hosted health/OpenAPI returned 200 without inference; production voice failure is not diagnosed. No adb device, live inference, APK build, authenticated Render logs or deployment verification. Render monitoring is unconfigured. Supabase remains the recommended account foundation; account/session/consent implementation and broad UI redesign are pending. Existing user edits to planning/package/lock/evaluation/catalogue files are preserved and excluded. Whole-tree whitespace check reports preexisting trailing blank lines in those files; scoped commit diff must pass. Local commit authorized; production push/build/deploy requires owner approval under the new brief.
+
+Next: R2 device/request evidence when access is available; independently R3 mocked photo cancellation/error sanitization and UI state consistency. Do not rewrite SQLite, enable account sync or start live benchmarks to bypass missing evidence.
+
 # Project memory
 
 ## Current handoff: Milestone 4F — Audio-Native Voice Meal Logging

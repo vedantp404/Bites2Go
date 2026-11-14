@@ -6,7 +6,6 @@ import logging
 import threading
 import time
 from typing import Optional
-import uuid
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel, Field
 
@@ -139,7 +138,7 @@ async def recognize_food(
     - Enforces hard server deadline budgets and non-blocking monitor cleanup.
     """
     t_endpoint_start = time.perf_counter()
-    req_id = request.headers.get("x-request-id") or uuid.uuid4().hex[:8]
+    req_id = request.state.request_id
     req_id_token = current_request_id.set(req_id)
     logger.info("[Timing][%s] Endpoint [recognize_food] started", req_id)
 
@@ -312,7 +311,7 @@ async def recognize_food_base64(
 ) -> FoodRecognitionResponse:
     """Analyze a base64-encoded food image string in-memory."""
     t_endpoint_start = time.perf_counter()
-    req_id = request.headers.get("x-request-id") or uuid.uuid4().hex[:8]
+    req_id = request.state.request_id
     req_id_token = current_request_id.set(req_id)
     logger.info("[Timing][%s] Endpoint [recognize_food_base64] started", req_id)
 
@@ -557,7 +556,7 @@ async def parse_voice_meal(
     - Enforces hard server deadline budgets and non-blocking monitor cleanup.
     """
     t_endpoint_start = time.perf_counter()
-    req_id = request.headers.get("x-request-id") or uuid.uuid4().hex[:8]
+    req_id = request.state.request_id
     req_id_token = current_request_id.set(req_id)
     logger.info("[Timing][%s] Endpoint [parse_voice_meal] started", req_id)
 
@@ -712,7 +711,7 @@ async def parse_voice_audio(
     - Enforces bounded server deadline budgets before mobile upload timeout.
     """
     t_endpoint_start = time.perf_counter()
-    req_id = request.headers.get("x-request-id") or uuid.uuid4().hex[:8]
+    req_id = request.state.request_id
     req_id_token = current_request_id.set(req_id)
     logger.info("[Timing][%s] Endpoint [parse_voice_audio] started", req_id)
 

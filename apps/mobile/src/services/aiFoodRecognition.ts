@@ -1,3 +1,9 @@
+import {
+  readAIResponse,
+  validPhotoResponse,
+  withResponseReference,
+} from './aiResponse.ts';
+
 /**
  * Client service for connecting the mobile app to the Bites2Go AI backend.
  */
@@ -184,10 +190,10 @@ export async function recognizeFoodFromImage(
           // Retain the default error message.
         }
 
-        throw new Error(detail);
+        throw new Error(withResponseReference(detail, response));
       }
 
-      return (await response.json()) as FoodRecognitionResult;
+      return await readAIResponse(response, validPhotoResponse);
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') {
         throw new Error(
@@ -244,10 +250,10 @@ export async function recognizeFoodFromImage(
         // Retain the default error message.
       }
 
-      throw new Error(detail);
+      throw new Error(withResponseReference(detail, response));
     }
 
-    return (await response.json()) as FoodRecognitionResult;
+    return await readAIResponse(response, validPhotoResponse);
   } catch (err: unknown) {
     if (err instanceof Error && err.name === 'AbortError') {
       throw new Error(

@@ -37,9 +37,10 @@ export default function ProfileScreen() {
           <Text style={ui.label}>Offline mode / not signed in</Text>
           <Text style={ui.body}>{cloud.message}</Text>
           <Text style={ui.body}>
-            No records are uploaded. Food logging, history, goals and appearance
-            work without an account. Cloud sign-in and synchronisation are not
-            available yet.
+            Saved diary data stays on this device; account sign-in and diary
+            sync are not enabled. When you use AI analysis, your selected photo,
+            recording or meal description is sent to our backend and AI
+            providers. Manual food logging, history and goals work offline.
           </Text>
         </Card>
         <HealthStatus />

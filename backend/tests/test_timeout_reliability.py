@@ -401,9 +401,9 @@ def test_timing_logs_emitted_on_success(
             assert resp_voice.status_code == 200
 
         # Assert timing logs with correlation ID for photo
-        assert any("[Timing][test-req-photo] Endpoint [recognize_food] completed successfully" in msg for msg in caplog.messages)
+        assert any(f"[Timing][{resp.headers['x-request-id']}] Endpoint [recognize_food] completed successfully" in msg for msg in caplog.messages)
         # Assert timing logs with correlation ID for voice
-        assert any("[Timing][test-req-voice] Endpoint [parse_voice_meal] completed successfully" in msg for msg in caplog.messages)
+        assert any(f"[Timing][{resp_voice.headers['x-request-id']}] Endpoint [parse_voice_meal] completed successfully" in msg for msg in caplog.messages)
         # Assert cleanup timing
         assert any("Cancellation-monitor cleanup took" in msg for msg in caplog.messages)
 
@@ -521,7 +521,7 @@ def test_cancellation_monitor_cleanup_is_prompt(
         # Check cleanup log recorded < 0.05s
         cleanup_logs = [msg for msg in caplog.messages if "Cancellation-monitor cleanup took" in msg]
         assert len(cleanup_logs) >= 1
-        assert any("[Timing][test-cleanup-fast]" in msg for msg in cleanup_logs)
+        assert any(f"[Timing][{resp.headers['x-request-id']}]" in msg for msg in cleanup_logs)
 
     finally:
         client.app.dependency_overrides.clear()
