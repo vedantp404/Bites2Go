@@ -371,3 +371,7 @@ Phase 1A recovery: interrupted scanner work recovered and final lifecycle lint i
 ## Phase 1B photo evidence and transport fix — 2026-11-14
 
 Verified latest EAS preview6447f478 (1.0.0/code2, source1f8a11c) predates Phase1A; installed APK unknown (no adb device). Render auth unavailable; supplied backend successes remain uncorrelated. Fixed reproduced plain-Error leakage and false timeout classification for unsolicited native AbortError. Both transports tested:22 targeted/186 full mobile tests, types/lint/format, Doctor20/20 pass. No live inference/push/deploy/build, dependency or diary change. All23 existing modified files preserved. Physical acceptance pending; exact protocol and secure Render setup in docs/PRODUCT_COMPLETION.md. Phase1C not started.
+
+## Device-acceptance release preparation
+
+Prepared1.0.0/code3, same com.bites2go/EAS project, remote signing source and explicit preview backend URL. 186 tests/types/lint/format/Doctor20/20/config/local Android export pass; export credential-pattern scan zero. No cloud build/push/deploy. Preserved23 user edits. Build source must explicitly review the uncommitted package/lock pair; signing/installed-version continuity and final APK secrets scan remain gates. See docs/DEVICE_ACCEPTANCE_RELEASE.md for exact upgrade and acceptance instructions.

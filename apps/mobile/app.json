@@ -14,7 +14,7 @@
     },
     "android": {
       "package": "com.bites2go",
-      "versionCode": 2,
+      "versionCode": 3,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",

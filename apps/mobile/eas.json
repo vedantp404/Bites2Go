@@ -1,6 +1,7 @@
 {
   "cli": {
-    "version": ">= 16.0.0"
+    "version": ">= 16.0.0",
+    "appVersionSource": "local"
   },
   "build": {
     "development": {
@@ -14,6 +15,11 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "environment": "preview",
+      "credentialsSource": "remote",
+      "env": {
+        "EXPO_PUBLIC_AI_BACKEND_URL": "https://bites2go-api.onrender.com"
       }
     },
     "production": {}

@@ -125,3 +125,7 @@ Secure Render setup: install Windows CLI from https://render.com/docs/cli, run `
 Use `render logs --help` to verify flags. Relevant log retention may already have expired; do not interpret an empty result as proof no request occurred. Share only IDs/status/timing/deployment, not raw logs. Official command reference: https://render.com/docs/cli-reference.
 
 Phase1B code is ready for physical acceptance; reliability on the phone is not yet demonstrated. Phase1C voice diagnosis may be authorized separately, but has not started and Phase1 overall remains unaccepted. No Phase2/3 work.
+
+## Device-acceptance release preparation
+
+Prepared1.0.0/code3, same com.bites2go/EAS project, remote signing source and explicit preview backend URL. 186 tests/types/lint/format/Doctor20/20/config/local Android export pass; export credential-pattern scan zero. No cloud build/push/deploy. Preserved23 user edits. Build source must explicitly review the uncommitted package/lock pair; signing/installed-version continuity and final APK secrets scan remain gates. See docs/DEVICE_ACCEPTANCE_RELEASE.md for exact upgrade and acceptance instructions.
