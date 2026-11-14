@@ -375,3 +375,7 @@ Verified latest EAS preview6447f478 (1.0.0/code2, source1f8a11c) predates Phase1
 ## Device-acceptance release preparation
 
 Prepared1.0.0/code3, same com.bites2go/EAS project, remote signing source and explicit preview backend URL. 186 tests/types/lint/format/Doctor20/20/config/local Android export pass; export credential-pattern scan zero. No cloud build/push/deploy. Preserved23 user edits. Build source must explicitly review the uncommitted package/lock pair; signing/installed-version continuity and final APK secrets scan remain gates. See docs/DEVICE_ACCEPTANCE_RELEASE.md for exact upgrade and acceptance instructions.
+
+## Final preview blockers
+
+Reviewed and included the existing Expo58-compatible package/lock pair unchanged; isolated clean offline npm ci succeeds(800packages), Expo dependency check and npm ls pass. Public EAS default signing metadata obtained; device APK certificate comparison remains pending. Render now200 twice, self-reported1f8a11cf and no X-Request-ID: R1 tracing deployment still needed for correlation. Existing23 file contents preserved;21 unrelated edits remain uncommitted. Exact approval-gated push/clean-checkout/build/install sequence and certificate fingerprint recorded in docs/DEVICE_ACCEPTANCE_RELEASE.md. No push/deploy/build or credential change.

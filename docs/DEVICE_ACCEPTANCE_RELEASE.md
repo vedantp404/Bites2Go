@@ -8,7 +8,7 @@ Package com.bites2go and EAS project1e504316-51f2-4b43-ab54-ffcd26d92eba retaine
 
 186 mobile tests, types/lint/format, Doctor20/20, public Expo config and local Android export passed on the current working environment. Resolved config confirms package/code. Export contains the expected URL; scoped credential-pattern scan reports zero findings. This is not proof about an APK that has not yet been built. Review actual EAS environment names/settings and final artifact before distribution; never print secret values.
 
-All23 preexisting modified files are preserved. In particular package.json/lockfile remain user edits and are NOT included in the preparation commit. Tests used that installed dependency state. **Before cloud build, review these dependency edits and select a reproducible source archive containing the approved matching manifests/lockfile. Do not silently build all dirty work or assume a clean checkout recreates the tested environment.** Exclude unrelated planning/catalogue/evaluation edits. Re-run relevant checks if the selected dependency state differs.
+Historical preparation checkpoint a5961d8: all23 preexisting modified files were preserved, with package.json/lockfile excluded at that point. The final blocker resolution below now includes this reviewed pair unchanged. Tests used that installed dependency state. **Before cloud build, review these dependency edits and select a reproducible source archive containing the approved matching manifests/lockfile. Do not silently build all dirty work or assume a clean checkout recreates the tested environment.** Exclude unrelated planning/catalogue/evaluation edits. Re-run relevant checks if the selected dependency state differs.
 
 ## Signing and installation gate
 
@@ -41,3 +41,30 @@ Use the existing authenticated CLI; do not change credentials. No production dep
 Recommendation: GO for local preparation; conditional GO for an approved internal build after dependency-source and existing-credential review; NO-GO for distribution until APK certificate/manifest/secrets gates pass. Physical acceptance and existing audit findings block any public-release claim.
 
 References: [Expo versions](https://docs.expo.dev/build-reference/app-versions/), [EAS variables](https://docs.expo.dev/eas/environment-variables), [Android signing](https://developer.android.com/studio/publish/app-signing).
+
+## Final blocker resolution — 2026-11-14
+
+Dependency decision: include the preserved package.json/package-lock.json pair unchanged in this release. Their origin is preexisting uncommitted work (Git cannot establish author/command); intent is evidenced by exact alignment with Expo58.0.25 bundledNativeModules recommendations: crypto.8, dev-client.20, gradient.4, linking.17, router.31, splash.14, sqlite.17, status-bar.5, safe-area5.11.1. Expo range narrows from caret58.0.21 to tilde58.0.25. No React/RN/TS change. Lock review:9 added/18 removed/58 changed package records, primarily Expo/transitive patch/tooling/native optional package updates. Do not independently cherry-pick just the manifest.
+
+Clean offline `npm ci --offline --no-audit --no-fund` succeeded in an isolated temporary directory:800 packages installed, lifecycle scripts enabled, no mutation of app node_modules. `expo install --check` reports up-to-date; npm ls --depth=0 passes. Existing186-test/type/lint/format/Doctor/export results were on this exact dependency pair, so committing it resolves the tested-vs-committed mismatch. No package contents were rewritten. Remaining21 preexisting dirty files are excluded; all23 original file contents remain checksum-identical. ESLint deprecation warning persists; audit blocker remains unresolved. This is reproducible dependency installation, not proof of a native cloud build or unlimited future registry availability.
+
+Signing: successful authenticated read-only EAS query for com.bites2go returns ONE default build credential, keystore ID1b5ccdc1-ccac-4867-a026-3545d3a49f0f, updated2026-10-31T14:31:12.566Z. Public certificate SHA-256:
+`FC4AE2E21063D5232889B4E7CDC1C39959B1D9C6089A81A52DD49B0F83ED05E5`
+Remote preview credentials should select this default unchanged. Metadata predates the known November11 APKs, supporting continuity, but does not prove which certificate signed the installed/distributed APK. No keys/passwords or keystore data were fetched. Before install compare this fingerprint, the newly produced APK signer and the phone's existing base.apk signer; all must match. If not, STOP without uninstalling or changing credentials. Future credential changes invalidate this expectation.
+
+Backend: two bounded health probes now returned200 in0.39s/0.80s; earlier15s timeout is no longer reproduced (cause unknown). Health self-reports commit1f8a11cf and version1.0.0; neither response includes X-Request-ID. Thus R1 tracing is not observed and reported revision predates R1. Existing endpoints suffice for mobile fixes. Approved R1 backend deployment is needed for request-ID acceptance; availability alone is not inference validation. No live AI or deploy performed.
+
+Configuration remains1.0.0/code3, com.bites2go, same EAS project, preview/internal APK, local version source, remote existing credentials, explicit HTTPS backend URL. Device not connected; installed code/certificate remain human-device gates. Conditional GO for approved internal build from the focused committed source; NO-GO for unverified installation/public release. Distribution requires final APK certificate/package/version/secrets verification.
+
+### Exact safe sequence (execute only after explicit approval)
+
+Record RELEASE_SHA as the full hash of the focused dependency-resolution commit containing this section (`git log -1 --format=%H -- apps/mobile/package-lock.json`). Never use the dirty workspace as the upload source.
+
+1. Review all commits from origin/master through RELEASE_SHA. Confirm approval covers push AND any Render automatic deployment it may trigger. If automatic deployment is not approved, hold the push; EAS can build from an approved local source without pushing.
+2. `git fetch origin master`; `git merge-base --is-ancestor origin/master RELEASE_SHA`. STOP on nonzero; do not rebase/reset/force-push. With push approval: `git push origin RELEASE_SHA:refs/heads/master`. Verify `git ls-remote origin refs/heads/master` equals RELEASE_SHA. Do not bypass protection.
+3. Create a new, previously nonexistent operator-chosen clean checkout: `git worktree add --detach C:/Users/Asus/Music/Bites2Go-preview-release RELEASE_SHA`. This leaves all dirty files in the original repository intact. Substitute a new path if it exists; never delete an existing checkout. Verify checkout HEAD and clean status.
+4. In that checkout's apps/mobile, `npm ci`, `npx expo install --check`, `npm test`, `npm run typecheck`. If any gate fails, STOP. The committed preview profile supplies the backend URL; do not copy backend/.env, local credentials or unrelated dirty files.
+5. After cloud-build approval, `eas build --platform android --profile preview --non-interactive`. Reuse existing remote credentials; do not generate replacements on failure. Save build ID/source hash/artifact hash and inspect APK signer, manifest and secret exposure before sharing.
+6. Recheck health and coordinate separately approved backend deployment for tracing. Run the physical acceptance/upgrade steps above. No uninstall, data clear, migration or downgrade flags. If installed versionCode>=3, prepare a higher version and repeat review before building.
+
+No push, production change or cloud build was executed by this resolution. Rollback: revert the focused dependency commit via a new commit; no data migration is involved.
