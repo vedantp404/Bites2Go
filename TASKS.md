@@ -359,3 +359,11 @@ Next: review Stage 2 and verify the screen on Android before Stage 3. Stage 3 ha
 - [x] Rerun 96 tests, types/lint/format, Doctor 20/20, public config and Android export; verify affected libraries absent from this export map.
 - [x] Hash-check preservation of existing Stage 11 work and document mitigations without claiming remediation.
 - [x] User supplied explicit development-only acceptance criteria and conditional commit/push authorization after investigation. Public-release/device gates remain pending.
+
+## R2/U1 photo cancellation — 2026-11-14
+
+Validated locally: Cancel previously ignored taps during analysis; hidden/unmounted scanner requests could complete into stale state. Scanner openings now own separate state, abort on close/unmount/retry, ignore late results and permission/picker callbacks, and clear previous candidates before retry. Both upload methods accept cancellation, retain bounded timeouts and replace raw backend errors with safe status messages and existing request references. Themed error surface, selectable/announced errors and 48dp Cancel control added. No dependencies, routing, diary or nutrition changes.
+
+Tests: 18 targeted and 182 full mobile tests passed; types, lint (after lifecycle correction), formatting and Doctor20/20 passed. Backend unchanged; no live AI, APK build, push or deploy. Native screen interaction remains untested; next priority is Android close/reopen/retry and picker-dismissal acceptance with approved diagnostics. Existing dependency-audit release blocker remains. All 23 preexisting files checksum-preserved. Owner: Codex. Scope: photo lifecycle only; rollback: revert this focused commit. Commit: resolve via git log for this section.
+
+Phase 1A recovery: interrupted scanner work recovered and final lifecycle lint issues resolved. Added image-picker double-tap guard and a regression rejecting late responses even if transport ignores abort. Final types/lint/format and Doctor20/20 passed. Focused local commit only; Phase 1B and later phases not started. Device failure screenshots and supplied Render successes are not correlated; no diagnosis claimed.

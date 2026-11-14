@@ -104,10 +104,7 @@ test('recognizeFoodFromImage: parses structured 504 and 503 error details from b
         await recognizeFoodFromImage('file:///test.jpg', 'fakeBase64');
       },
       (err) => {
-        assert.ok(
-          err instanceof Error &&
-            err.message.includes('timed out after multiple attempts'),
-        );
+        assert.ok(err instanceof Error && err.message.includes('timed out'));
         return true;
       },
     );
@@ -129,7 +126,7 @@ test('recognizeFoodFromImage: parses structured 504 and 503 error details from b
       (err) => {
         assert.ok(
           err instanceof Error &&
-            err.message.includes('temporarily overloaded or unavailable'),
+            err.message.includes('temporarily unavailable'),
         );
         return true;
       },

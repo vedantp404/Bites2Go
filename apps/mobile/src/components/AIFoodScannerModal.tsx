@@ -12,7 +12,7 @@
  * - Explicit confirmation before committing to local SQLite diary.
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -59,7 +59,11 @@ type EditableCandidate = RecognizedFoodItem & {
   reference: FoodNutrients;
 };
 
-export function AIFoodScannerModal({
+export function AIFoodScannerModal(props: AIFoodScannerModalProps) {
+  return props.visible ? <ScannerSession {...props} /> : null;
+}
+
+function ScannerSession({
   visible,
   meal,
   date,
@@ -77,6 +81,10 @@ export function AIFoodScannerModal({
   const [mealSummary, setMealSummary] = useState<string>('');
   const [candidates, setCandidates] = useState<EditableCandidate[]>([]);
 
+  const activeRequest = useRef<AbortController | null>(null);
+  const session = useRef(0);
+  const pickerBusy = useRef(false);
+
   const targetDate = useMemo(() => {
     return date && validDateKey(date) ? date : localDateKey();
   }, [date]);
@@ -91,13 +99,28 @@ export function AIFoodScannerModal({
     setCandidates([]);
   };
 
+  useEffect(() => {
+    session.current += 1;
+    return () => {
+      session.current += 1;
+      activeRequest.current?.abort();
+      activeRequest.current = null;
+    };
+  }, []);
+
   const handleClose = () => {
-    if (loading || saving) return;
+    if (saving) return;
+    session.current += 1;
+    activeRequest.current?.abort();
+    activeRequest.current = null;
     resetState();
     onClose();
   };
 
   const pickImage = async (useCamera: boolean) => {
+    if (pickerBusy.current) return;
+    pickerBusy.current = true;
+    const pickerSession = session.current;
     setError(null);
     try {
       let result: ImagePicker.ImagePickerResult;
@@ -110,6 +133,7 @@ export function AIFoodScannerModal({
 
       if (useCamera) {
         const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (pickerSession !== session.current) return;
         if (status !== 'granted') {
           Alert.alert(
             'Camera Permission Needed',
@@ -121,6 +145,7 @@ export function AIFoodScannerModal({
       } else {
         const { status } =
           await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (pickerSession !== session.current) return;
         if (status !== 'granted') {
           Alert.alert(
             'Gallery Permission Needed',
@@ -131,6 +156,7 @@ export function AIFoodScannerModal({
         result = await ImagePicker.launchImageLibraryAsync(options);
       }
 
+      if (pickerSession !== session.current) return;
       if (result.canceled || !result.assets || result.assets.length === 0) {
         return;
       }
@@ -141,17 +167,29 @@ export function AIFoodScannerModal({
 
       // Immediately trigger recognition
       await analyzeImage(asset.uri, asset.base64 || undefined);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(`Failed to pick image: ${msg}`);
+    } catch {
+      if (pickerSession === session.current)
+        setError('Could not open this photo. Please choose it again.');
+    } finally {
+      pickerBusy.current = false;
     }
   };
 
   const analyzeImage = async (uri: string, b64?: string) => {
+    activeRequest.current?.abort();
+    const request = new AbortController();
+    activeRequest.current = request;
+    const current = () =>
+      activeRequest.current === request && !request.signal.aborted;
+    setCandidates([]);
+    setMealSummary('');
     setLoading(true);
     setError(null);
     try {
-      const result = await recognizeFoodFromImage(uri, b64);
+      const result = await recognizeFoodFromImage(uri, b64, {
+        signal: request.signal,
+      });
+      if (!current()) return;
       setMealSummary(result.summary || '');
 
       const editable: EditableCandidate[] = result.items.map((item) => {
@@ -185,14 +223,17 @@ export function AIFoodScannerModal({
         );
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(
-        msg.includes('Cannot connect') || msg.includes('Failed to fetch')
-          ? 'Cannot reach local AI backend. Ensure backend is running. Manual search remains available offline.'
-          : msg,
-      );
+      if (current())
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'Photo analysis failed. Please retry.',
+        );
     } finally {
-      setLoading(false);
+      if (current()) {
+        activeRequest.current = null;
+        setLoading(false);
+      }
     }
   };
 
@@ -418,6 +459,7 @@ export function AIFoodScannerModal({
             onPress={handleClose}
             style={({ pressed }) => [
               styles.closeBtn,
+              { minHeight: 48, minWidth: 48, justifyContent: 'center' },
               pressed && { opacity: 0.6 },
             ]}
           >
@@ -522,10 +564,10 @@ export function AIFoodScannerModal({
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={t.colors.primary} />
               <Text style={[styles.loadingText, { color: t.colors.text }]}>
-                Analyzing meal with Gemini AI...
+                Analyzing your photo...
               </Text>
               <Text style={[styles.loadingSubtext, { color: t.colors.muted }]}>
-                Detecting food items, portion sizes, and macronutrients
+                You can cancel at any time. Review estimates before saving.
               </Text>
             </View>
           )}
@@ -535,10 +577,18 @@ export function AIFoodScannerModal({
             <View
               style={[
                 styles.errorCard,
-                { backgroundColor: t.colors.highlight },
+                {
+                  backgroundColor: t.colors.surface,
+                  borderColor: t.colors.error,
+                  borderWidth: 1,
+                },
               ]}
             >
-              <Text style={[styles.errorText, { color: t.colors.error }]}>
+              <Text
+                accessibilityLiveRegion="polite"
+                selectable
+                style={[styles.errorText, { color: t.colors.error }]}
+              >
                 {error}
               </Text>
               <View style={{ marginTop: t.spacing.sm }}>

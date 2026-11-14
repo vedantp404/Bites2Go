@@ -153,116 +153,73 @@ export async function checkBackendHealth(): Promise<{
 export async function recognizeFoodFromImage(
   imageUri: string,
   base64Data?: string,
+  opts?: { signal?: AbortSignal; timeoutMs?: number },
 ): Promise<FoodRecognitionResult> {
-  const baseUrl = getBackendBaseUrl();
-
-  // Prefer the base64 endpoint when image data is already available.
-  if (base64Data && base64Data.length > 0) {
-    const url = `${baseUrl}/api/v1/recognize-food/base64`;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 45000);
-
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({
-          image_base64: base64Data,
-        }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        let detail = `Error ${response.status}`;
-
-        try {
-          const errorJson = await response.json();
-
-          if (typeof errorJson?.detail === 'string') {
-            detail = errorJson.detail;
-          } else if (typeof errorJson?.detail?.message === 'string') {
-            detail = errorJson.detail.message;
-          }
-        } catch {
-          // Retain the default error message.
-        }
-
-        throw new Error(withResponseReference(detail, response));
-      }
-
-      return await readAIResponse(response, validPhotoResponse);
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name === 'AbortError') {
-        throw new Error(
-          'AI recognition request timed out. Check your internet connection and try again.',
-        );
-      }
-
-      throw err;
-    } finally {
-      clearTimeout(timeoutId);
-    }
-  }
-
-  // Fallback: upload the image as multipart FormData.
-  const url = `${baseUrl}/api/v1/recognize-food`;
-  const formData = new FormData();
-
-  const filename = imageUri.split('/').pop() || 'photo.jpg';
-  const match = /\.(\w+)$/.exec(filename);
-  const ext = match ? match[1].toLowerCase() : 'jpg';
-  const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
-
-  formData.append('file', {
-    uri: imageUri,
-    name: filename,
-    type: mimeType,
-  } as unknown as Blob);
-
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 45000);
-
+  const cancel = () => controller.abort();
+  if (opts?.signal?.aborted) throw new Error('Photo analysis canceled.');
+  opts?.signal?.addEventListener('abort', cancel, { once: true });
+  const timeout = setTimeout(cancel, opts?.timeoutMs ?? 45000);
   try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-      },
-      body: formData,
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      let detail = `Error ${response.status}`;
-
-      try {
-        const errorJson = await response.json();
-
-        if (typeof errorJson?.detail === 'string') {
-          detail = errorJson.detail;
-        } else if (typeof errorJson?.detail?.message === 'string') {
-          detail = errorJson.detail.message;
-        }
-      } catch {
-        // Retain the default error message.
-      }
-
-      throw new Error(withResponseReference(detail, response));
+    const baseUrl = getBackendBaseUrl();
+    const headers: Record<string, string> = { Accept: 'application/json' };
+    let body: string | FormData;
+    if (base64Data) {
+      headers['Content-Type'] = 'application/json';
+      body = JSON.stringify({ image_base64: base64Data });
+    } else {
+      const filename = imageUri.split('/').pop() || 'photo.jpg';
+      body = new FormData();
+      body.append('file', {
+        uri: imageUri,
+        name: filename,
+        type: /\.png$/i.test(filename) ? 'image/png' : 'image/jpeg',
+      } as unknown as Blob);
     }
-
-    return await readAIResponse(response, validPhotoResponse);
-  } catch (err: unknown) {
-    if (err instanceof Error && err.name === 'AbortError') {
+    const response = await fetch(
+      `${baseUrl}/api/v1/recognize-food${base64Data ? '/base64' : ''}`,
+      {
+        method: 'POST',
+        headers,
+        body,
+        signal: controller.signal,
+      },
+    );
+    if (!response.ok) {
+      const message =
+        response.status === 429
+          ? 'Photo analysis is busy. Please wait before retrying.'
+          : response.status === 504
+            ? 'Photo analysis timed out. Please retry or use Food Search.'
+            : response.status === 413
+              ? 'This photo is too large. Choose a smaller photo.'
+              : response.status === 400 || response.status === 422
+                ? 'This photo could not be read. Choose another photo.'
+                : 'Photo analysis is temporarily unavailable. Please retry or use Food Search.';
+      // Never display raw provider/proxy bodies, even when they contain a detail field.
+      throw new Error(withResponseReference(message, response));
+    }
+    const result = await readAIResponse(response, validPhotoResponse);
+    if (controller.signal.aborted)
+      throw new DOMException('Aborted', 'AbortError');
+    return result;
+  } catch (error) {
+    if (opts?.signal?.aborted) throw new Error('Photo analysis canceled.');
+    if (
+      controller.signal.aborted ||
+      (error instanceof Error && error.name === 'AbortError')
+    ) {
       throw new Error(
-        'AI recognition request timed out. Check your internet connection and try again.',
+        'Photo analysis timed out. Please retry or use Food Search.',
       );
     }
-
-    throw err;
+    if (error instanceof TypeError)
+      throw new Error(
+        'Cannot reach photo analysis. Check your connection or use Food Search.',
+      );
+    throw error;
   } finally {
-    clearTimeout(timeoutId);
+    clearTimeout(timeout);
+    opts?.signal?.removeEventListener('abort', cancel);
   }
 }
