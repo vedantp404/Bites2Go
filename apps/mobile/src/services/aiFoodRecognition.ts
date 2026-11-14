@@ -1,4 +1,5 @@
 import {
+  AIResponseError,
   readAIResponse,
   validPhotoResponse,
   withResponseReference,
@@ -150,6 +151,8 @@ export async function checkBackendHealth(): Promise<{
  * Uses the base64 endpoint when base64 image data is available.
  * Otherwise, sends the image using multipart FormData.
  */
+class PhotoAnalysisError extends Error {}
+
 export async function recognizeFoodFromImage(
   imageUri: string,
   base64Data?: string,
@@ -197,7 +200,7 @@ export async function recognizeFoodFromImage(
                 ? 'This photo could not be read. Choose another photo.'
                 : 'Photo analysis is temporarily unavailable. Please retry or use Food Search.';
       // Never display raw provider/proxy bodies, even when they contain a detail field.
-      throw new Error(withResponseReference(message, response));
+      throw new PhotoAnalysisError(withResponseReference(message, response));
     }
     const result = await readAIResponse(response, validPhotoResponse);
     if (controller.signal.aborted)
@@ -205,19 +208,18 @@ export async function recognizeFoodFromImage(
     return result;
   } catch (error) {
     if (opts?.signal?.aborted) throw new Error('Photo analysis canceled.');
-    if (
-      controller.signal.aborted ||
-      (error instanceof Error && error.name === 'AbortError')
-    ) {
+    if (controller.signal.aborted) {
       throw new Error(
         'Photo analysis timed out. Please retry or use Food Search.',
       );
     }
-    if (error instanceof TypeError)
-      throw new Error(
-        'Cannot reach photo analysis. Check your connection or use Food Search.',
-      );
-    throw error;
+    if (error instanceof PhotoAnalysisError || error instanceof AIResponseError)
+      throw error;
+    // Android can reject fetch with a plain Error or AbortError independently of
+    // our signal. Only our aborted signal proves that the client deadline fired.
+    throw new Error(
+      'Cannot reach photo analysis. Check your connection or use Food Search.',
+    );
   } finally {
     clearTimeout(timeout);
     opts?.signal?.removeEventListener('abort', cancel);

@@ -81,3 +81,47 @@ Validated locally: Cancel previously ignored taps during analysis; hidden/unmoun
 Tests: 18 targeted and 182 full mobile tests passed; types, lint (after lifecycle correction), formatting and Doctor20/20 passed. Backend unchanged; no live AI, APK build, push or deploy. Native screen interaction remains untested; next priority is Android close/reopen/retry and picker-dismissal acceptance with approved diagnostics. Existing dependency-audit release blocker remains. All 23 preexisting files checksum-preserved. Owner: Codex. Scope: photo lifecycle only; rollback: revert this focused commit. Commit: resolve via git log for this section.
 
 Phase 1A recovery: interrupted scanner work recovered and final lifecycle lint issues resolved. Added image-picker double-tap guard and a regression rejecting late responses even if transport ignores abort. Final types/lint/format and Doctor20/20 passed. Focused local commit only; Phase 1B and later phases not started. Device failure screenshots and supplied Render successes are not correlated; no diagnosis claimed.
+
+## Phase 1B — photo transport diagnosis (2026-11-14)
+
+Owner: Codex. Status: locally validated correction; physical acceptance blocked on device/build/log evidence. Dependency: Phase 1A `0933fa2a6a149353a9245820985c9bfcf1d8566c`. No production changes or inference performed.
+
+### Evidence
+
+- ADB is installed; `adb devices -l` lists no devices. Installed package/versionCode/build ID/source revision remain unknown. Local config is com.bites2go, 1.0.0/code2; that is not installed-app evidence.
+- Authenticated **read-only** EAS query via cached CLI succeeded: latest five Android preview records inspected. Latest FINISHED build `6447f478-40b6-4ff0-9b78-ed5cada2fbbf`, version1.0.0/code2, commit `1f8a11cf933cb2db11bdd789e3f43beebe37c50a`, created 2026-11-11T19:54:07.04Z, completed20:45:51.97Z. Prior FINISHED code2 build `7801d2c8-9bb6-4e39-b196-62f03e9461d0` references d446f5c. Neither contains Phase 1A. Build metadata alone does not prove what was installed or whether an uploaded archive had uncommitted differences.
+- Phase1A commit timestamp is November14 19:35:38 IST, after the reported14:08 screenshot. The old raw error and EAS history are consistent with older code. Exact screenshot APK provenance is unconfirmed; no later signed-preview install evidence exists here.
+- No Render connector, CLI, RENDER environment credential or standard local Render config was found. Authenticated bounded logs and deployed revision could not be obtained. No backend health call is substituted for request correlation.
+- Owner-supplied logs:08:38:26UTC start/6.653s/200/3items;08:39:15UTC start/20.684s/Gemini504 then OpenRouter200/5items. These are successful backend operations, not confirmed matches to the14:08IST(~08:38UTC) failure. Request IDs/deployed commit/device build are absent from the supplied summary. Voice (~08:36UTC) is outside this milestone.
+
+### Cancellation audit and confirmed correction
+
+Phase1A gives each opening fresh state; effect cleanup runs on unmount, not every render. Close aborts and invalidates current work; retry supersedes the prior controller and clears old candidates. Picker cancellation returns without upload, permission/picker callbacks are session-guarded, and rapid picker taps are guarded. The scanner suppresses stale results/errors/finally writes by request identity and signal. Explicit confirm still owns diary persistence; these changes never save automatically.
+
+Both base64 and multipart use one client controller with the existing45s timeout; multipart omits a manual Content-Type boundary, JSON declares application/json. Preparation is synchronous and included in the timer lifetime; event-loop blocking can delay timer delivery. No model retry/deadline change is justified. Cancellation cannot guarantee provider work has already stopped; backend success after client disconnect is possible. No Android-native behavior was measured here.
+
+Reproduced defect remaining in Phase1A: plain Error with `fetch failed: Fetch request has been canceled` bypassed TypeError-only sanitization. Also a native AbortError without our signal firing was wrongly called a timeout. Corrected by preserving only known safe HTTP/validation errors, sanitizing all other transport errors, and using actual controller/external signal state to distinguish client timeout from explicit cancellation. Deliberate cancellation remains silent in the scanner through Phase1A's stale-request guard. This repairs error handling; it does not identify why Android originally canceled.
+
+Remaining hypotheses: older installed client, native networking/interruption, connectivity, or old-client timeout. Supplied successful server durations are below45s, but are uncorrelated and cannot rule out cold-start/upload/body-read delays for the screenshot request. Provider failure is not established as the root cause.
+
+### Verification and rollout gate
+
+22 targeted tests and186 full mobile tests pass; types/lint/format pass; Doctor20/20. New regressions cover plain Android-style Error, unsolicited AbortError and actual timer expiry on both uploads. Phase1A tests retain user cancel/retry, pre-aborted requests, malformed output and late-success rejection. Backend unchanged; no backend suite repeated. SQLite/voice/manual search/calculations are covered by the passing existing mobile suite; no physical-device nonregression claim.
+
+Changed code: photo service and two existing test files only. Updated this milestone, TASKS and MEMORY. Focused local commit is identified by `git log -1 --format=%H -- apps/mobile/tests/photoCancellation.test.mjs`; no push/deploy/build. Rollback: revert the focused commit, without data migration. Existing23 user-modified files are checksum-protected. Audit release blocker unchanged; no dependency changes.
+
+Required next actions (approval before execution): prepare a reviewed source archive containing Phase1A and this correction, preserving signing/package identity; allocate a versionCode above the installed/distributed code (latest known preview code2). Build preview APK using `eas build --platform android --profile preview` only after approval. Install over the existing app with matching signature (no uninstall/data clear); record APK hash/EAS ID/commit/versionCode. Coordinate approved deployment of R1 request tracing to correlate errors; no provider/configuration change is indicated by this evidence.
+
+Physical acceptance (pending):
+1. Connect/authorize phone; inspect `adb shell dumpsys package com.bites2go` for version and install/update times. Match artifact/EAS metadata; versionCode alone is insufficient because two earlier builds reused code2.
+2. With explicit consent for a small nonprivate test image, record app build, backend deployment commit, UTC time, endpoint and safe request ID. Select image and confirm editable review; repeat using camera. Do not log raw image/meal content.
+3. Cancel during processing, close/reopen immediately, dismiss picker and rapidly tap retry. Expect no stale result/error or duplicate request saved. Verify retained selected image after a recoverable error and fresh state after close/reopen.
+4. Disable connectivity for one attempt: expect friendly network error, image retained and manual search available. Restore it and retry once with explicit consent. Use a mocked delayed response to verify the existing45s timeout separately; do not artificially overload production.
+5. Edit quantities, confirm once, verify exactly one intended save with chosen date/category; restart offline and verify existing diary data. Canceling/retrying must write nothing.
+6. Correlate the same request's client outcome with server status and duration. Accept only observed behavior; backend200 alone is insufficient. Store content-free evidence and result per step.
+
+Secure Render setup: install Windows CLI from https://render.com/docs/cli, run `render login` and authorize in browser (no tokens in chat); select workspace and identify service via `render services --output json`. Query only:
+`render logs --resources <service-id> --start 2026-11-14T08:35:00Z --end 2026-11-14T08:42:00Z --limit 200 --output json`
+Use `render logs --help` to verify flags. Relevant log retention may already have expired; do not interpret an empty result as proof no request occurred. Share only IDs/status/timing/deployment, not raw logs. Official command reference: https://render.com/docs/cli-reference.
+
+Phase1B code is ready for physical acceptance; reliability on the phone is not yet demonstrated. Phase1C voice diagnosis may be authorized separately, but has not started and Phase1 overall remains unaccepted. No Phase2/3 work.

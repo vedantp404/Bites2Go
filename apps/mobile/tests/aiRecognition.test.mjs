@@ -58,7 +58,7 @@ test('checkBackendHealth: returns error message safely when server unreachable w
   }
 });
 
-test('recognizeFoodFromImage: handles fetch timeout and abort signal cleanly', async () => {
+test('recognizeFoodFromImage: unsolicited transport abort is a network failure', async () => {
   const originalEnv = process.env.EXPO_PUBLIC_AI_BACKEND_URL;
   const originalFetch = globalThis.fetch;
   try {
@@ -72,7 +72,7 @@ test('recognizeFoodFromImage: handles fetch timeout and abort signal cleanly', a
 
     await assert.rejects(async () => {
       await recognizeFoodFromImage('file:///test.jpg', 'fakeBase64');
-    }, /timed out/i);
+    }, /Cannot reach photo analysis/i);
   } finally {
     globalThis.fetch = originalFetch;
     if (originalEnv) {

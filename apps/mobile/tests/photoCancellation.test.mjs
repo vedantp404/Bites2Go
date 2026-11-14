@@ -71,3 +71,40 @@ test('late photo response is discarded even when transport ignores abort', async
   );
   await assert.rejects(pending, /canceled/);
 });
+
+for (const base64 of [undefined, 'synthetic']) {
+  test(`Android transport cancellation text is sanitized without claiming user cancel or timeout (${!!base64})`, async (t) => {
+    for (const error of [
+      new Error('fetch failed: Fetch request has been canceled'),
+      new DOMException('native cancel', 'AbortError'),
+    ]) {
+      t.mock.method(globalThis, 'fetch', async () => {
+        throw error;
+      });
+      await assert.rejects(
+        () => recognizeFoodFromImage('file:///mock.jpg', base64),
+        (e) =>
+          /Cannot reach photo analysis/.test(e.message) &&
+          !/canceled|timed out|native/.test(e.message),
+      );
+      t.mock.restoreAll();
+    }
+  });
+  test(`client deadline is distinct from network failure (${!!base64})`, async (t) => {
+    t.mock.method(
+      globalThis,
+      'fetch',
+      async (_url, { signal }) =>
+        new Promise((resolve, reject) =>
+          signal.addEventListener('abort', () =>
+            reject(new Error('native fetch failure')),
+          ),
+        ),
+    );
+    await assert.rejects(
+      () =>
+        recognizeFoodFromImage('file:///mock.jpg', base64, { timeoutMs: 5 }),
+      /timed out/,
+    );
+  });
+}
