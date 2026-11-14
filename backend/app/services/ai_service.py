@@ -163,6 +163,8 @@ class DualProviderService:
     ) -> None:
         self._settings = settings or get_settings()
         self._cooldown_tracker = cooldown_tracker or ProviderCooldownTracker()
+        self._photo_timeout_lock = threading.Lock()
+        self._photo_timeout_health: dict[tuple[str, str], tuple[int, float]] = {}
 
         photo_fallback_active = bool(
             self._settings.ai_fallback_enabled
@@ -527,6 +529,18 @@ class DualProviderService:
             )
             return _attempt_fallback(cd_err, "rate-limit cooldown active")
 
+        # Only photo timeouts affect this short, model-specific circuit. No extra requests.
+        timeout_key = (primary.name, primary_model_id)
+        if task == "photo" and fallback_available:
+            with self._photo_timeout_lock:
+                _, until = self._photo_timeout_health.get(timeout_key, (0, 0.0))
+                cooling = until > time.monotonic()
+                if until and not cooling:
+                    self._photo_timeout_health.pop(timeout_key, None)
+            if cooling:
+                logger.info("[Timing][%s] Photo primary skipped: repeated timeout cooldown", get_current_request_id())
+                return _attempt_fallback(AITimeoutError("Photo primary timeout cooldown", provider=primary.name), "timeout cooldown active")
+
         # Case 2: Attempt primary provider within bounded budget reserving fallback headroom
         primary_default_timeout = self._default_provider_timeout(task, primary.name, is_fallback=False)
         rem = remaining_budget()
@@ -538,7 +552,11 @@ class DualProviderService:
         primary_timeout = min(primary_default_timeout, max_primary_budget, rem)
 
         try:
-            return invoke_fn(primary, primary_timeout)
+            result = invoke_fn(primary, primary_timeout)
+            if task == "photo":
+                with self._photo_timeout_lock:
+                    self._photo_timeout_health.pop(timeout_key, None)
+            return result
 
         except AIRequestCancelledError:
             logger.info("[Timing][%s] %s cancelled by client. Aborting without fallback.", get_current_request_id(), operation_name)
@@ -558,6 +576,11 @@ class DualProviderService:
             return _attempt_fallback(rate_err, "rate limited")
 
         except (AITimeoutError, AIUnavailableError) as trans_err:
+            if task == "photo" and fallback_available and isinstance(trans_err, AITimeoutError):
+                with self._photo_timeout_lock:
+                    count, _ = self._photo_timeout_health.get(timeout_key, (0, 0.0))
+                    count += 1
+                    self._photo_timeout_health[timeout_key] = (count, time.monotonic() + 120.0 if count >= 2 else 0.0)
             logger.warning(
                 "[Timing][%s] Primary [%s] failed with transient error (%s).",
                 get_current_request_id(),

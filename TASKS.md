@@ -379,3 +379,10 @@ Prepared1.0.0/code3, same com.bites2go/EAS project, remote signing source and ex
 ## Final preview blockers
 
 Reviewed and included the existing Expo58-compatible package/lock pair unchanged; isolated clean offline npm ci succeeds(800packages), Expo dependency check and npm ls pass. Public EAS default signing metadata obtained; device APK certificate comparison remains pending. Render now200 twice, self-reported1f8a11cf and no X-Request-ID: R1 tracing deployment still needed for correlation. Existing23 file contents preserved;21 unrelated edits remain uncommitted. Exact approval-gated push/clean-checkout/build/install sequence and certificate fingerprint recorded in docs/DEVICE_ACCEPTANCE_RELEASE.md. No push/deploy/build or credential change.
+
+## First-attempt photo milestone
+
+- [x] Separate bounded backend wake/readiness from single image inference; cancellable Connecting/Analyzing states.
+- [x] Add photo-only120s bypass after two primary timeouts; retain quota checks, fallback deadlines and recovery.
+- [x] Validate192 mobile/133 backend tests, types/lint/format, Doctor20/20 and local Android export.
+- [ ] Approve/deploy backend and approve new preview build above code3; verify production timing and repeated first scans after idle. Status: partially validated; screenshot request remains uncorrelated. See PRODUCT_COMPLETION for evidence/rollback/acceptance.

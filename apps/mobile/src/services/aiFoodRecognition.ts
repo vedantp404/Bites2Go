@@ -225,3 +225,76 @@ export async function recognizeFoodFromImage(
     opts?.signal?.removeEventListener('abort', cancel);
   }
 }
+
+// Startup has a separate budget: Render free-instance wake-up can take about a minute.
+export const PHOTO_READINESS_TIMEOUT_MS = 75_000;
+export async function preparePhotoAnalysis(
+  uri: string,
+  base64?: string,
+  opts?: {
+    signal?: AbortSignal;
+    readinessTimeoutMs?: number;
+    timeoutMs?: number;
+    onReady?: () => void;
+  },
+): Promise<FoodRecognitionResult> {
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  if (opts?.signal?.aborted) throw new Error('Photo analysis canceled.');
+  opts?.signal?.addEventListener('abort', cancel, { once: true });
+  const timer = setTimeout(
+    cancel,
+    opts?.readinessTimeoutMs ?? PHOTO_READINESS_TIMEOUT_MS,
+  );
+  try {
+    while (true) {
+      const response = await fetch(`${getBackendBaseUrl()}/health`, {
+        signal: controller.signal,
+        headers: { Accept: 'application/json' },
+      });
+      let ready = false;
+      if (response.ok) {
+        try {
+          ready = (await response.json())?.status === 'ok';
+        } catch (error) {
+          if (!(error instanceof SyntaxError)) throw error;
+        }
+      } else if (![502, 503, 504].includes(response.status)) {
+        throw new PhotoAnalysisError(
+          'Photo service is unavailable. Please use Food Search or try later.',
+        );
+      }
+      if (controller.signal.aborted) throw new Error('aborted');
+      if (ready) break;
+      // Retry readiness only, never an inference POST. Also handles proxy loading pages.
+      await new Promise<void>((resolve, reject) => {
+        const abort = () => {
+          clearTimeout(wait);
+          reject(new Error('aborted'));
+        };
+        const wait = setTimeout(() => {
+          controller.signal.removeEventListener('abort', abort);
+          resolve();
+        }, 1500);
+        controller.signal.addEventListener('abort', abort, { once: true });
+        if (controller.signal.aborted) abort();
+      });
+    }
+  } catch (error) {
+    if (opts?.signal?.aborted) throw new Error('Photo analysis canceled.');
+    if (controller.signal.aborted)
+      throw new Error(
+        'Photo service is taking too long to start. Please retry or use Food Search.',
+      );
+    if (error instanceof PhotoAnalysisError) throw error;
+    throw new Error(
+      'Cannot reach photo analysis. Check your connection or use Food Search.',
+    );
+  } finally {
+    clearTimeout(timer);
+    opts?.signal?.removeEventListener('abort', cancel);
+  }
+  if (opts?.signal?.aborted) throw new Error('Photo analysis canceled.');
+  opts?.onReady?.();
+  return recognizeFoodFromImage(uri, base64, opts);
+}

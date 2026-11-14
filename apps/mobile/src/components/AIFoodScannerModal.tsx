@@ -40,7 +40,7 @@ import {
 } from '../domain/diary';
 import { scaleNutrients, type FoodNutrients, type Meal } from '../domain/food';
 import {
-  recognizeFoodFromImage,
+  preparePhotoAnalysis,
   type RecognizedFoodItem,
 } from '../services/aiFoodRecognition';
 
@@ -75,6 +75,7 @@ function ScannerSession({
 
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [imageBase64, setImageBase64] = useState<string | null>(null);
+  const [preparing, setPreparing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -183,10 +184,14 @@ function ScannerSession({
       activeRequest.current === request && !request.signal.aborted;
     setCandidates([]);
     setMealSummary('');
+    setPreparing(true);
     setLoading(true);
     setError(null);
     try {
-      const result = await recognizeFoodFromImage(uri, b64, {
+      const result = await preparePhotoAnalysis(uri, b64, {
+        onReady: () => {
+          if (current()) setPreparing(false);
+        },
         signal: request.signal,
       });
       if (!current()) return;
@@ -564,10 +569,14 @@ function ScannerSession({
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={t.colors.primary} />
               <Text style={[styles.loadingText, { color: t.colors.text }]}>
-                Analyzing your photo...
+                {preparing
+                  ? 'Connecting to photo service...'
+                  : 'Analyzing your photo...'}
               </Text>
               <Text style={[styles.loadingSubtext, { color: t.colors.muted }]}>
-                You can cancel at any time. Review estimates before saving.
+                {preparing
+                  ? 'The first connection may take about a minute. You can cancel at any time.'
+                  : 'Review estimates before saving. You can cancel at any time.'}
               </Text>
             </View>
           )}
