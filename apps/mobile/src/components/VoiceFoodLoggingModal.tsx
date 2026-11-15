@@ -11,7 +11,7 @@
  * Privacy & Hygiene:
  * - Audio is captured locally to a temporary cache file ONLY when recording starts.
  * - Audio leaves the device over HTTPS only after Stop is tapped (or explicit retry).
- * - Temporary local audio files are deleted immediately on success, cancel, retry switch, close, or unmount.
+ * - Pending clips survive recoverable failures and analysis cancellation until replacement, close or save.
  */
 
 import React, {
@@ -23,6 +23,7 @@ import React, {
 } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   Alert,
   KeyboardAvoidingView,
   Modal,
@@ -36,13 +37,14 @@ import {
 } from 'react-native';
 import { randomUUID } from 'expo-crypto';
 
+import { waitForAIBackend } from '../services/aiFoodRecognition';
+
 import { useUI } from './dashboard';
 import { Action } from './FoodControls';
 import { useDiary } from '../state/DiaryProvider';
 import { useLibrary } from '../state/LibraryProvider';
 import { localDateKey, validDateKey } from '../domain/diary';
 import {
-  formatNutrient,
   scaleNutrients,
   sumNutrients,
   type Food,
@@ -55,10 +57,10 @@ import {
   buildDiaryEntriesFromVoiceCandidates,
   matchVoiceItemsToCatalogue,
   parseVoiceAudio,
+  editVoiceNutrient,
   parseVoiceMeal,
   scaleFoodNutrientsNullable,
   type MatchedVoiceFoodCandidate,
-  VoiceCloudError,
 } from '../services/voiceFoodLogging';
 import {
   buildMealRecordingOptions,
@@ -94,7 +96,11 @@ type NativeRecorderSessionProps = {
   disabled: boolean;
   t: ReturnType<typeof useUI>['t'];
   onRecordingStarted: () => void;
-  onRecordingFinished: (uri: string, durationMillis: number) => void;
+  onRecordingFinished: (
+    uri: string,
+    durationMillis: number,
+    send?: boolean,
+  ) => void;
   onRecordingError: (msg: string) => void;
   onRecordingCancelled: () => void;
 };
@@ -152,34 +158,61 @@ function InnerNativeAudioRecorder({
   const recorder = audioMod.useAudioRecorder(options);
   const recorderState = audioMod.useAudioRecorderState(recorder, 200);
   const stoppingRef = useRef(false);
+  const liveRef = useRef(true);
+  const deliveredRef = useRef(false);
+  const startingRef = useRef(false);
+  useEffect(() => {
+    liveRef.current = true;
+    return () => {
+      liveRef.current = false;
+      void recorder
+        .stop()
+        .finally(() => {
+          void configureRecordingAudioMode(false);
+          if (!deliveredRef.current) deleteTempAudioFile(recorder.uri);
+        })
+        .catch(() => {});
+    };
+  }, [recorder]);
   const autoStoppedRef = useRef(false);
 
-  const handleStopAndSend = useCallback(async () => {
-    if (stoppingRef.current) return;
-    stoppingRef.current = true;
-    const measuredDuration = recorderState.durationMillis;
-    try {
-      await recorder.stop();
-      await configureRecordingAudioMode(false);
-      const uri = recorder.uri || recorderState.url || '';
-      onRecordingFinished(uri, measuredDuration);
-    } catch {
-      await configureRecordingAudioMode(false);
-      deleteTempAudioFile(recorder.uri || recorderState.url);
-      onRecordingError(
-        'Could not finalize the audio recording. Please try speaking again or type your meal below.',
-      );
-    } finally {
-      stoppingRef.current = false;
-      autoStoppedRef.current = false;
-    }
-  }, [
-    onRecordingError,
-    onRecordingFinished,
-    recorder,
-    recorderState.durationMillis,
-    recorderState.url,
-  ]);
+  const handleStopAndSend = useCallback(
+    async (send = true) => {
+      if (stoppingRef.current) return;
+      stoppingRef.current = true;
+      const measuredDuration = recorderState.durationMillis;
+      try {
+        await recorder.stop();
+        await configureRecordingAudioMode(false);
+        const uri = recorder.uri || recorderState.url || '';
+        if (liveRef.current) {
+          deliveredRef.current = true;
+          await onRecordingFinished(
+            uri,
+            measuredDuration,
+            send && AppState.currentState === 'active',
+          );
+        } else deleteTempAudioFile(uri);
+      } catch {
+        await configureRecordingAudioMode(false);
+        deleteTempAudioFile(recorder.uri || recorderState.url);
+        if (liveRef.current)
+          onRecordingError(
+            'Could not finalize the audio recording. Please try speaking again or type your meal below.',
+          );
+      } finally {
+        stoppingRef.current = false;
+        autoStoppedRef.current = false;
+      }
+    },
+    [
+      onRecordingError,
+      onRecordingFinished,
+      recorder,
+      recorderState.durationMillis,
+      recorderState.url,
+    ],
+  );
 
   const handleCancelRecording = useCallback(async () => {
     if (stoppingRef.current) return;
@@ -193,33 +226,49 @@ function InnerNativeAudioRecorder({
       deleteTempAudioFile(recorder.uri || recorderState.url);
       stoppingRef.current = false;
       autoStoppedRef.current = false;
-      onRecordingCancelled();
+      if (liveRef.current) onRecordingCancelled();
     }
   }, [onRecordingCancelled, recorder, recorderState.url]);
 
   const handleStartRecording = useCallback(async () => {
-    if (disabled || stoppingRef.current) return;
+    if (disabled || stoppingRef.current || startingRef.current) return;
+    startingRef.current = true;
     const perm = await requestMicrophonePermission();
+    if (!liveRef.current || AppState.currentState !== 'active') {
+      startingRef.current = false;
+      return;
+    }
     if (!perm.granted) {
-      onRecordingError(
-        perm.canAskAgain
-          ? 'Microphone access is needed to record your meal. Tap Speak to allow permission, type your meal below, or open Food Search.'
-          : 'Microphone access is disabled for Bites2Go. Enable Microphone in Android Settings, type your meal below, or open Food Search.',
-      );
+      startingRef.current = false;
+      if (liveRef.current)
+        onRecordingError(
+          perm.canAskAgain
+            ? 'Microphone access is needed to record your meal. Tap Speak to allow permission, type your meal below, or open Food Search.'
+            : 'Microphone access is disabled for Bites2Go. Enable Microphone in Android Settings, type your meal below, or open Food Search.',
+        );
       return;
     }
 
     try {
       autoStoppedRef.current = false;
+      deliveredRef.current = false;
       await configureRecordingAudioMode(true);
       await recorder.prepareToRecordAsync();
+      if (!liveRef.current || AppState.currentState !== 'active') {
+        await recorder.stop();
+        deleteTempAudioFile(recorder.uri);
+        return;
+      }
       recorder.record();
       onRecordingStarted();
     } catch {
       await configureRecordingAudioMode(false);
-      onRecordingError(
-        'Unable to access the microphone right now. Ensure no other app is recording or type your meal below.',
-      );
+      if (liveRef.current)
+        onRecordingError(
+          'Unable to access the microphone right now. Ensure no other app is recording or type your meal below.',
+        );
+    } finally {
+      startingRef.current = false;
     }
   }, [disabled, onRecordingError, onRecordingStarted, recorder]);
 
@@ -231,9 +280,17 @@ function InnerNativeAudioRecorder({
       !autoStoppedRef.current
     ) {
       autoStoppedRef.current = true;
-      void handleStopAndSend();
+      void handleStopAndSend(false);
     }
   }, [handleStopAndSend, recorderState.durationMillis, stage]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active' && stage === 'recording')
+        void handleStopAndSend(false);
+    });
+    return () => sub.remove();
+  }, [stage, handleStopAndSend]);
 
   const isRec = stage === 'recording';
   // dB metering typically ranges roughly -60dB (quiet) to 0dB (loud)
@@ -253,7 +310,9 @@ function InnerNativeAudioRecorder({
           isRec ? 'Stop recording and analyze meal' : 'Start speaking meal'
         }
         disabled={disabled && !isRec}
-        onPress={isRec ? handleStopAndSend : handleStartRecording}
+        onPress={
+          isRec ? () => void handleStopAndSend(true) : handleStartRecording
+        }
         style={({ pressed }) => [
           styles.micButton,
           {
@@ -308,7 +367,11 @@ function InnerNativeAudioRecorder({
   );
 }
 
-export function VoiceFoodLoggingModal({
+export function VoiceFoodLoggingModal(props: VoiceFoodLoggingModalProps) {
+  return props.visible ? <VoiceSession {...props} /> : null;
+}
+
+function VoiceSession({
   visible,
   meal,
   date,
@@ -320,6 +383,7 @@ export function VoiceFoodLoggingModal({
   const diary = useDiary();
   const library = useLibrary();
 
+  const [connecting, setConnecting] = useState(false);
   const [stage, setStage] = useState<VoiceModalStage>('idle');
   const [transcript, setTranscript] = useState('');
   const [lastAudioUri, setLastAudioUri] = useState<string | null>(null);
@@ -384,13 +448,13 @@ export function VoiceFoodLoggingModal({
   }, []);
 
   const handleClose = () => {
-    if (saving) return;
+    if (savingRef.current || saving) return;
     resetState();
     onClose();
   };
 
   const handleGoToFoodSearch = () => {
-    if (saving) return;
+    if (savingRef.current || saving) return;
     resetState();
     if (onOpenFoodSearch) {
       onOpenFoodSearch();
@@ -404,21 +468,22 @@ export function VoiceFoodLoggingModal({
       abortOngoingUpload();
       const abortCtrl = new AbortController();
       uploadAbortRef.current = abortCtrl;
+      setConnecting(true);
       setStage('analyzing');
       setErrorMessage(null);
 
       try {
+        await waitForAIBackend({ signal: abortCtrl.signal });
+        if (uploadAbortRef.current !== abortCtrl || abortCtrl.signal.aborted)
+          return;
+        setConnecting(false);
         const response = await parseVoiceAudio(uri, meal, targetDate, {
           signal: abortCtrl.signal,
         });
 
-        // Audio analyzed — delete local cache file immediately
-        deleteTempAudioFile(uri);
-        if (activeAudioUriRef.current === uri) {
-          activeAudioUriRef.current = null;
-        }
-        setLastAudioUri(null);
-
+        if (uploadAbortRef.current !== abortCtrl || abortCtrl.signal.aborted)
+          return;
+        // Keep the clip through empty results and review until explicit close/save.
         if (response.transcript?.trim()) {
           setTranscript(response.transcript.trim());
         }
@@ -449,18 +514,8 @@ export function VoiceFoodLoggingModal({
         setCandidates(matched);
         setStage('review');
       } catch (err: unknown) {
-        if (
-          err instanceof VoiceCloudError &&
-          err.errorCategory === 'upload_canceled'
-        ) {
-          deleteTempAudioFile(uri);
-          if (activeAudioUriRef.current === uri) {
-            activeAudioUriRef.current = null;
-          }
-          setLastAudioUri(null);
-          setStage('idle');
+        if (uploadAbortRef.current !== abortCtrl || abortCtrl.signal.aborted)
           return;
-        }
         const rawMsg =
           err instanceof Error
             ? err.message
@@ -483,7 +538,7 @@ export function VoiceFoodLoggingModal({
   }, [cleanupTempAudio]);
 
   const handleRecordingFinished = useCallback(
-    async (uri: string, durationMillis: number) => {
+    async (uri: string, durationMillis: number, send = true) => {
       const sizeBytes = inspectTempAudioFileSize(uri);
       const validation = validateRecordedAudioMetadata({
         uri,
@@ -507,7 +562,11 @@ export function VoiceFoodLoggingModal({
       }
       activeAudioUriRef.current = uri;
       setLastAudioUri(uri);
-      await submitAudioUriForAnalysis(uri);
+      if (send) await submitAudioUriForAnalysis(uri);
+      else {
+        setStage('idle');
+        setErrorMessage(null);
+      }
     },
     [submitAudioUriForAnalysis],
   );
@@ -524,7 +583,6 @@ export function VoiceFoodLoggingModal({
 
   const handleCancelUpload = () => {
     abortOngoingUpload();
-    cleanupTempAudio();
     setStage('idle');
     setErrorMessage(null);
   };
@@ -542,13 +600,20 @@ export function VoiceFoodLoggingModal({
     abortOngoingUpload();
     const abortCtrl = new AbortController();
     uploadAbortRef.current = abortCtrl;
+    setConnecting(true);
     setStage('analyzing');
     setErrorMessage(null);
 
     try {
+      await waitForAIBackend({ signal: abortCtrl.signal });
+      if (uploadAbortRef.current !== abortCtrl || abortCtrl.signal.aborted)
+        return;
+      setConnecting(false);
       const response = await parseVoiceMeal(cleaned, meal, targetDate, {
         signal: abortCtrl.signal,
       });
+      if (uploadAbortRef.current !== abortCtrl || abortCtrl.signal.aborted)
+        return;
       if (!response.items || response.items.length === 0) {
         setErrorMessage(
           'Could not detect specific food items in that text. Edit the description or open Food Search.',
@@ -557,7 +622,6 @@ export function VoiceFoodLoggingModal({
         return;
       }
 
-      cleanupTempAudio();
       const availablePool = buildAvailableFoodPool(library.data, unifiedFoods);
       const matched = matchVoiceItemsToCatalogue(response.items, availablePool);
 
@@ -568,13 +632,8 @@ export function VoiceFoodLoggingModal({
       setCandidates(matched);
       setStage('review');
     } catch (err: unknown) {
-      if (
-        err instanceof VoiceCloudError &&
-        err.errorCategory === 'upload_canceled'
-      ) {
-        setStage('idle');
+      if (uploadAbortRef.current !== abortCtrl || abortCtrl.signal.aborted)
         return;
-      }
       setErrorMessage(
         err instanceof Error
           ? err.message
@@ -587,6 +646,17 @@ export function VoiceFoodLoggingModal({
       }
     }
   };
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active' && uploadAbortRef.current) {
+        abortOngoingUpload();
+        setStage('idle');
+        setErrorMessage(null);
+      }
+    });
+    return () => sub.remove();
+  }, [abortOngoingUpload]);
 
   // Candidate adjustments in review stage
   const updateCandidateGrams = (id: string, text: string) => {
@@ -770,7 +840,7 @@ export function VoiceFoodLoggingModal({
   };
 
   const addBlankCandidate = () => {
-    const newId = `voice-manual-${Date.now()}`;
+    const newId = `voice-manual-${randomUUID()}`;
     const newCandidate: MatchedVoiceFoodCandidate = {
       id: newId,
       stableEntryId: randomUUID(),
@@ -778,38 +848,44 @@ export function VoiceFoodLoggingModal({
         food_description: 'Custom Food Item',
         quantity: 1,
         unit: 'serving',
-        state: 'cooked',
+        state: 'unspecified',
         modifiers: [],
-        portion_specified: true,
-        estimated_grams: 100,
-        calories: 100,
-        protein: 5,
-        carbohydrates: 15,
-        fat: 2,
-        confidence: 1,
-        confidence_level: 'high',
+        portion_specified: false,
+        estimated_grams: null,
+        calories: null,
+        protein: null,
+        carbohydrates: null,
+        fat: null,
+        confidence: 0,
+        confidence_level: 'low',
         alternatives: [],
       },
       food_name: 'Custom Food Item',
       quantity: 1,
       unit: 'serving',
-      estimated_grams: 100,
-      calories: 100,
-      protein: 5,
-      carbohydrates: 15,
-      fat: 2,
-      fiber: 0,
-      state: 'cooked',
+      estimated_grams: null,
+      calories: null,
+      protein: null,
+      carbohydrates: null,
+      fat: null,
+      fiber: null,
+      state: 'unspecified',
       preparation: 'User added item',
       modifiers: [],
-      portionSpecified: true,
+      portionSpecified: false,
       notes: '',
-      confidence: 1,
-      confidence_level: 'high',
+      confidence: 0,
+      confidence_level: 'low',
       matchedCatalogueFood: null,
       availableMatches: [],
       sourceMode: 'ai',
-      reference: { calories: 100, protein: 5, carbs: 15, fat: 2, fiber: 0 },
+      reference: {
+        calories: null,
+        protein: null,
+        carbs: null,
+        fat: null,
+        fiber: null,
+      },
     };
     setCandidates((prev) => [...prev, newCandidate]);
   };
@@ -933,13 +1009,13 @@ export function VoiceFoodLoggingModal({
           </View>
 
           {/* Failure Recovery Card */}
-          {errorMessage ? (
+          {errorMessage || (lastAudioUri && stage === 'idle') ? (
             <View
               style={[
                 styles.errorCard,
                 {
                   backgroundColor: t.colors.surface,
-                  borderColor: t.colors.error,
+                  borderColor: errorMessage ? t.colors.error : t.colors.border,
                 },
               ]}
             >
@@ -947,18 +1023,19 @@ export function VoiceFoodLoggingModal({
                 accessibilityLiveRegion="polite"
                 selectable
                 style={{
-                  color: t.colors.error,
+                  color: errorMessage ? t.colors.error : t.colors.text,
                   fontSize: 14,
                   fontWeight: '600',
                 }}
               >
-                {errorMessage}
+                {errorMessage ||
+                  'Recording kept on this device. Tap Analyze recording to send it.'}
               </Text>
               <View style={styles.recoveryActionsRow}>
                 {lastAudioUri && stage === 'idle' ? (
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="Retry voice audio analysis"
+                    accessibilityLabel="Analyze saved voice recording"
                     onPress={() => void submitAudioUriForAnalysis(lastAudioUri)}
                     style={[
                       styles.recoveryBtn,
@@ -975,7 +1052,7 @@ export function VoiceFoodLoggingModal({
                         fontWeight: '700',
                       }}
                     >
-                      Retry Audio
+                      Analyze recording
                     </Text>
                   </Pressable>
                 ) : null}
@@ -1037,7 +1114,9 @@ export function VoiceFoodLoggingModal({
                     <Text
                       style={[styles.analyzingLabel, { color: t.colors.text }]}
                     >
-                      AI is interpreting your spoken meal...
+                      {connecting
+                        ? 'Connecting to voice service...'
+                        : 'Interpreting your spoken meal...'}
                     </Text>
                     <Pressable
                       accessibilityRole="button"
@@ -1125,9 +1204,10 @@ export function VoiceFoodLoggingModal({
                 )}
 
                 <Text style={[styles.privacyNote, { color: t.colors.muted }]}>
-                  Audio uploads over HTTPS only when you tap Stop, is analyzed
-                  transiently in memory, and temporary recordings are cleared
-                  automatically.
+                  Tap Stop or Analyze recording to send audio to our backend and
+                  AI provider. Audio is processed in memory; the local clip
+                  stays available for retry until you replace it, close this
+                  screen or save.
                 </Text>
               </View>
 
@@ -1588,85 +1668,65 @@ export function VoiceFoodLoggingModal({
                       </View>
                     </View>
 
-                    {/* Macro chips */}
+                    <Text style={{ color: t.colors.muted }}>
+                      {missingGrams
+                        ? 'Enter measured grams before editing nutrition.'
+                        : item.sourceMode === 'ai'
+                          ? 'Review and edit nutrients for this portion. Blank means unknown.'
+                          : 'Catalogue nutrition scales with the portion weight.'}
+                    </Text>
                     <View style={styles.macroGrid}>
-                      <View
-                        style={[
-                          styles.macroBox,
-                          { backgroundColor: t.colors.background },
-                        ]}
-                      >
-                        <Text
-                          style={[styles.macroLabel, { color: t.colors.muted }]}
+                      {(
+                        ['calories', 'protein', 'carbohydrates', 'fat'] as const
+                      ).map((key) => (
+                        <View
+                          key={key}
+                          style={[
+                            styles.macroBox,
+                            { backgroundColor: t.colors.background },
+                          ]}
                         >
-                          Calories
-                        </Text>
-                        <Text
-                          style={[styles.macroValue, { color: t.colors.text }]}
-                        >
-                          {formatNutrient(item.calories, 'kcal')}
-                        </Text>
-                      </View>
-
-                      <View
-                        style={[
-                          styles.macroBox,
-                          { backgroundColor: t.colors.background },
-                        ]}
-                      >
-                        <Text
-                          style={[styles.macroLabel, { color: t.colors.muted }]}
-                        >
-                          Protein
-                        </Text>
-                        <Text
-                          style={[styles.macroValue, { color: t.colors.text }]}
-                        >
-                          {item.protein === null
-                            ? 'Unknown'
-                            : `${item.protein.toFixed(1)}g`}
-                        </Text>
-                      </View>
-
-                      <View
-                        style={[
-                          styles.macroBox,
-                          { backgroundColor: t.colors.background },
-                        ]}
-                      >
-                        <Text
-                          style={[styles.macroLabel, { color: t.colors.muted }]}
-                        >
-                          Carbs
-                        </Text>
-                        <Text
-                          style={[styles.macroValue, { color: t.colors.text }]}
-                        >
-                          {item.carbohydrates === null
-                            ? 'Unknown'
-                            : `${item.carbohydrates.toFixed(1)}g`}
-                        </Text>
-                      </View>
-
-                      <View
-                        style={[
-                          styles.macroBox,
-                          { backgroundColor: t.colors.background },
-                        ]}
-                      >
-                        <Text
-                          style={[styles.macroLabel, { color: t.colors.muted }]}
-                        >
-                          Fat
-                        </Text>
-                        <Text
-                          style={[styles.macroValue, { color: t.colors.text }]}
-                        >
-                          {item.fat === null
-                            ? 'Unknown'
-                            : `${item.fat.toFixed(1)}g`}
-                        </Text>
-                      </View>
+                          <Text
+                            style={[
+                              styles.macroLabel,
+                              { color: t.colors.muted },
+                            ]}
+                          >
+                            {key === 'calories'
+                              ? 'Calories (kcal)'
+                              : `${key === 'carbohydrates' ? 'Carbs' : key} (g)`}
+                          </Text>
+                          <TextInput
+                            accessibilityLabel={`${item.food_name} ${key} for this portion`}
+                            keyboardType="decimal-pad"
+                            editable={item.sourceMode === 'ai' && !missingGrams}
+                            placeholder="Unknown"
+                            placeholderTextColor={t.colors.muted}
+                            value={item[key] === null ? '' : String(item[key])}
+                            style={[
+                              styles.macroValue,
+                              { color: t.colors.text, minHeight: 48 },
+                            ]}
+                            onChangeText={(text) =>
+                              setCandidates((prev) =>
+                                prev.map((candidate) => {
+                                  if (candidate.id !== item.id)
+                                    return candidate;
+                                  try {
+                                    return editVoiceNutrient(
+                                      candidate,
+                                      key,
+                                      text,
+                                    );
+                                  } catch {
+                                    return candidate;
+                                  }
+                                }),
+                              )
+                            }
+                          />
+                        </View>
+                      ))}
                     </View>
                   </View>
                 );

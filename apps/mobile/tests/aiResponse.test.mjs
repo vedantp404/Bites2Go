@@ -162,7 +162,7 @@ test('body cancellation and network failure stay distinct from malformed output'
   }));
   await assert.rejects(
     () => parseVoiceAudio('file:///mock.m4a'),
-    (error) => error.errorCategory === 'timeout',
+    (error) => error.errorCategory === 'network_error',
   );
   t.mock.restoreAll();
   t.mock.method(globalThis, 'fetch', async () => {

@@ -162,10 +162,7 @@ test('parseVoiceMeal: parses structured 504 and 503 error details from backend',
         await parseVoiceMeal('a bowl of dal');
       },
       (err) => {
-        assert.ok(
-          err instanceof Error &&
-            err.message.includes('timed out after multiple attempts'),
-        );
+        assert.ok(err instanceof Error && err.message.includes('timed out'));
         return true;
       },
     );
@@ -186,8 +183,7 @@ test('parseVoiceMeal: parses structured 504 and 503 error details from backend',
       },
       (err) => {
         assert.ok(
-          err instanceof Error &&
-            err.message.includes('temporarily overloaded or unavailable'),
+          err instanceof Error && err.message.includes('Could not interpret'),
         );
         return true;
       },
@@ -215,7 +211,7 @@ test('parseVoiceMeal: parses structured 504 and 503 error details from backend',
         assert.equal(err.status, 429);
         assert.equal(err.retryAfterSeconds, 25);
         assert.equal(err.errorCategory, 'daily_quota_exhausted');
-        assert.ok(err.message.includes('daily quota exhausted'));
+        assert.ok(err.message.includes('temporarily busy'));
         return true;
       },
     );

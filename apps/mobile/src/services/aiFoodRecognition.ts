@@ -228,19 +228,13 @@ export async function recognizeFoodFromImage(
 
 // Startup has a separate budget: Render free-instance wake-up can take about a minute.
 export const PHOTO_READINESS_TIMEOUT_MS = 75_000;
-export async function preparePhotoAnalysis(
-  uri: string,
-  base64?: string,
-  opts?: {
-    signal?: AbortSignal;
-    readinessTimeoutMs?: number;
-    timeoutMs?: number;
-    onReady?: () => void;
-  },
-): Promise<FoodRecognitionResult> {
+export async function waitForAIBackend(opts?: {
+  signal?: AbortSignal;
+  readinessTimeoutMs?: number;
+}): Promise<void> {
   const controller = new AbortController();
   const cancel = () => controller.abort();
-  if (opts?.signal?.aborted) throw new Error('Photo analysis canceled.');
+  if (opts?.signal?.aborted) throw new Error('AI analysis canceled.');
   opts?.signal?.addEventListener('abort', cancel, { once: true });
   const timer = setTimeout(
     cancel,
@@ -261,7 +255,7 @@ export async function preparePhotoAnalysis(
         }
       } else if (![502, 503, 504].includes(response.status)) {
         throw new PhotoAnalysisError(
-          'Photo service is unavailable. Please use Food Search or try later.',
+          'AI service is unavailable. Please use Food Search or try later.',
         );
       }
       if (controller.signal.aborted) throw new Error('aborted');
@@ -281,19 +275,33 @@ export async function preparePhotoAnalysis(
       });
     }
   } catch (error) {
-    if (opts?.signal?.aborted) throw new Error('Photo analysis canceled.');
+    if (opts?.signal?.aborted) throw new Error('AI analysis canceled.');
     if (controller.signal.aborted)
       throw new Error(
-        'Photo service is taking too long to start. Please retry or use Food Search.',
+        'AI service is taking too long to start. Please retry or use Food Search.',
       );
     if (error instanceof PhotoAnalysisError) throw error;
     throw new Error(
-      'Cannot reach photo analysis. Check your connection or use Food Search.',
+      'Cannot reach AI analysis. Check your connection or use Food Search.',
     );
   } finally {
     clearTimeout(timer);
     opts?.signal?.removeEventListener('abort', cancel);
   }
+  if (opts?.signal?.aborted) throw new Error('AI analysis canceled.');
+}
+
+export async function preparePhotoAnalysis(
+  uri: string,
+  base64?: string,
+  opts?: {
+    signal?: AbortSignal;
+    readinessTimeoutMs?: number;
+    timeoutMs?: number;
+    onReady?: () => void;
+  },
+): Promise<FoodRecognitionResult> {
+  await waitForAIBackend(opts);
   if (opts?.signal?.aborted) throw new Error('Photo analysis canceled.');
   opts?.onReady?.();
   return recognizeFoodFromImage(uri, base64, opts);

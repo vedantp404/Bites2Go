@@ -212,6 +212,9 @@ def test_gemini_parse_voice_audio_handles_user_reference_meal_and_modifiers(capl
     assert banana.unit == "banana"
     whey = res.items[4]
     assert "whey" in whey.food_description.lower()
+    assert whey.estimated_grams is None
+    assert whey.calories is None
+    assert whey.portion_specified is False
     assert whey.confidence_level == "medium"
     assert len(whey.alternatives) >= 1
     assert len(res.clarifying_questions) == 2

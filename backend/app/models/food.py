@@ -287,6 +287,11 @@ class ParsedVoiceFoodItem(BaseModel):
     @model_validator(mode="after")
     def validate_macronutrient_consistency(self) -> "ParsedVoiceFoodItem":
         """Verify that present macros are consistent with calories without inventing nulls."""
+        # A scoop is not a measured mass; require review instead of inventing a label weight.
+        if self.unit.lower() in ("scoop", "scoops"):
+            self.portion_specified = False
+        if not self.portion_specified:
+            self.estimated_grams = self.calories = self.protein = self.carbohydrates = self.fat = None
         if (
             self.calories is not None
             and self.protein is not None

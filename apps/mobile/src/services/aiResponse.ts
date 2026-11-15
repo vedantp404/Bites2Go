@@ -37,12 +37,13 @@ const nutrients = ['calories', 'protein', 'carbohydrates', 'fat'];
 export function validVoiceResponse(v: unknown): v is VoiceMealParseResponse {
   return (
     record(v) &&
-    v.success === true &&
+    typeof v.success === 'boolean' &&
     text(v.transcript) &&
     text(v.summary) &&
     strings(v.warnings) &&
     strings(v.clarifying_questions) &&
     Array.isArray(v.items) &&
+    (v.success || v.items.length === 0) &&
     v.items.every(
       (item: unknown) =>
         record(item) &&

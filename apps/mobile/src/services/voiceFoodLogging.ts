@@ -228,26 +228,11 @@ export function inferAudioMimeAndName(audioUri: string): {
 }
 
 export function sanitizeVoiceUserMessage(
-  rawDetail?: string,
+  _rawDetail?: string,
   status?: number,
 ): string {
-  const trimmed = (rawDetail || '').trim();
-  const hasRawJsonOrTechnicalNoise =
-    !trimmed ||
-    trimmed.startsWith('{') ||
-    trimmed.startsWith('[') ||
-    /^(?:Error|HTTP)\s+\d{3}\b/i.test(trimmed) ||
-    /\bHTTP\s*\d{3}\b/i.test(trimmed) ||
-    /\b(?:nvidia\/|dots-studio\/|openrouter\/|gemini-[\d.]+|traceback|syntaxerror|validationerror)\b/i.test(
-      trimmed,
-    );
-
-  if (!hasRawJsonOrTechnicalNoise) {
-    return trimmed.replace(/\bOpenRouter\s+/gi, '');
-  }
-
   if (status === 429) {
-    return 'Voice AI reached temporary rate or daily quota limits. Wait briefly to retry, edit your description below, or open Food Search.';
+    return 'Voice analysis is temporarily busy. Wait briefly to retry, edit your description below, or open Food Search.';
   }
   if (status === 504) {
     return 'Voice meal analysis timed out. You can retry the recording, edit text below, or open Food Search.';
@@ -297,9 +282,7 @@ export async function parseVoiceAudio(
 
   const controller = new AbortController();
   const timeoutMs = opts?.timeoutMs ?? AUDIO_UPLOAD_TIMEOUT_MS;
-  let timedOut = false;
   const timeoutId = setTimeout(() => {
-    timedOut = true;
     controller.abort();
   }, timeoutMs);
 
@@ -325,24 +308,13 @@ export async function parseVoiceAudio(
     });
 
     if (!response.ok) {
-      let rawDetail = '';
-      try {
-        const errorJson = await response.json();
-        if (typeof errorJson?.detail === 'string') {
-          rawDetail = errorJson.detail;
-        } else if (typeof errorJson?.detail?.message === 'string') {
-          rawDetail = errorJson.detail.message;
-        }
-      } catch {
-        // ignore JSON parse failure on non-JSON proxy errors
-      }
       const rawRetryAfter = response.headers?.get?.('Retry-After');
       const retryAfterNum = rawRetryAfter ? Number(rawRetryAfter) : NaN;
       const errorCategory =
         response.headers?.get?.('X-Error-Category') ?? undefined;
       throw new VoiceCloudError(
         withResponseReference(
-          sanitizeVoiceUserMessage(rawDetail, response.status),
+          sanitizeVoiceUserMessage(undefined, response.status),
           response,
         ),
         {
@@ -356,28 +328,25 @@ export async function parseVoiceAudio(
       );
     }
 
-    return await readAIResponse(response, validVoiceResponse);
+    const result = await readAIResponse(response, validVoiceResponse);
+    if (controller.signal.aborted) throw new Error('aborted');
+    return result;
   } catch (err: unknown) {
-    if (err instanceof AIResponseError) {
+    if (opts?.signal?.aborted)
+      throw new VoiceCloudError('Voice analysis canceled.', {
+        errorCategory: 'upload_canceled',
+      });
+    if (controller.signal.aborted)
+      throw new VoiceCloudError(
+        'Voice meal analysis timed out. Retry or open Food Search.',
+        { status: 504, errorCategory: 'timeout' },
+      );
+    if (err instanceof AIResponseError)
       throw new VoiceCloudError(err.message, {
         requestId: err.requestId,
         errorCategory: 'invalid_response',
       });
-    }
-    if (err instanceof VoiceCloudError) {
-      throw err;
-    }
-    if (opts?.signal?.aborted) {
-      throw new VoiceCloudError('Audio analysis canceled.', {
-        errorCategory: 'upload_canceled',
-      });
-    }
-    if (err instanceof Error && (err.name === 'AbortError' || timedOut)) {
-      throw new VoiceCloudError(
-        'Voice meal analysis timed out. You can retry the recording, edit text manually, or open Food Search.',
-        { status: 504, errorCategory: 'timeout' },
-      );
-    }
+    if (err instanceof VoiceCloudError) throw err;
     throw new VoiceCloudError(sanitizeVoiceUserMessage(), {
       errorCategory: 'network_error',
     });
@@ -435,24 +404,13 @@ export async function parseVoiceMeal(
     });
 
     if (!response.ok) {
-      let detail = '';
-      try {
-        const errorJson = await response.json();
-        if (typeof errorJson?.detail === 'string') {
-          detail = errorJson.detail;
-        } else if (errorJson?.detail?.message) {
-          detail = errorJson.detail.message;
-        }
-      } catch {
-        // use default detail
-      }
       const rawRetryAfter = response.headers?.get?.('Retry-After');
       const retryAfterNum = rawRetryAfter ? Number(rawRetryAfter) : NaN;
       const errorCategory =
         response.headers?.get?.('X-Error-Category') ?? undefined;
       throw new VoiceCloudError(
         withResponseReference(
-          sanitizeVoiceUserMessage(detail, response.status),
+          sanitizeVoiceUserMessage(undefined, response.status),
           response,
         ),
         {
@@ -466,28 +424,25 @@ export async function parseVoiceMeal(
       );
     }
 
-    return await readAIResponse(response, validVoiceResponse);
+    const result = await readAIResponse(response, validVoiceResponse);
+    if (controller.signal.aborted) throw new Error('aborted');
+    return result;
   } catch (err: unknown) {
-    if (err instanceof AIResponseError) {
+    if (opts?.signal?.aborted)
+      throw new VoiceCloudError('Voice analysis canceled.', {
+        errorCategory: 'upload_canceled',
+      });
+    if (controller.signal.aborted)
+      throw new VoiceCloudError(
+        'Voice meal analysis timed out. Retry or open Food Search.',
+        { status: 504, errorCategory: 'timeout' },
+      );
+    if (err instanceof AIResponseError)
       throw new VoiceCloudError(err.message, {
         requestId: err.requestId,
         errorCategory: 'invalid_response',
       });
-    }
-    if (err instanceof VoiceCloudError) {
-      throw err;
-    }
-    if (opts?.signal?.aborted) {
-      throw new VoiceCloudError('Voice analysis canceled.', {
-        errorCategory: 'upload_canceled',
-      });
-    }
-    if (err instanceof Error && err.name === 'AbortError') {
-      throw new VoiceCloudError(
-        'Voice meal analysis timed out. Please retry or open Food Search.',
-        { status: 504, errorCategory: 'timeout' },
-      );
-    }
+    if (err instanceof VoiceCloudError) throw err;
     throw new VoiceCloudError(sanitizeVoiceUserMessage(), {
       errorCategory: 'network_error',
     });
@@ -544,7 +499,7 @@ function deriveAIReferencePer100g(
       item.fat !== null && Number.isFinite(item.fat)
         ? Math.round(item.fat * factor * 1000) / 1000
         : null,
-    fiber: 0,
+    fiber: null,
   };
 }
 
@@ -610,7 +565,7 @@ export function matchVoiceItemsToCatalogue(
     let carbohydrates: number | null =
       rawGrams !== null ? item.carbohydrates : null;
     let fat: number | null = rawGrams !== null ? item.fat : null;
-    let fiber: number | null = rawGrams !== null ? 0 : null;
+    let fiber: number | null = null;
     let reference: FoodNutrients;
 
     if (sourceMode === 'catalogue' && topMatch) {
@@ -1183,4 +1138,35 @@ export function buildDiaryEntriesFromVoiceCandidates(
   }
 
   return entries;
+}
+
+/** User-entered nutrients describe the current measured portion, not an invented 100g serving. */
+export function editVoiceNutrient(
+  item: MatchedVoiceFoodCandidate,
+  key: 'calories' | 'protein' | 'carbohydrates' | 'fat',
+  text: string,
+): MatchedVoiceFoodCandidate {
+  const grams = item.estimated_grams;
+  if (
+    item.sourceMode !== 'ai' ||
+    grams === null ||
+    !Number.isFinite(grams) ||
+    grams <= 0
+  )
+    throw new RangeError('Enter a measured portion first.');
+  const clean = text.trim().replace(',', '.');
+  if (clean && !/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(clean))
+    throw new RangeError('Enter a non-negative number.');
+  const value = clean ? Number(clean) : null;
+  if (value !== null && !Number.isFinite(value))
+    throw new RangeError('Enter a finite number.');
+  const refKey = key === 'carbohydrates' ? 'carbs' : key;
+  return {
+    ...item,
+    [key]: value,
+    reference: {
+      ...item.reference,
+      [refKey]: value === null ? null : (value * 100) / grams,
+    },
+  };
 }
