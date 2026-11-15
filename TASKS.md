@@ -394,3 +394,7 @@ Prepared1.0.0/code4 with same package/project/signing source/URL. Backend code r
 ## Phase 1C voice reliability — 2026-11-16
 
 Locally implemented shared startup readiness, safe/cancellable voice transport, session guards and retained recording recovery; interrupted/limit recordings require explicit upload. Fixed invented manual nutrition/fiber, added measured-portion nutrient editing, structured silence recovery and backend scoop/unspecified-portion honesty. Baseline192/133; final201 mobile/136 backend, types/lint/format/Doctor20/20/local Android export pass. Deployed077ae6a3 voice routes reject empty inputs with tracing; no real inference/device test performed.21 unrelated edits preserved. See docs/VOICE_ACCEPTANCE.md for evidence, model decision, rollback and exact language/device/save acceptance. New backend deployment and APK above code4 need approval. Status: partially validated; Phase2 not started; dependency-audit blocker remains.
+
+## Voice device acceptance release preparation
+
+Prepared1.0.0/code5, unchanged package/project/remote signing/HTTPS URL. Backend and mobile use the same focused preparation commit; behavior remains validated7c80167.15 focused voice/photo +10 backend voice tests, formatting and resolved config pass. docs/VOICE_ACCEPTANCE.md now contains the backend-first approval-gated rollout, certificate/data-preserving upgrade, photo regression and higher-code rollback.21 unrelated edits preserved. No push/deploy/build/live inference; physical speech/data acceptance and Phase2 remain gated.
