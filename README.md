@@ -179,3 +179,5 @@ Bites2Go's nutrition values and AI meal estimates are informational and may be i
 ## License
 
 A public software license has **not yet been selected**. Repository visibility does not, by itself, grant permission to reuse or redistribute the code.
+
+<!-- Development progress reviewed: 2026-11-15 -->
